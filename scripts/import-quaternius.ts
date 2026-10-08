@@ -15,12 +15,12 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { inflateRawSync } from 'node:zlib';
 import { NodeIO, type Document } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { dedup, meshopt, prune, resample, simplify, textureCompress, weld } from '@gltf-transform/functions';
 import { MeshoptDecoder, MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer';
 import sharp from 'sharp';
+import { readZip, unzipEntry } from './lib/zip.js';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const SRC = join(ROOT, 'assets-src/quaternius');
@@ -32,47 +32,6 @@ const CLIPS = [
   'Sitting_Idle_Loop', 'Interact', 'PickUp_Table', 'Fixing_Kneeling', 'Dance_Loop',
   'Sword_Idle', 'Sword_Attack', 'Spell_Simple_Shoot', 'Hit_Chest', 'Death01', 'Push_Loop',
 ];
-
-// --- a tiny zip reader (central directory + inflateRaw) -----------------------
-
-interface ZipEntry {
-  name: string;
-  method: number;
-  compressedSize: number;
-  localOffset: number;
-}
-
-function readZip(path: string): { entries: Map<string, ZipEntry>; data: Buffer } {
-  const data = readFileSync(path);
-  let eocd = data.length - 22;
-  while (eocd >= 0 && data.readUInt32LE(eocd) !== 0x06054b50) eocd--;
-  if (eocd < 0) throw new Error(`not a zip: ${path}`);
-  const count = data.readUInt16LE(eocd + 10);
-  let p = data.readUInt32LE(eocd + 16);
-  const entries = new Map<string, ZipEntry>();
-  for (let i = 0; i < count; i++) {
-    if (data.readUInt32LE(p) !== 0x02014b50) throw new Error('bad central directory');
-    const method = data.readUInt16LE(p + 10);
-    const compressedSize = data.readUInt32LE(p + 20);
-    const nameLen = data.readUInt16LE(p + 28);
-    const extraLen = data.readUInt16LE(p + 30);
-    const commentLen = data.readUInt16LE(p + 32);
-    const localOffset = data.readUInt32LE(p + 42);
-    const name = data.toString('utf8', p + 46, p + 46 + nameLen);
-    entries.set(name, { name, method, compressedSize, localOffset });
-    p += 46 + nameLen + extraLen + commentLen;
-  }
-  return { entries, data };
-}
-
-function unzipEntry(zip: { data: Buffer }, e: ZipEntry): Buffer {
-  const d = zip.data;
-  const nameLen = d.readUInt16LE(e.localOffset + 26);
-  const extraLen = d.readUInt16LE(e.localOffset + 28);
-  const start = e.localOffset + 30 + nameLen + extraLen;
-  const raw = d.subarray(start, start + e.compressedSize);
-  return e.method === 0 ? Buffer.from(raw) : inflateRawSync(raw);
-}
 
 /** Extract every entry under `prefix` into `dest` (flat, by file name). */
 function extractDir(zipName: string, prefix: string, dest: string): string[] {

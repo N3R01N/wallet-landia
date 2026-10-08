@@ -13,7 +13,8 @@
     "capture": "vite-node scripts/capture-fixtures.ts",
     "inspect": "vite-node scripts/inspect.ts",
     "e2e": "playwright test",
-    "assets:quaternius": "vite-node scripts/import-quaternius.ts"
+    "assets:quaternius": "vite-node scripts/import-quaternius.ts",
+    "assets:textures": "vite-node scripts/fetch-textures.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",

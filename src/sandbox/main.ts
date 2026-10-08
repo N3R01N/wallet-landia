@@ -11,6 +11,7 @@
  */
 
 import * as THREE from 'three';
+import { METRES_PER_TILE } from '../render/three/grammar/medieval.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CLASS_LABEL, type HeroClass } from '../domain/model.js';
 import { TIER_NAMES, type Tier } from '../domain/tiers.js';
@@ -161,20 +162,32 @@ class Sandbox {
     this.#characters = [];
     this.#stage.clear();
     const t = this.theme;
-    const flat = (w: number, d: number, color: string, x: number, z: number, y = 0.01): THREE.Mesh => {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color, roughness: 1 }));
-      m.position.set(x, y, z);
+    // Textured ground repeats in world units (tiles → metres ÷ texture size).
+    const surface = (geo: THREE.BufferGeometry, which: 'grass' | 'road' | 'path', color: string): THREE.Mesh => {
+      const tex = t.groundMaterial?.(which);
+      if (tex) {
+        const pos = geo.getAttribute('position');
+        const uv = geo.getAttribute('uv');
+        const k = METRES_PER_TILE / tex.size;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) * k, -pos.getZ(i) * k);
+        uv.needsUpdate = true;
+      }
+      return new THREE.Mesh(geo, tex?.material ?? new THREE.MeshStandardMaterial({ color, roughness: 1 }));
+    };
+    const flat = (w: number, d: number, which: 'grass' | 'road' | 'path', x: number, z: number, y = 0.01): THREE.Mesh => {
+      const geo = new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2).translate(x, 0, z);
+      const m = surface(geo, which, t.ground[which]);
+      m.position.y = y;
       m.receiveShadow = true;
       this.#stage.add(m);
       return m;
     };
 
     // ground, streets in front of each row, the walking track
-    flat(70, 50, t.ground.grass, 0, -5, 0);
-    for (const row of ROWS) flat(SPACING * row.kinds.length + 4, 1.4, t.ground.road, 0, row.z + 2.6);
-    const track = new THREE.Mesh(new THREE.RingGeometry(0.92, 1.08, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: t.ground.path, roughness: 1 }));
-    track.scale.set(TRACK.rx, 1, TRACK.rz);
-    track.position.set(TRACK.cx, 0.015, TRACK.cz);
+    flat(70, 50, 'grass', 0, -5, 0);
+    for (const row of ROWS) flat(SPACING * row.kinds.length + 4, 1.4, 'road', 0, row.z + 2.6);
+    const track = surface(new THREE.RingGeometry(0.92, 1.08, 64).rotateX(-Math.PI / 2).scale(TRACK.rx, 1, TRACK.rz).translate(TRACK.cx, 0, TRACK.cz), 'path', t.ground.path);
+    track.position.y = 0.015;
     track.receiveShadow = true;
     this.#stage.add(track);
 

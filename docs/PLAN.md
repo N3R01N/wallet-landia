@@ -256,8 +256,13 @@ Same scope for both: **the Town view only.**
      - `npm run assets:quaternius` turns the CC0 downloads in `assets-src/quaternius` into `public/themes/medieval` (6.3 MB): WebP textures ≤ 1024 px, a 16-clip animation subset, meshopt compression, simplified meshes (~5–25k triangles a person), repaired texture references.
      - Runtime: base body (head cut out by bone weights) + outfit + hair on one skeleton; idle/walk/run cross-fades with speed-matched playback; turning towards travel; horse mounts per tier with the rider seated.
      - Open: real griffin/dragon (wings are placeholders); class gear; more outfits (free kit: Peasant and Ranger); LOD/impostors for crowds; FBX→GLB for the horse.
-   - Phase 2: theme bundle format (pack v2). Phase 4: building grammar v2 + PBR. Phase 5: terrain and surroundings. Phase 6: medieval / sci-fi / modern bundles. Phase 7: into the town.
-   - Known: ~450 draw calls in the sandbox (buildings are many small meshes); merge per building in Phase 4.
+   - ~~Phase 4, building grammar v2 + PBR~~ first pass done for the medieval theme (sandbox only).
+     - `npm run assets:textures` fetches 12 CC0 ambientCG materials (stone, plaster, timber, planks, roof tiles/slate, thatch, cobbles, grass, dirt, cloth) into `public/themes/medieval/materials` (2.8 MB, WebP colour/normal/roughness).
+     - `src/render/three/grammar/`: `MaterialLibrary` (world-scale UVs in metres), `MeshWriter` (quads, boxes, slabs, cylinders, cones → one mesh per material), `medieval.ts` (storeys, plinths, half-timbering on bays, framed windows with sills and shutters, plank doors, gable/hip/crenellated/cone roofs with thickness and overhang, jetties, chimneys, quoins, hanging signs).
+     - Recipes for all 18 kinds and homes t0–t6 (bedroll → tent → thatched cottage → townhouse → jettied manor → keep → castle). Brand colours tint roof textures; plaster washes vary by seed. The bell keeps its pivot.
+     - Each building is about 7–12 meshes including the sign. Lit windows and the forge fire glow at night.
+     - Open: the town still uses `BuildingFactory` (Phase 7); characters dominate draw calls (~1,200 in the medieval sandbox); no LOD yet; herald cart wheels are spokes only.
+   - Phase 2: theme bundle format (pack v2). Phase 5: terrain and surroundings. Phase 6: sci-fi / modern bundles. Phase 7: into the town.
 
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.

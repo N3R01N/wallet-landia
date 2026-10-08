@@ -56,5 +56,19 @@ test('the medieval theme loads rigged characters and mounts', async ({ page }) =
   expect(counts.sprites).toBe(0); // no pixel billboards in this theme
   expect(counts.skinned).toBeGreaterThan(12 * 4); // body/outfit/hair parts for 12 people, plus horses
   await expect(page.locator('.note')).toContainText('Rigged CC0 characters');
+  // buildings come from the grammar (one mesh per material, named by it) and their PBR textures load
+  await page.waitForFunction(
+    () => {
+      type M = { name: string; material?: { map?: { image?: { width?: number } } } };
+      const s = (window as unknown as { sandbox: { scene: { traverse(f: (o: M) => void): void } } }).sandbox;
+      const textured: M[] = [];
+      s.scene.traverse((o) => {
+        if (['stone', 'plaster', 'roofTiles', 'timber', 'cobbles'].includes(o.name)) textured.push(o);
+      });
+      return textured.length > 40 && textured.every((o) => (o.material?.map?.image?.width ?? 0) > 0);
+    },
+    null,
+    { timeout: 60_000 },
+  );
   expect(errors).toEqual([]);
 });

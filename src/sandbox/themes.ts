@@ -12,6 +12,8 @@ import type { HeroClass } from '../domain/model.js';
 import type { Tier } from '../domain/tiers.js';
 import type { BuildingSpec, BuiltBuilding } from '../render/three/buildingFactory.js';
 import { BuildingFactory } from '../render/three/buildingFactory.js';
+import { MedievalBuilder } from '../render/three/grammar/medieval.js';
+import { MaterialLibrary, TEX_SIZE, type MatKey } from '../render/three/grammar/materials.js';
 import type { SkyId } from '../render/three/environment.js';
 import { spriteCharacters } from './characters.js';
 
@@ -64,6 +66,8 @@ export interface Theme {
   windowMaterial: THREE.MeshStandardMaterial;
   fireMaterial: THREE.MeshStandardMaterial;
   material(color: string): THREE.Material;
+  /** A textured ground surface (material plus metres per texture repeat); flat colours otherwise. */
+  groundMaterial?(which: keyof GroundStyle): { material: THREE.Material; size: number };
 }
 
 function baseline(): Theme {
@@ -89,18 +93,26 @@ function planned(id: string, name: string, description: string, needs: string[])
 }
 
 function medieval(): Theme {
+  const factory = new BuildingFactory();
+  const lib = new MaterialLibrary('/themes/medieval/materials');
+  const builder = new MedievalBuilder(lib, factory);
+  const GROUND: Record<keyof GroundStyle, MatKey> = { grass: 'grass', road: 'cobbles', path: 'dirt' };
   const theme: Theme = {
     ...baseline(),
     id: 'medieval',
-    name: 'Medieval (characters ready)',
-    description: 'Rigged CC0 people (Quaternius) in fantasy outfits on horses; buildings and ground still the current art.',
+    name: 'Medieval',
+    description: 'Rigged CC0 people (Quaternius) in fantasy outfits on horses; grammar-built stone, timber and plaster buildings with CC0 PBR textures (ambientCG).',
     status: 'partial',
     needs: [
-      'Building grammar v2 with PBR stone/timber/plaster (Phase 4)',
       'Terrain, props and vegetation per theme (Phase 5)',
       'Real griffin and dragon mounts (wings are placeholders); class gear (shield, staff, lute, bow)',
       'More outfits: the free kit has only Peasant and Ranger',
     ],
+    ground: { grass: '#6f9a4a', road: '#9a8f80', path: '#8a7556' },
+    building: (spec) => builder.build(spec),
+    windowMaterial: lib.glass,
+    fireMaterial: lib.fire,
+    groundMaterial: (which) => ({ material: lib.get(GROUND[which]), size: TEX_SIZE[GROUND[which]] }),
     async prepare() {
       const { loadMedievalKit, riggedProvider } = await import('./rigged.js');
       theme.characters = riggedProvider(await loadMedievalKit());

@@ -21,7 +21,8 @@ import type { HeroClass } from '../domain/model.js';
 import type { AnimState, CharacterLook, CharacterProvider, SandboxCharacter } from './themes.js';
 
 /** World scale: one tile is this many metres, so a person is about one tile tall. */
-export const METRES_PER_TILE = 1.8;
+import { METRES_PER_TILE } from '../render/three/grammar/medieval.js';
+export { METRES_PER_TILE };
 /** Natural speeds of the in-place clips at timeScale 1 (m/s), tuned so feet stay planted. */
 const CLIP_SPEED = { walk: 1.25, run: 3.0 };
 const FADE = 0.3;
