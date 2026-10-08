@@ -263,17 +263,12 @@ The world layer never says "draw a donkey". It says **"draw slot `mount.t2` for 
 | UI skin | `ui.{panel,button,tooltip,font}` | |
 | Lexicon | `lexicon.*`: text names ("Counting House", "Chronicle") | so a sci-fi pack can rename everything |
 
-### Pack format (draft)
-```jsonc
-{
-  "id": "stardew-default", "name": "Hearth & Harvest", "author": "...", "version": "0.1.0",
-  "targets": ["2d", "3d"],           // a pack may support one or both renderers
-  "slots": {
-    "mount.t2": { "2d": { "sheet": "mounts.png", "frames": "donkey_*" }, "3d": { "gltf": "donkey.glb" } },
-    "lexicon.building.bank": "Counting House"
-  }
-}
-```
-- Packs are **data only** (images, models, JSON), never code, so a pack can't be malicious.
-- Loadout = `{ slotKey → packId }`, stored locally.
-- Later: a community pack gallery, creator tools, and possibly selling packs (on-chain ownership of packs as NFTs would fit the theme nicely).
+### Implemented (2026-10-08)
+The pack system is built: `src/assets/` (catalogue, validation, registry, resolved art), the **🎨 Looks** panel, bundled packs in `public/packs/`, and folder import into IndexedDB. The creator guide is **[docs/PACKS.md](PACKS.md)**, which is the source of truth for the format and slot keys.
+
+How it differs from the draft above:
+- **Forms** per slot: `sprite` (people, items, 2D scenery, 3D billboards), `top` and `iso` (2D buildings per projection), `model` (glTF for 3D), `word` (lexicon).
+- **Hero keys** are `hero.t<tier>` with an optional `hero.t<tier>.<class>`. A pack draws the whole figure (mount and rider); the more specific key wins.
+- **Lexicon keys** are `word.building.<kind>` and `word.district.<name>`.
+- Not yet slotted: effects, environment (ground, sky, water), UI skin, item frames.
+- Sample pack: **Ember & Frost** (owl courier, dog sled, ember coins, ice bars, frost vault in 2D and 3D, snowy pines, renamed places).

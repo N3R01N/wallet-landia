@@ -589,3 +589,19 @@ select {
 .goods.in {
   color: #2f6a2a;
 }
+
+.pack-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--parchment-dark);
+  font-size: 13px;
+}
+
+.slot-family {
+  margin: 10px 0 2px;
+  font-size: 12px;
+  color: var(--wood);
+}

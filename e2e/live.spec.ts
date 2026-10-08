@@ -90,7 +90,10 @@ test('loads live, caches, and plays a new transaction when the chain moves', asy
   fake.nonce = '0x2';
 
   await expect(page.locator('.questlog-list')).toContainText('Send 3 ETH to 0xabcd', { timeout: 30_000 });
-  expect(fake.zerionRequests).toHaveLength(6);
+  // 1 for the new history tail, then 2 to re-measure tokens after a plain send.
+  await expect.poll(() => fake.zerionRequests.length).toBe(8);
+  const kinds = fake.zerionRequests.slice(5).map((u) => /\/(transactions|portfolio|nft-positions|positions)\b/.exec(u)?.[1]);
+  expect(kinds).toEqual(['transactions', 'portfolio', 'positions']);
 });
 
 test('the Guild panel adds a wallet and rejects nonsense', async ({ page }) => {

@@ -40,6 +40,10 @@ export interface SessionEvents {
 }
 
 const CATCH_UP_MS = 15 * 60_000;
+/** Prices drift with no transaction; refresh portfolio totals this often… */
+const DRIFT_MS = 60 * 60_000;
+/** …but only while more than this much of the day's budget is left. */
+const DRIFT_MIN_BUDGET = 150;
 
 function storage(): Storage | null {
   try {
@@ -77,6 +81,7 @@ export class Session {
   #loader: LiveLoader | null = null;
   #fingerprints = new Map<string, string>();
   #lastCatchUp = Date.now();
+  #lastDrift = Date.now();
   #checking = false;
   #generation = 0;
 
@@ -227,19 +232,47 @@ export class Session {
       });
       const toRefresh = due ? addrs : changed;
       if (due) this.#lastCatchUp = Date.now();
-      if (toRefresh.length === 0 || this.budget.exhausted) return;
+      const drift =
+        Date.now() - this.#lastDrift > DRIFT_MS && this.budget.remaining > DRIFT_MIN_BUDGET && document.visibilityState === 'visible';
+      if (drift) this.#lastDrift = Date.now();
+      if ((toRefresh.length === 0 && !drift) || this.budget.exhausted) return;
 
       let added = 0;
+      let revalued = false;
       const raws = [...shown.raws];
+      const put = (raw: RawWallet): void => {
+        const i = raws.findIndex((x) => x.address === raw.address);
+        if (i >= 0) raws[i] = { ...raw, label: raws[i]?.label ?? raw.label };
+      };
       for (const a of toRefresh) {
         const r = await loader.refreshHistory(a);
         if (r === null) continue;
         added += r.added;
-        const i = raws.findIndex((x) => x.address === a);
-        if (i >= 0) raws[i] = { ...r.raw, label: raws[i]?.label ?? r.raw.label };
+        put(r.raw);
+        // Something happened to this wallet: its holdings changed too. Plain
+        // transfers only move tokens; anything touching a protocol may move
+        // positions and NFTs as well, which costs more to re-measure.
+        if (r.added > 0 && changed.includes(a)) {
+          const plain = r.fresh.every((t) => ['send', 'receive', 'approve', 'revoke'].includes(t.attributes.operation_type) && !t.relationships?.dapp);
+          const v = await loader.refreshValuations(a, plain ? 'tokens' : 'full');
+          if (v) {
+            put({ ...v, transactions: r.raw.transactions });
+            revalued = true;
+          }
+        }
+      }
+      if (drift) {
+        for (const a of addrs) {
+          const v = await loader.refreshValuations(a, 'total');
+          if (v) {
+            const i = raws.findIndex((x) => x.address === a);
+            if (i >= 0) raws[i] = { ...raws[i]!, portfolio: v.portfolio, capturedAt: v.capturedAt };
+            revalued = true;
+          }
+        }
       }
       if (gen !== this.#generation) return;
-      if (added > 0) this.#show({ ...shown, raws }, 'update');
+      if (added > 0 || revalued) this.#show({ ...shown, raws }, 'update');
     } catch (error) {
       this.#events.onStatus(describeError(error), 'error');
     } finally {

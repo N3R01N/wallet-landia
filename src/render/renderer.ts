@@ -7,9 +7,9 @@ import type { HeroClass } from '../domain/model.js';
 import { MAP_H, MAP_W, type Placed, type Pt } from '../world/layout.js';
 import type { Agent, Effect, Sim } from '../world/sim.js';
 import { crestColors, hashString } from '../util/rng.js';
-import { brandColor, isoBuilding, ISO_H, ISO_W, topBuilding } from './buildings.js';
-import { caravanSprite, heroSprite, npcSprite, villagerSprite } from './characters.js';
-import { bakeIsoGround, bakeTopGround, propSprite, scatterProps, type Ground, type Prop } from './ground.js';
+import { brandColor, ISO_H, ISO_W } from './buildings.js';
+import { buildingArt, caravanArt, heroArt, npcArt, propArt, villagerArt } from '../assets/art.js';
+import { bakeIsoGround, bakeTopGround, scatterProps, type Ground, type Prop } from './ground.js';
 import type { Sprite } from './pixel.js';
 import { districtLabels, floatingText, markers, nameTags, route, weather } from './overlay.js';
 import type { HitTarget, WorldView } from './view.js';
@@ -164,7 +164,7 @@ export class Renderer implements WorldView {
     const items: Drawable[] = [];
     for (const b of sim.plan.buildings) items.push(this.#buildingDrawable(b));
     for (const p of this.#props) {
-      const s = propSprite(p.kind);
+      const s = propArt(p.kind);
       items.push({ depth: this.#depth(p.x, p.y) - 0.3, draw: () => this.#blit(s, p.x, p.y) });
     }
     for (const a of sim.agents) items.push(...this.#agentDrawables(a));
@@ -236,9 +236,7 @@ export class Renderer implements WorldView {
     const hero = b.heroAddress !== undefined ? sim.guild.heroes.find((x) => x.address === b.heroAddress) : undefined;
     const tier = hero?.tier ?? 0;
     const variant = b.kind === 'guildhall' ? this.#guildColor : hero ? this.#guildColor : '';
-    return this.view === 'top'
-      ? topBuilding(b.kind, b.w, b.h, roof, tier, variant)
-      : isoBuilding(b.kind, b.w, b.h, roof, tier, variant);
+    return buildingArt(this.view, b.kind, b.w, b.h, roof, tier, variant);
   }
 
   #buildingDrawable(b: Placed): Drawable {
@@ -313,7 +311,7 @@ export class Renderer implements WorldView {
     // the caravan follows on the trail, one or two steps behind
     if (a.carrying !== null && a.carrying > 0 && a.kind === 'hero') {
       const back = a.trail[a.flying ? 6 : 9];
-      const cs = caravanSprite(a.carrying, frame);
+      const cs = caravanArt(a.carrying, frame);
       if (back && cs) out.push({ depth: this.#depth(back.x, back.y), draw: () => this.#blit(cs, back.x, back.y, flip, lift * 0.6) });
     }
 
@@ -323,14 +321,14 @@ export class Renderer implements WorldView {
         let s: Sprite;
         if (a.kind === 'hero' && a.hero) {
           const h = hashString(a.hero.address);
-          s = heroSprite(
+          s = heroArt(
             { address: a.hero.address, cls: this.classOf(a.hero.address), tier: a.hero.tier, crest: crestColors(a.hero.address)[0], skin: h % 4, hair: (h >> 3) % 6 },
             frame,
           );
         } else if (a.kind === 'villager') {
-          s = villagerSprite(hashString(a.id), frame, true);
+          s = villagerArt(hashString(a.id), frame, true);
         } else {
-          s = npcSprite(a.kind === 'raven' ? 'raven' : a.kind === 'herald' ? 'herald' : 'bailiff', frame);
+          s = npcArt(a.kind === 'raven' ? 'raven' : a.kind === 'herald' ? 'herald' : 'bailiff', frame);
         }
         const [left, top] = this.#blit(s, a.x, a.y, flip, lift + bob);
         if (a.kind === 'hero' && a.hero) {

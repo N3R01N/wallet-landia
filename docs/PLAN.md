@@ -232,7 +232,14 @@ Same scope for both: **the Town view only.**
    - Bell animation; the drama-scaled liquidation scene.
    - Logo occlusion.
    - Camera focus on click; a mobile/touch check.
-5. **Asset-pack slots:** formalise the slot catalogue in code, so the 3D meshes and sprites resolve through packs.
+5. ~~**Asset-pack slots:**~~ done 2026-10-08. Slot catalogue, data-only pack format with strict validation, registry with a per-slot loadout (specific → general → built-in), 🎨 Looks panel, folder import into IndexedDB (blob: URLs, CSP unchanged for remote origins), glTF models in 3D, the **Ember & Frost** sample pack, and the creator guide `docs/PACKS.md`.
+6. **Also done:** valuations stay fresh while the page is open. A wallet that moved re-measures its tokens (2 requests) or, after a protocol interaction, everything (4). Portfolio totals refresh hourly for price drift, only while more than 150 requests are left.
+
+### Ideas for what comes next
+- Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.
+- Approvals as a keyring (needs RPC/log reads), and the health factor for lending.
+- Phase 5 gamification: fog of war, titles and medals, teaching quests.
+- Phase 6 multi-chain realms.
 
 ## Live data (done 2026-10-08)
 
@@ -256,7 +263,7 @@ Same scope for both: **the Town view only.**
   - New journeys play live without restarting the replay.
 - **ENS:** forward and verified reverse lookups over the public RPC, using a small self-written keccak-256 and namehash (`src/util/keccak.ts`, `src/data/ens.ts`). Primary names become hero names.
 - **e2e:** `e2e/live.spec.ts` drives the whole live path against a fake Zerion and RPC. It checks the request counts and plays a new transaction when the fake chain moves.
-- **Known gap:** while the page stays open, valuations (balances, positions) refresh only on reload or after the TTL on the next load. A periodic valuation refresh can come later.
+- ~~Known gap: valuations only refresh on reload.~~ Fixed: re-measured after a wallet moves, plus an hourly drift refresh (see Next steps 6).
 - Default view for new visitors is now 3D.
 
 ## Decisions log
@@ -270,6 +277,7 @@ Same scope for both: **the Town view only.**
 | 8 | **All art is new, drawn in code** as pixel art (the default pack). No `iso-building-generator`. | 2026-10-08 |
 | 9 | Build **both a top-down and an isometric 2D prototype** from the same world state; choose later. | 2026-10-08 |
 | 10 | Default history window: **last 100 transactions**. | 2026-10-08 |
+| 14 | **Asset packs are data only** (JSON + images + glTF). Imported packs live in IndexedDB and are served from blob: URLs, so `connect-src` gains only `blob:`/`data:`, never arbitrary origins. | 2026-10-08 |
 | 13 | Three.js upgraded to 0.186. 3D polish follows the awesome-graphics skills where they fit a stylized diorama (pipeline, bloom, grading, shadows, wind, animation, camera, validation); realism-only systems (oceans, clouds, planets, cascaded shadows, auto-exposure) skipped. | 2026-10-08 |
 | 12 | **3D is the primary view.** Top-down and isometric stay as working fallbacks, but new visual work targets 3D first. | 2026-10-08 |
 | 11 | Add a **3D view** (Three.js, the only runtime dependency, lazy-loaded): low-poly buildings from the same style table, pixel-art characters as billboards (HD-2D). All three views implement `WorldView` over the same Sim. | 2026-10-08 |

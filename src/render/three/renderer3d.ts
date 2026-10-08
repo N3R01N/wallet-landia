@@ -13,7 +13,8 @@ import { crestColors, hashString, makeRng } from '../../util/rng.js';
 import { MAP_H, MAP_W, type Placed } from '../../world/layout.js';
 import type { Agent, Effect, Sim } from '../../world/sim.js';
 import { brandColor, drawEmblem, plate, styleFor, type Style } from '../buildings.js';
-import { caravanSprite, heroSprite, npcSprite, villagerSprite } from '../characters.js';
+import { buildingChain, caravanArt, heroArt, npcArt, villagerArt } from '../../assets/art.js';
+import { packModel } from './models.js';
 import { bakeTopGround, scatterProps, type Prop } from '../ground.js';
 import { districtLabels, floatingText, markers, nameTags, nightFactor, route, weather, type Project } from '../overlay.js';
 import { P, sprite, type Sprite } from '../pixel.js';
@@ -352,6 +353,24 @@ export class Renderer3D implements WorldView {
 
     let top = H + R;
 
+    // A pack model for this building replaces the built-in mesh entirely.
+    const model = packModel(buildingChain(b.kind, tier));
+    if (model) {
+      const m = model.scene.clone(true);
+      const box = new THREE.Box3().setFromObject(m);
+      const size = box.getSize(new THREE.Vector3());
+      // Fit the footprint (tiles), keep proportions, stand on the ground.
+      const fit = (Math.min(b.w, b.h) - 0.3) / Math.max(0.001, Math.max(size.x, size.z));
+      const s = Math.min(fit, model.scale);
+      m.scale.multiplyScalar(s);
+      m.position.y = -box.min.y * s;
+      g.add(m);
+      g.traverse((o) => {
+        o.userData.target = g.userData.target;
+      });
+      return { placed: b, group: g, top: size.y * s };
+    }
+
     if (b.kind === 'gate') {
       const stone = this.#mat(P.stone);
       add(new THREE.BoxGeometry(0.6, 2.4, 0.6), stone, -1.1, 1.2, 0);
@@ -566,10 +585,21 @@ export class Renderer3D implements WorldView {
       const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0)), new THREE.Vector3(s, s, s));
       parts[key]?.list.push(m);
     };
+    const models = new Map<Prop['kind'], ReturnType<typeof packModel>>();
+    for (const k of ['tree', 'pine', 'bush', 'rock'] as const) models.set(k, packModel([`prop.${k}`]));
     for (const p of props) {
       const s = 0.8 + rng() * 0.5;
       const x = p.x + (rng() - 0.5) * 0.4;
       const z = p.y - 0.3 + (rng() - 0.5) * 0.4;
+      const model = models.get(p.kind);
+      if (model) {
+        const m = model.scene.clone(true);
+        m.scale.multiplyScalar(model.scale * s);
+        m.position.set(x, 0, z);
+        m.rotation.y = rng() * Math.PI * 2;
+        this.#world.add(m);
+        continue;
+      }
       switch (p.kind) {
         case 'tree':
           put('trunk', x, 0.3 * s, z, s);
@@ -683,18 +713,18 @@ export class Renderer3D implements WorldView {
     let s: Sprite;
     if (a.kind === 'hero' && a.hero) {
       const h = hashString(a.hero.address);
-      s = heroSprite({ address: a.hero.address, cls: this.classOf(a.hero.address), tier: a.hero.tier, crest: crestColors(a.hero.address)[0], skin: h % 4, hair: (h >> 3) % 6 }, frame, false);
+      s = heroArt({ address: a.hero.address, cls: this.classOf(a.hero.address), tier: a.hero.tier, crest: crestColors(a.hero.address)[0], skin: h % 4, hair: (h >> 3) % 6 }, frame, false);
     } else if (a.kind === 'villager') {
-      s = villagerSprite(hashString(a.id), frame, true);
+      s = villagerArt(hashString(a.id), frame, true);
     } else {
-      s = npcSprite(a.kind === 'raven' ? 'raven' : a.kind === 'herald' ? 'herald' : 'bailiff', frame);
+      s = npcArt(a.kind === 'raven' ? 'raven' : a.kind === 'herald' ? 'herald' : 'bailiff', frame);
     }
     const scale = a.kind === 'hero' ? HERO_SCALE : a.kind === 'villager' ? 1.1 : 1.2;
     this.#placeSprite(body, s, a.x, a.y, lift, flip, scale);
     this.#shadow(a.x, a.y, a.kind === 'hero' ? (a.hero && a.hero.tier >= 5 ? 1.7 : 1.15) : a.kind === 'raven' ? 0.5 : 0.8, lift);
 
     const back = a.trail[a.flying ? 6 : 9];
-    const cs = a.kind === 'hero' && a.carrying !== null && a.carrying > 0 ? caravanSprite(a.carrying, frame, false) : null;
+    const cs = a.kind === 'hero' && a.carrying !== null && a.carrying > 0 ? caravanArt(a.carrying, frame, false) : null;
     caravan.visible = back !== undefined && cs !== null;
     if (back && cs) {
       this.#placeSprite(caravan, cs, back.x, back.y, lift * 0.6, flip, HERO_SCALE);

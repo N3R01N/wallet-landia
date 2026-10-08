@@ -97,3 +97,21 @@ describe('mergeHistory', () => {
     expect(mergeHistory([], many, 10)).toHaveLength(10);
   });
 });
+
+describe('LiveLoader valuations', () => {
+  it('re-measuring costs 4 (full), 2 (tokens) or 1 (total) requests', async () => {
+    const z = fakeZerion([tx('0xa', '2026-10-07T10:00:00Z')]);
+    const now = Date.parse('2026-10-08T12:00:00Z');
+    const budget = new DailyBudget({ storage: null, now: () => now });
+    const client = new ZerionClient({ apiKey: 'k', transport: 'direct', fetch: z.fetch, budget, requestsPerSecond: 1000 });
+    const loader = new LiveLoader({ apiKey: 'k', budget, cache: new MemoryKV(), client, now: () => now });
+    await loader.load(ADDR, 'me');
+    await loader.refreshValuations(ADDR, 'full');
+    expect(z.urls.length).toBe(9);
+    await loader.refreshValuations(ADDR, 'total');
+    expect(z.urls.length).toBe(10);
+    expect(z.urls[9]).toContain('/portfolio');
+    await loader.refreshValuations(ADDR, 'tokens');
+    expect(z.urls.length).toBe(12);
+  });
+});

@@ -10,8 +10,11 @@ import type { RawWallet } from '../data/zerion/endpoints.js';
 import { Session, type Shown } from '../data/session.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { guildPanel } from './guildPanel.js';
+import { looksPanel } from './looksPanel.js';
+import { assets } from '../assets/registry.js';
+import { loadBundledPacks, loadImportedPacks } from '../assets/packs.js';
 import { startHeartbeat, type BlockBeat } from '../data/rpc.js';
-import { BUILDING_NAMES } from '../domain/catalog.js';
+import { buildingName } from '../assets/art.js';
 import { planTown } from '../world/layout.js';
 import { Sim } from '../world/sim.js';
 import { Renderer } from '../render/renderer.js';
@@ -37,6 +40,7 @@ export class App {
   #set3dQuality: ((q: Prefs['quality']) => void) | null = null;
   #bookmark: (() => void) | null = null;
   #guildOpen = false;
+  #looksOpen = false;
   #guild!: Guild;
   #sim!: Sim;
   /** The view currently on screen. */
@@ -93,6 +97,21 @@ export class App {
 
   start(): void {
     void this.#session.home();
+    // Asset packs: restore the loadout, then load packs (bundled and imported).
+    assets.setLoadout(this.#prefs.loadout);
+    let rebuild: ReturnType<typeof setTimeout> | undefined;
+    let packCount = assets.packs.size;
+    assets.onChange(() => {
+      // Packs arriving (or removed) while the Looks panel is open: show them.
+      if (assets.packs.size !== packCount) {
+        packCount = assets.packs.size;
+        if (this.#looksOpen) this.#openLooks();
+      }
+      // Sprites re-resolve every frame; 3D meshes need a (debounced) rebuild.
+      clearTimeout(rebuild);
+      rebuild = setTimeout(() => this.#r3d?.setSim(this.#sim), 200);
+    });
+    void loadBundledPacks().then(() => loadImportedPacks()).catch((e: unknown) => console.warn('packs', e));
     if (new URLSearchParams(location.search).has('freeze')) this.#sim.playing = false;
     let last = performance.now();
     const frame = (now: number): void => {
@@ -150,6 +169,20 @@ export class App {
     this.#budget = snap;
     this.#inkEl.textContent = `✒ ${snap.remaining}`;
     this.#inkEl.classList.toggle('low', snap.remaining < 30);
+  }
+
+  #openLooks(): void {
+    this.#renderer.selected = null;
+    this.#openInspector(
+      looksPanel({
+        onLoadout: (loadout) => {
+          this.#prefs.loadout = { ...loadout };
+          savePrefs(this.#prefs);
+        },
+        refresh: () => this.#openLooks(),
+      }),
+    );
+    this.#looksOpen = true;
   }
 
   #openGuild(): void {
@@ -274,6 +307,8 @@ export class App {
       savePrefs(this.#prefs);
       this.#set3dQuality?.(this.#prefs.quality);
     };
+    const looksBtn = el('button', { class: 'btn' }, '🎨 Looks');
+    looksBtn.onclick = () => this.#openLooks();
     const guildBtn = el('button', { class: 'btn' }, '⚙ Guild');
     guildBtn.onclick = () => (this.#guildOpen ? this.#closeInspector() : this.#openGuild());
     this.#inkEl.onclick = () => this.#openGuild();
@@ -289,6 +324,7 @@ export class App {
       this.#statusEl,
       el('div', { class: 'spacer' }),
       this.#inkEl,
+      looksBtn,
       guildBtn,
     );
 
@@ -454,9 +490,13 @@ export class App {
     if (b.protocolId !== undefined) {
       const p = this.#guild.protocols.get(b.protocolId);
       const mine = this.#guild.heroes.flatMap((h) => h.stashes.filter((s) => s.protocolId === b.protocolId)).reduce((s, x) => s + x.netUsd, 0);
-      return [el('strong', {}, p?.name ?? '?'), el('div', {}, `${p ? BUILDING_NAMES[p.building] : ''}`), mine !== 0 ? el('div', {}, `your stash: ${approxUsd(mine)}`) : el('div', { class: 'muted' }, `${p?.visits ?? 0} visits`)];
+      return [el('strong', {}, p?.name ?? '?'), el('div', {}, `${p ? buildingName(p.building) : ''}`), mine !== 0 ? el('div', {}, `your stash: ${approxUsd(mine)}`) : el('div', { class: 'muted' }, `${p?.visits ?? 0} visits`)];
     }
-    const names: Record<string, string> = { tower: 'Chronicle Tower · the blockchain', guildhall: 'Guild Hall · all your wallets', gate: 'Town Gate · the outside world' };
+    const names: Record<string, string> = {
+      tower: `${buildingName('tower')} · the blockchain`,
+      guildhall: `${buildingName('guildhall')} · all your wallets`,
+      gate: `${buildingName('gate')} · the outside world`,
+    };
     return [el('strong', {}, names[b.kind] ?? b.kind)];
   }
 
@@ -517,6 +557,7 @@ export class App {
 
   #openInspector(body: HTMLElement, guild = false): void {
     this.#guildOpen = guild;
+    this.#looksOpen = false;
     this.#sim.route = null;
     this.#inspectorBody.replaceChildren(body);
     this.#inspector.hidden = false;
@@ -524,6 +565,7 @@ export class App {
 
   #closeInspector(): void {
     this.#guildOpen = false;
+    this.#looksOpen = false;
     this.#sim.route = null;
     this.#renderer.follow?.(null);
     this.#inspector.hidden = true;

@@ -1,0 +1,84 @@
+{
+  "format": "wallet-landia-pack/1",
+  "id": "ember-frost",
+  "name": "Ember & Frost",
+  "author": "Wallet-landia",
+  "version": "0.1.0",
+  "license": "CC0-1.0",
+  "description": "A wintry sample pack: an owl courier, a dog sled, ember coins, ice bars, a frost vault and snowy pines.",
+  "slots": {
+    "npc.raven": {
+      "sprite": {
+        "src": "owl.svg",
+        "ax": 10,
+        "ay": 20,
+        "frames": 2
+      }
+    },
+    "caravan.t3": {
+      "sprite": {
+        "src": "sled.svg",
+        "ax": 18,
+        "ay": 24,
+        "frames": 2
+      }
+    },
+    "item.native": {
+      "sprite": {
+        "src": "ember-coins.svg",
+        "ax": 0,
+        "ay": 0
+      }
+    },
+    "item.stable": {
+      "sprite": {
+        "src": "ice-bars.svg",
+        "ax": 0,
+        "ay": 0
+      }
+    },
+    "prop.pine": {
+      "sprite": {
+        "src": "snow-pine.svg",
+        "ax": 12,
+        "ay": 30
+      },
+      "model": {
+        "src": "snow-pine.gltf"
+      }
+    },
+    "building.bank": {
+      "top": {
+        "src": "vault-top.svg",
+        "ax": 0,
+        "ay": 64,
+        "sign": {
+          "x": 19,
+          "y": 9,
+          "w": 11,
+          "h": 11
+        }
+      },
+      "iso": {
+        "src": "vault-iso.svg",
+        "ax": 48,
+        "ay": 52
+      },
+      "model": {
+        "src": "vault.gltf"
+      }
+    },
+    "word.building.bank": {
+      "word": "Frost Vault"
+    },
+    "word.building.tower": {
+      "word": "Ember Clocktower"
+    },
+    "word.district.temple": {
+      "word": "Ember Shrine Hill"
+    },
+    "word.district.wilds": {
+      "word": "The Frostwood"
+    }
+  }
+}

@@ -22,6 +22,10 @@ This opens the town with whatever is in `fixtures/`. If there are no real captur
 
 Open **⚙ Guild**, paste your free Zerion key (stored only in this browser), and add your wallets by address, ENS name or "Connect wallet". The town goes live: cached in IndexedDB, and updated when the chain shows one of your wallets changed. Follow other addresses to visit their towns. The ✒ counter shows Zerion requests left today (300 on the free plan).
 
+## Looks (asset packs)
+
+**🎨 Looks** restyles the town with asset packs: heroes, townsfolk, caravans, treasure icons, 2D and 3D buildings, scenery, and place names. Packs are data only (images, glTF models, words). Try the bundled **Ember & Frost** pack with "Use everywhere", or import your own pack folder. To make one, see [`docs/PACKS.md`](docs/PACKS.md).
+
 ## Captured fixtures (for development)
 
 Put your free Zerion key in `.env.local` (gitignored) as `ZERION_API_KEY=zk_...`, then:

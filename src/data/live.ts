@@ -93,22 +93,44 @@ export class LiveLoader {
   }
 
   /** One request: anything new since the last transaction we know of? */
-  async refreshHistory(address: string): Promise<{ raw: RawWallet; added: number } | null> {
+  async refreshHistory(address: string): Promise<{ raw: RawWallet; added: number; fresh: TransactionResource[] } | null> {
     const cached = await this.#cache.get<Entry>(key(address));
     if (cached === undefined) return null;
-    const { raw, added } = await this.#refreshTail(cached.raw);
+    const { raw, added, fresh } = await this.#refreshTail(cached.raw);
     const now = this.#now();
     raw.capturedAt = now;
     await this.#cache.put(key(address), { ...cached, raw, historyAt: now } satisfies Entry);
-    return { raw, added };
+    return { raw, added, fresh };
   }
 
-  async #refreshTail(raw: RawWallet): Promise<{ raw: RawWallet; added: number }> {
+  async #refreshTail(raw: RawWallet): Promise<{ raw: RawWallet; added: number; fresh: TransactionResource[] }> {
     const newest = raw.transactions.reduce((m, t) => Math.max(m, Date.parse(t.attributes.mined_at) || 0), 0);
-    const fresh = await getTransactions(this.client, raw.address, newest > 0 ? { since: newest - OVERLAP_MS } : {});
+    const fetched = await getTransactions(this.client, raw.address, newest > 0 ? { since: newest - OVERLAP_MS } : {});
     const known = new Set(raw.transactions.map(txKey));
-    const added = fresh.filter((t) => !known.has(txKey(t))).length;
-    return { raw: { ...raw, transactions: mergeHistory(raw.transactions, fresh) }, added };
+    const fresh = fetched.filter((t) => !known.has(txKey(t)));
+    return { raw: { ...raw, transactions: mergeHistory(raw.transactions, fetched) }, added: fresh.length, fresh };
+  }
+
+  /**
+   * Re-measure a wallet, spending only what the change calls for:
+   * - `full`: portfolio, tokens, DeFi positions and NFTs (4 requests);
+   * - `tokens`: portfolio and token balances (2), after a plain send/receive;
+   * - `total`: the portfolio total only (1), for price drift.
+   */
+  async refreshValuations(address: string, mode: 'full' | 'tokens' | 'total'): Promise<RawWallet | null> {
+    const cached = await this.#cache.get<Entry>(key(address));
+    if (cached === undefined) return null;
+    const portfolio = (): Promise<RawWallet['portfolio']> => getPortfolio(this.client, cached.raw.address).catch(() => cached.raw.portfolio);
+    const raw =
+      mode === 'full'
+        ? await this.#refreshValuations(cached.raw)
+        : mode === 'tokens'
+          ? { ...cached.raw, ...(await Promise.all([portfolio(), getPositions(this.client, cached.raw.address, 'only_simple')]).then(([p, simple]) => ({ portfolio: p, simple }))) }
+          : { ...cached.raw, portfolio: await portfolio() };
+    const now = this.#now();
+    raw.capturedAt = now;
+    await this.#cache.put(key(address), { ...cached, raw, valuationsAt: mode === 'full' ? now : cached.valuationsAt } satisfies Entry);
+    return raw;
   }
 
   async #refreshValuations(raw: RawWallet): Promise<RawWallet> {

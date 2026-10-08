@@ -3,14 +3,14 @@
  * building's interior. Approximate values live in the world; exact ones here.
  */
 
-import { BUILDING_NAMES, CATEGORY_LABEL } from '../domain/catalog.js';
+import { CATEGORY_LABEL } from '../domain/catalog.js';
+import { buildingName, districtName, heroArt, itemArt } from '../assets/art.js';
 import { CLASS_LABEL, type Goods, type Guild, type Hero, type HeroClass, type Item, type Journey, type Target, type Verb } from '../domain/model.js';
 import { verbText } from '../domain/mappers.js';
 import { TIER_COLORS, TIER_NAMES, approxUsd, exactUsd, formatQty } from '../domain/tiers.js';
-import { heroSprite, MOUNT_NAMES } from '../render/characters.js';
-import { itemIcon } from '../render/icons.js';
+import { MOUNT_NAMES } from '../render/characters.js';
 import { crestColors, hashString } from '../util/rng.js';
-import { DISTRICT_NAMES, type Placed } from '../world/layout.js';
+import type { Placed } from '../world/layout.js';
 import type { BlockBeat } from '../data/rpc.js';
 import { el, fmtDate, safeHref, shortAddr } from './dom.js';
 
@@ -53,7 +53,7 @@ function chip(text: string, color: string): HTMLElement {
 
 function portrait(hero: Hero, cls: HeroClass): HTMLCanvasElement {
   const h = hashString(hero.address);
-  const s = heroSprite({ address: hero.address, cls, tier: hero.tier, crest: crestColors(hero.address)[0], skin: h % 4, hair: (h >> 3) % 6 }, 0);
+  const s = heroArt({ address: hero.address, cls, tier: hero.tier, crest: crestColors(hero.address)[0], skin: h % 4, hair: (h >> 3) % 6 }, 0);
   const canvas = el('canvas', { class: 'portrait' });
   const scale = 4;
   canvas.width = s.canvas.width * scale;
@@ -68,7 +68,7 @@ function portrait(hero: Hero, cls: HeroClass): HTMLCanvasElement {
 
 function itemSlot(item: Item | null, opts: { pouch?: { count: number; usd: number } } = {}): HTMLElement {
   const slot = el('div', { class: 'slot' });
-  const icon = itemIcon(item === null ? 'pouch' : item.category);
+  const icon = itemArt(item === null ? 'pouch' : item.category);
   const canvas = el('canvas', { class: 'slot-icon' });
   canvas.width = 32;
   canvas.height = 32;
@@ -147,7 +147,7 @@ export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
       return el(
         'div',
         { class: 'stash' },
-        el('div', { class: 'stash-head' }, el('strong', {}, p?.name ?? s.protocolId), el('span', { class: 'muted' }, ` · ${p ? BUILDING_NAMES[p.building] : ''}`), chip(approxUsd(s.netUsd), TIER_COLORS[s.tier] ?? '#888')),
+        el('div', { class: 'stash-head' }, el('strong', {}, p?.name ?? s.protocolId), el('span', { class: 'muted' }, ` · ${p ? buildingName(p.building) : ''}`), chip(approxUsd(s.netUsd), TIER_COLORS[s.tier] ?? '#888')),
         ...s.entries.map((e) =>
           el('div', { class: `stash-row${e.kind === 'loan' ? ' debt' : ''}` }, el('span', {}, `${e.kind === 'loan' ? 'IOU' : e.kind} · ${formatQty(e.quantity)} ${e.symbol}`), el('span', {}, exactUsd(e.usd))),
         ),
@@ -181,10 +181,10 @@ export function buildingPanel(b: Placed, ctx: PanelContext): HTMLElement {
     if (hero) return heroPanel(hero, ctx);
   }
   const protocol = b.protocolId !== undefined ? ctx.guild.protocols.get(b.protocolId) : undefined;
-  const district = b.district === 'gate' ? 'Town Gate' : DISTRICT_NAMES[b.district];
+  const district = b.district === 'gate' ? buildingName('gate') : districtName(b.district);
 
   if (protocol === undefined) {
-    const title = b.kind === 'tower' ? 'The Chronicle Tower' : b.kind === 'guildhall' ? 'Guild Hall' : 'Town Gate';
+    const title = buildingName(b.kind === 'tower' ? 'tower' : b.kind === 'guildhall' ? 'guildhall' : 'gate');
     const body = el('div', { class: 'panel-body' }, el('h2', {}, title), el('div', { class: 'muted' }, district), el('p', {}, EXPLAIN[b.kind] ?? ''));
     if (b.kind === 'tower') {
       const beat = ctx.beat;
@@ -228,7 +228,7 @@ export function buildingPanel(b: Placed, ctx: PanelContext): HTMLElement {
   return el(
     'div',
     { class: 'panel-body' },
-    el('div', { class: 'sheet-head' }, logo, el('div', {}, el('h2', {}, protocol.name), el('div', { class: 'muted' }, `${BUILDING_NAMES[protocol.building]} · ${CATEGORY_LABEL[protocol.category]}`), el('div', { class: 'muted' }, district))),
+    el('div', { class: 'sheet-head' }, logo, el('div', {}, el('h2', {}, protocol.name), el('div', { class: 'muted' }, `${buildingName(protocol.building)} · ${CATEGORY_LABEL[protocol.category]}`), el('div', { class: 'muted' }, district))),
     el('p', {}, EXPLAIN[protocol.building] ?? ''),
     href ? el('p', {}, el('a', { href, target: '_blank', rel: 'noopener noreferrer' }, 'Visit the real thing ↗')) : null,
     el('h3', {}, 'Your stashes here'),
@@ -314,7 +314,7 @@ function placeName(target: Target, ctx: PanelContext): string {
   switch (target.kind) {
     case 'building': {
       const p = ctx.guild.protocols.get(target.protocolId);
-      return p ? `${p.name} (${BUILDING_NAMES[p.building]} · ${CATEGORY_LABEL[p.category]})` : target.protocolId;
+      return p ? `${p.name} (${buildingName(p.building)} · ${CATEGORY_LABEL[p.category]})` : target.protocolId;
     }
     case 'home':
       return `${ctx.guild.heroes.find((h) => h.address === target.address)?.name ?? shortAddr(target.address)}'s home`;

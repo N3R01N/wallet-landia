@@ -5,7 +5,8 @@
  */
 
 import { TIER_COLORS, approxUsd } from '../domain/tiers.js';
-import { DISTRICT_NAMES, type District } from '../world/layout.js';
+import type { District } from '../world/layout.js';
+import { districtName } from '../assets/art.js';
 import type { Route, Sim } from '../world/sim.js';
 
 export type Project = (x: number, y: number, z?: number) => [number, number] | null;
@@ -29,9 +30,10 @@ export function districtLabels(c: CanvasRenderingContext2D, project: Project): v
     const p = project(x, y);
     if (p === null) continue;
     c.fillStyle = 'rgba(40,30,20,0.55)';
-    c.fillText(DISTRICT_NAMES[d].toUpperCase(), p[0] + 1, p[1] + 1);
+    const name = districtName(d).toUpperCase();
+    c.fillText(name, p[0] + 1, p[1] + 1);
     c.fillStyle = 'rgba(255,248,230,0.85)';
-    c.fillText(DISTRICT_NAMES[d].toUpperCase(), p[0], p[1]);
+    c.fillText(name, p[0], p[1]);
   }
 }
 

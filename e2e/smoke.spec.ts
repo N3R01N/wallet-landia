@@ -30,7 +30,8 @@ async function findSomethingToHover(page: Page): Promise<{ x: number; y: number 
 for (const [key, name] of [['t', 'top-down'], ['i', 'isometric'], ['3', '3D']] as const) {
   test(`${name} view renders, hovers and opens a panel`, async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/');
+    // Frozen replay: nothing walks away between the hover and the click.
+    await page.goto('/?freeze');
     await expect(page.locator('.topbar')).toBeVisible();
     await page.keyboard.press(key);
     await page.waitForTimeout(key === '3' ? 4000 : 1500);

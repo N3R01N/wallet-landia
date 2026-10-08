@@ -21,6 +21,8 @@ export interface Prefs {
   ens: Record<string, string>;
   /** 3D image quality: low (no post), medium (bloom + grade), high (+ ambient occlusion). */
   quality: 'low' | 'medium' | 'high';
+  /** Which asset pack draws each slot (slot key → pack id). */
+  loadout: Record<string, string>;
 }
 
 const KEY = 'wallet-landia-v4/prefs/v1';
@@ -34,6 +36,7 @@ const DEFAULTS: Prefs = {
   followed: [],
   ens: {},
   quality: 'medium',
+  loadout: {},
 };
 
 export function loadPrefs(): Prefs {
