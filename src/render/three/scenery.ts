@@ -17,16 +17,16 @@ export interface Lamp {
 /** Lamps along the streets, beside (not on) the road, away from doors. */
 export function placeLamps(plan: TownPlan): Lamp[] {
   const lamps: Lamp[] = [];
-  const doors = plan.buildings.map((b) => b.door);
+  const doors = plan.buildings.map((b) => b.doorAt);
   const free = (x: number, y: number): boolean =>
-    x >= 0 && y >= 0 && x < MAP_W && y < MAP_H && plan.walkable[y * MAP_W + x] === 1 && tileAt(plan, x, y) !== 'road' && tileAt(plan, x, y) !== 'water';
+    x >= 0 && y >= 0 && x < MAP_W && y < MAP_H && plan.walkable[y * MAP_W + x] === 1 && !['road', 'path', 'plaza', 'water'].includes(tileAt(plan, x, y));
   for (let y = 0; y < MAP_H; y++) {
     for (let x = 0; x < MAP_W; x++) {
       if (tileAt(plan, x, y) !== 'road' || (x * 3 + y * 5) % 7 !== 0) continue;
       const side = ([[0, 1], [1, 0], [0, -1], [-1, 0]] as const).find(([dx, dy]) => free(x + dx, y + dy));
       if (side === undefined) continue;
       const lamp = { x: x + 0.5 + side[0] * 0.62, y: y + 0.5 + side[1] * 0.62 };
-      if (doors.some((d) => Math.hypot(d.x + 0.5 - lamp.x, d.y + 0.5 - lamp.y) < 1.6)) continue;
+      if (doors.some((d) => Math.hypot(d.x - lamp.x, d.y - lamp.y) < 1.6)) continue;
       if (lamps.some((l) => Math.hypot(l.x - lamp.x, l.y - lamp.y) < 4.2)) continue;
       lamps.push(lamp);
     }

@@ -14,7 +14,8 @@ import { hashString } from '../util/rng.js';
 export const MAP_W = 48;
 export const MAP_H = 36;
 
-export type TileKind = 'grass' | 'road' | 'plaza' | 'water' | 'wilds' | 'sand';
+/** `path`: a footpath carved from a door to the nearest road. */
+export type TileKind = 'grass' | 'road' | 'plaza' | 'water' | 'wilds' | 'sand' | 'path';
 
 export type District = 'temple' | 'alchemy' | 'civic' | 'wilds' | 'counting' | 'square' | 'market' | 'guild' | 'harbour';
 
@@ -48,7 +49,7 @@ const DISTRICT_OF: Record<BuildingKind, District> = {
 };
 
 /** Top-left tile of a 3×3 footprint; the door is the tile below its middle. */
-const SLOTS: Record<District, [number, number][]> = {
+export const SLOTS: Record<District, [number, number][]> = {
   temple: [[2, 8], [7, 8], [2, 4], [7, 4]],
   alchemy: [[14, 8], [19, 8], [14, 4], [19, 4]],
   civic: [[26, 8], [31, 8], [26, 4], [31, 4]],
@@ -57,7 +58,7 @@ const SLOTS: Record<District, [number, number][]> = {
   square: [[30, 15], [19, 15], [26, 15], [33, 15]],
   market: [[38, 15], [43, 15], [38, 22], [43, 22], [30, 22], [33, 22]],
   guild: [[2, 22], [7, 22], [14, 22], [19, 22], [2, 29], [7, 29], [14, 29], [19, 29]],
-  harbour: [[32, 29], [27, 29], [32, 32], [28, 32]],
+  harbour: [[32, 29], [27, 29]],
 };
 
 /** Overflow goes to the Wilds, then anywhere free. Never dropped. */
@@ -72,7 +73,10 @@ export interface Placed {
   y: number;
   w: number;
   h: number;
+  /** The door's tile (integer tile coordinates, just below the footprint). */
   door: { x: number; y: number };
+  /** The world point at the door: the centre of the door tile. People stand here. */
+  doorAt: Pt;
   protocolId?: string;
   heroAddress?: string;
   district: District | 'gate';
@@ -119,7 +123,8 @@ function baseTiles(): TileKind[] {
 }
 
 function makePlaced(id: string, kind: PlacedKind, x: number, y: number, w: number, h: number, district: Placed['district']): Placed {
-  return { id, kind, x, y, w, h, door: { x: x + Math.floor(w / 2), y: y + h }, district };
+  const door = { x: x + Math.floor(w / 2), y: y + h };
+  return { id, kind, x, y, w, h, door, doorAt: { x: door.x + 0.5, y: door.y + 0.5 }, district };
 }
 
 export function planTown(guild: Guild): TownPlan {
@@ -131,6 +136,7 @@ export function planTown(guild: Guild): TownPlan {
   const guildhall = makePlaced('guildhall', 'guildhall', 15, 14, 4, 4, 'square');
   const gate = makePlaced('gate', 'gate', 23, 33, 3, 2, 'gate');
   gate.door = { x: 24, y: 32 };
+  gate.doorAt = { x: 24.5, y: 32.5 };
   buildings.push(tower, guildhall, gate);
 
   const homes = new Map<string, Placed>();
@@ -183,7 +189,51 @@ export function planTown(guild: Guild): TownPlan {
     if (b.kind === 'gate') continue;
     for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) walkable[y * MAP_W + x] = 0;
   }
+  carveFootpaths(tiles, walkable, buildings);
   return { tiles, buildings, byProtocol, homes, tower, guildhall, gate, walkable };
+}
+
+const isStreet = (k: TileKind | undefined): boolean => k === 'road' || k === 'plaza' || k === 'path';
+
+/**
+ * Every door gets a footpath to the street network: a breadth-first search
+ * from the door tile over walkable ground to the nearest road or plaza, and
+ * the grass on the way becomes path. People then never need to cross lawns.
+ */
+function carveFootpaths(tiles: TileKind[], walkable: Uint8Array, buildings: Placed[]): void {
+  for (const b of buildings) {
+    const start = b.door.y * MAP_W + b.door.x;
+    if (walkable[start] !== 1) continue; // reported by the layout tests
+    const came = new Int32Array(MAP_W * MAP_H).fill(-2);
+    came[start] = -1;
+    const queue = [start];
+    let found = -1;
+    while (queue.length > 0) {
+      const i = queue.shift()!;
+      const k = tiles[i];
+      if ((k === 'road' || k === 'plaza') && i !== start) {
+        found = i;
+        break;
+      }
+      const x = i % MAP_W;
+      const y = Math.floor(i / MAP_W);
+      // Prefer heading away from the building first, then sideways.
+      for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) continue;
+        const n = ny * MAP_W + nx;
+        if (came[n] !== -2 || walkable[n] !== 1 || tiles[n] === 'water') continue;
+        came[n] = i;
+        queue.push(n);
+      }
+    }
+    if (tiles[start] === 'road' || tiles[start] === 'plaza') continue;
+    for (let i = found === -1 ? -1 : (came[found] ?? -1); i >= 0; i = came[i] ?? -1) {
+      if (!isStreet(tiles[i])) tiles[i] = 'path';
+    }
+    if (!isStreet(tiles[start])) tiles[start] = 'path';
+  }
 }
 
 function claim(slots: readonly [number, number][], id: string, used: Set<string>): [number, number] | null {
@@ -202,8 +252,8 @@ function claim(slots: readonly [number, number][], id: string, used: Set<string>
 }
 
 /** Last resort for a very busy town: spare plots along the edges. */
-const SPARE: [number, number][] = [
-  [8, 0], [14, 0], [19, 0], [26, 0], [31, 0], [2, 0], [9, 32], [16, 32], [2, 32], [27, 22],
+export const SPARE: [number, number][] = [
+  [8, 0], [14, 0], [19, 0], [26, 0], [31, 0], [2, 0], [9, 32], [16, 32], [27, 22],
 ];
 function claimAny(used: Set<string>): [number, number] | null {
   return claim(SPARE, 'spare', used);
@@ -214,18 +264,23 @@ function claimAny(used: Set<string>): [number, number] | null {
 export interface Pt {
   x: number;
   y: number;
+  /** Height above the ground in tiles (flyers only). */
+  z?: number;
 }
 
+/** What a step onto each kind of tile costs. Streets are the way; lawns are a last resort. */
+const STEP_COST: Record<TileKind, number> = { road: 1, plaza: 1, path: 1, sand: 4, grass: 40, wilds: 40, water: Infinity };
+
 /**
- * A* on the tile grid. Roads and the plaza are cheap, grass costs more, so
- * people walk the streets but will cut across a lawn when it is much shorter.
+ * A* on the tile grid, returning tile *centres* (a tile spans [x, x+1]).
+ * Positions are world points; the tile under a point is its floor.
  */
 export function findPath(plan: TownPlan, from: Pt, to: Pt): Pt[] {
   const idx = (x: number, y: number): number => y * MAP_W + x;
-  const sx = clampX(Math.round(from.x));
-  const sy = clampY(Math.round(from.y));
-  const tx = clampX(Math.round(to.x));
-  const ty = clampY(Math.round(to.y));
+  const sx = clampX(Math.floor(from.x));
+  const sy = clampY(Math.floor(from.y));
+  const tx = clampX(Math.floor(to.x));
+  const ty = clampY(Math.floor(to.y));
   const start = idx(sx, sy);
   const goal = idx(tx, ty);
   const g = new Float32Array(MAP_W * MAP_H).fill(Infinity);
@@ -248,8 +303,7 @@ export function findPath(plan: TownPlan, from: Pt, to: Pt): Pt[] {
       if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) continue;
       const ni = idx(nx, ny);
       if (plan.walkable[ni] === 0 && ni !== goal) continue;
-      const kind = plan.tiles[ni];
-      const cost = kind === 'road' || kind === 'plaza' ? 1 : kind === 'sand' ? 2 : 3;
+      const cost = STEP_COST[plan.tiles[ni] ?? 'grass'];
       const ng = (g[cur.i] ?? Infinity) + cost;
       if (ng < (g[ni] ?? Infinity)) {
         g[ni] = ng;
@@ -262,7 +316,7 @@ export function findPath(plan: TownPlan, from: Pt, to: Pt): Pt[] {
   if (came[goal] === -1 && goal !== start) return [from, to];
   const path: Pt[] = [];
   for (let i = goal; i !== -1; i = came[i] ?? -1) {
-    path.push({ x: i % MAP_W, y: Math.floor(i / MAP_W) });
+    path.push({ x: (i % MAP_W) + 0.5, y: Math.floor(i / MAP_W) + 0.5 });
     if (i === start) break;
   }
   return path.reverse();

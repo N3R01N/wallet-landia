@@ -31,6 +31,8 @@ interface Drawable {
 }
 
 const TOP_T = 16;
+/** Art pixels per tile of height, for flyers in the 2D views. */
+const ALT_PX = 7;
 
 /** The 2D renderer: one class, two projections (top-down and isometric). */
 export class Renderer implements WorldView {
@@ -185,9 +187,9 @@ export class Renderer implements WorldView {
       return [p[0], p[1] - 30];
     }, 0);
     if (this.scale >= 1.4) {
-      nameTags(c, sim, (x, y, flying) => {
+      nameTags(c, sim, (x, y, alt) => {
         const [sx, sy] = this.toScreen(x, y);
-        return [sx, sy - 40 * this.scale * 0.5 - (flying ? 12 : 0) * this.scale - 6];
+        return [sx, sy - 40 * this.scale * 0.5 - alt * ALT_PX * this.scale - 6];
       });
     }
   }
@@ -306,7 +308,23 @@ export class Renderer implements WorldView {
     const frame = moving ? Math.floor(a.phase) : 0;
     const bob = moving ? 0 : Math.sin(a.phase * 2) * 0.4;
     const flip = a.facing < 0;
-    const lift = a.flying && (moving || a.kind === 'raven') ? 10 + Math.sin(a.phase) * 2 : 0;
+    // Height comes from the simulation (flyers cruise above the roofs).
+    const airborne = a.alt > 0.05;
+    const lift = a.alt * ALT_PX + (airborne ? Math.sin(a.phase) * 2 : 0);
+    if (airborne) {
+      // a shadow on the ground beneath the flyer, smaller the higher it is
+      const r = Math.max(2, 7 - a.alt * 0.5);
+      out.push({
+        depth: this.#depth(a.x, a.y) - 0.02,
+        draw: () => {
+          const [gx, gy] = this.toArt(a.x, a.y);
+          this.ctx.fillStyle = 'rgba(30,20,10,0.22)';
+          this.ctx.beginPath();
+          this.ctx.ellipse(gx, gy, r, r * 0.4, 0, 0, Math.PI * 2);
+          this.ctx.fill();
+        },
+      });
+    }
 
     // the caravan follows on the trail, one or two steps behind
     if (a.carrying !== null && a.carrying > 0 && a.kind === 'hero') {
@@ -324,6 +342,7 @@ export class Renderer implements WorldView {
           s = heroArt(
             { address: a.hero.address, cls: this.classOf(a.hero.address), tier: a.hero.tier, crest: crestColors(a.hero.address)[0], skin: h % 4, hair: (h >> 3) % 6 },
             frame,
+            !airborne,
           );
         } else if (a.kind === 'villager') {
           s = villagerArt(hashString(a.id), frame, true);

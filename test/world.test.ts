@@ -66,10 +66,10 @@ describe('planTown', () => {
     const plan = planTown(buildGuild(demo));
     for (const home of plan.homes.values()) {
       for (const b of plan.buildings) {
-        const path = findPath(plan, home.door, b.door);
+        const path = findPath(plan, home.doorAt, b.doorAt);
         const end = path[path.length - 1];
-        expect(end).toEqual({ x: b.door.x, y: b.door.y });
-        for (const p of path.slice(0, -1)) expect(plan.walkable[p.y * MAP_W + p.x]).toBe(1);
+        expect(end).toEqual(b.doorAt); // tile centres: the door point itself
+        for (const p of path) expect(plan.walkable[Math.floor(p.y) * MAP_W + Math.floor(p.x)]).toBe(1);
       }
     }
   });
@@ -99,10 +99,15 @@ describe('Quest Replay', () => {
     expect(r.stops.map((s) => s.label)).toEqual(['Toll', ...j.steps.map((s) => s.verb), 'Home']);
     expect(r.stops.map((s) => s.n)).toEqual(r.stops.map((_, i) => i + 1));
     expect(r.points[0]).toEqual(r.points[r.points.length - 1]); // a round trip
+    // continuous along walkable ground (straight runs may be long single segments)
     for (let i = 1; i < r.points.length; i++) {
       const a = r.points[i - 1]!;
       const b = r.points[i]!;
-      expect(Math.abs(a.x - b.x) + Math.abs(a.y - b.y)).toBeLessThanOrEqual(1.6); // continuous
+      for (let t = 0; t <= 1; t += 0.05) {
+        const x = Math.floor(a.x + (b.x - a.x) * t);
+        const y = Math.floor(a.y + (b.y - a.y) * t);
+        expect(plan.walkable[y * MAP_W + x]).toBe(1);
+      }
     }
   });
 

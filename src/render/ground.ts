@@ -17,9 +17,24 @@ const BASE: Record<TileKind, string> = {
   water: '#4a90c8',
   wilds: '#4f8a46',
   sand: '#e6d29a',
+  path: '#d6bb8a',
 };
 
-function tileTexture(c: CanvasRenderingContext2D, kind: TileKind, x: number, y: number, ox: number, oy: number): void {
+/** Which sides of a tile border something that is not street (for footpath edges). */
+type Edges = { n: boolean; s: boolean; e: boolean; w: boolean };
+const NO_EDGES: Edges = { n: false, s: false, e: false, w: false };
+
+function edgesOf(plan: TownPlan, x: number, y: number): Edges {
+  const street = (k: TileKind): boolean => k === 'road' || k === 'plaza' || k === 'path';
+  return {
+    n: !street(tileAt(plan, x, y - 1)),
+    s: !street(tileAt(plan, x, y + 1)),
+    e: !street(tileAt(plan, x + 1, y)),
+    w: !street(tileAt(plan, x - 1, y)),
+  };
+}
+
+function tileTexture(c: CanvasRenderingContext2D, kind: TileKind, x: number, y: number, ox: number, oy: number, edges: Edges = NO_EDGES): void {
   const rng = makeRng(hashString(`${x},${y}`));
   const base = BASE[kind];
   px(c, ox, oy, T, T, (x + y) % 2 === 0 ? base : shade(base, -0.04));
@@ -32,6 +47,16 @@ function tileTexture(c: CanvasRenderingContext2D, kind: TileKind, x: number, y: 
     case 'road':
       for (let i = 0; i < 4; i++) px(c, ox + rng() * 14, oy + rng() * 14, 2, 1, shade(base, -0.15));
       break;
+    case 'path': {
+      // a trodden footpath: grass creeps in only where it borders lawn
+      const g = shade(BASE.grass, -0.05);
+      if (edges.w) px(c, ox, oy, 2, T, g);
+      if (edges.e) px(c, ox + T - 2, oy, 2, T, g);
+      if (edges.n) px(c, ox, oy, T, 2, g);
+      if (edges.s) px(c, ox, oy + T - 2, T, 2, g);
+      for (let i = 0; i < 3; i++) px(c, ox + 4 + rng() * 7, oy + 3 + rng() * 9, 3, 2, shade(base, 0.15));
+      break;
+    }
     case 'plaza':
       px(c, ox, oy, T, 1, shade(base, -0.12));
       px(c, ox, oy, 1, T, shade(base, -0.12));
@@ -59,7 +84,7 @@ export function bakeTopGround(plan: TownPlan): Ground {
   canvas.height = MAP_H * T;
   const c = canvas.getContext('2d');
   if (c === null) throw new Error('no 2d');
-  for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) tileTexture(c, tileAt(plan, x, y), x, y, x * T, y * T);
+  for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) tileTexture(c, tileAt(plan, x, y), x, y, x * T, y * T, edgesOf(plan, x, y));
   return { canvas, x: 0, y: 0 };
 }
 
@@ -80,7 +105,7 @@ export function bakeIsoGround(plan: TownPlan): Ground {
   const ox = MAP_H * ISO_W;
   for (let y = 0; y < MAP_H; y++) {
     for (let x = 0; x < MAP_W; x++) {
-      tileTexture(tc, tileAt(plan, x, y), x, y, 0, 0);
+      tileTexture(tc, tileAt(plan, x, y), x, y, 0, 0, edgesOf(plan, x, y));
       const sx = ox + (x - y) * ISO_W;
       const sy = (x + y) * ISO_H;
       c.setTransform(ISO_W / T, ISO_H / T, -ISO_W / T, ISO_H / T, sx, sy);
@@ -114,7 +139,7 @@ export function scatterProps(plan: TownPlan): Prop[] {
       for (let dy = -1; dy <= 1; dy++)
         for (let dx = -1; dx <= 1; dx++) {
           const n = tileAt(plan, x + dx, y + dy);
-          if (n === 'road' || n === 'plaza' || plan.walkable[(y + dy) * MAP_W + x + dx] === 0) nearRoad = true;
+          if (n === 'road' || n === 'plaza' || n === 'path' || plan.walkable[(y + dy) * MAP_W + x + dx] === 0) nearRoad = true;
         }
       if (nearRoad) continue;
       const r = rng();

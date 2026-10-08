@@ -7,7 +7,8 @@
 import type { Guild, Hero, HeroClass, Journey, Target, Verb } from '../domain/model.js';
 import type { Tier } from '../domain/tiers.js';
 import { makeRng } from '../util/rng.js';
-import { findPath, type Placed, type Pt, type TownPlan } from './layout.js';
+import { type Placed, type Pt, type TownPlan } from './layout.js';
+import { doorSlot, flightRoute, walkRoute } from './route.js';
 
 // --- schedule ----------------------------------------------------------------
 
@@ -42,7 +43,8 @@ export function schedule(journeys: readonly Journey[]): Scheduled[] {
 export type AgentKind = 'hero' | 'raven' | 'villager' | 'herald' | 'bailiff';
 
 type Task =
-  | { type: 'walk'; to: Pt; fly?: boolean }
+  /** `door`: arriving at a building, so claim a free waiting spot there. */
+  | { type: 'walk'; to: Pt; fly?: boolean; door?: Placed }
   | { type: 'act'; verb: Verb | 'toll' | 'give' | 'seize'; seconds: number; at?: Pt; journey?: Journey }
   | { type: 'vanish' };
 
@@ -58,6 +60,10 @@ export interface Agent {
   facing: 1 | -1;
   speed: number;
   flying: boolean;
+  /** Height above the ground, in tiles (flyers in the air). */
+  alt: number;
+  /** The door this agent is waiting at, if any (see door slots). */
+  slotAt: string | null;
   /** Value tier of what is being carried right now, or null when empty-handed. */
   carrying: Tier | null;
   journey: Journey | null;
@@ -174,10 +180,12 @@ export class Sim {
     this.#next = this.scheduled.findIndex((s) => s.at >= this.t);
     if (this.#next === -1) this.#next = this.scheduled.length;
     this.agents = this.agents.filter((a) => a.kind === 'hero' || a.kind === 'villager');
+    this.#slots.clear();
     for (const a of this.agents) {
+      a.slotAt = null;
       if (a.kind !== 'hero' || a.hero === undefined) continue;
       const home = this.plan.homes.get(a.hero.address);
-      if (home) Object.assign(a, { x: home.door.x, y: home.door.y + 0.6 });
+      if (home) Object.assign(a, { x: home.doorAt.x, y: home.doorAt.y, alt: 0 });
       a.tasks = [];
       a.path = [];
       a.acting = null;
@@ -199,11 +207,12 @@ export class Sim {
     const hero = this.#heroAgents.get(j.hero);
     if (hero !== undefined) {
       const home = this.plan.homes.get(j.hero);
-      if (home) Object.assign(hero, { x: home.door.x, y: home.door.y + 0.6 });
+      if (home) Object.assign(hero, { x: home.doorAt.x, y: home.doorAt.y, alt: 0 });
       hero.tasks = [];
       hero.path = [];
       hero.acting = null;
       hero.trail = [];
+      this.#releaseSlot(hero);
     }
     const before = new Set(this.agents);
     this.#dispatch(j);
@@ -215,24 +224,26 @@ export class Sim {
   /** The path a journey takes through town, with its stops numbered. */
   routeFor(j: Journey): Route {
     const home = this.plan.homes.get(j.hero);
-    const start: Pt = home ? { x: home.door.x, y: home.door.y + 0.6 } : this.plan.gate.door;
+    const start: Pt = home ? home.doorAt : this.plan.gate.doorAt;
+    const hero = this.#heroAgents.get(j.hero);
+    const travel = (a: Pt, b: Pt, fly: boolean): Pt[] => (fly ? flightRoute(a, b) : walkRoute(this.plan, a, b)).map((p) => ({ x: p.x, y: p.y }));
     const legs: { to: Pt; label: string }[] = [];
     if (j.initiated) {
-      if (j.feeUsd !== null && j.feeUsd > 0) legs.push({ to: this.plan.tower.door, label: 'Toll' });
+      if (j.feeUsd !== null && j.feeUsd > 0) legs.push({ to: this.plan.tower.doorAt, label: 'Toll' });
       for (const step of j.steps) legs.push({ to: this.#targetPoint(step.target, j.hero), label: step.verb });
       legs.push({ to: start, label: 'Home' });
     } else {
       // Something arrived: the route runs from where it came from to the home.
       const first = j.steps[0];
-      const from = first === undefined || first.target.kind === 'home' ? this.plan.gate.door : this.#targetPoint(first.target, j.hero);
-      const points = [from, ...findPath(this.plan, from, start).slice(1)];
+      const from = first === undefined || first.target.kind === 'home' ? this.plan.gate.doorAt : this.#targetPoint(first.target, j.hero);
+      const points = [from, ...travel(from, start, j.verb !== 'airdrop')];
       return { key: j.key, points, stops: [{ at: from, n: 1, label: 'From' }, { at: start, n: 2, label: 'Home' }] };
     }
     const points: Pt[] = [start];
     const stops: Route['stops'] = [];
     let cur = start;
     legs.forEach((leg, i) => {
-      points.push(...findPath(this.plan, cur, leg.to).slice(1, -1), leg.to);
+      points.push(...travel(cur, leg.to, hero?.flying === true));
       stops.push({ at: leg.to, n: i + 1, label: leg.label });
       cur = leg.to;
     });
@@ -305,8 +316,8 @@ export class Sim {
       // Something arrived without the hero lifting a finger: a raven, or the
       // Herald for gifts, flies in from wherever it came from.
       const first = j.steps[0];
-      const from = first ? this.#targetPoint(first.target, j.hero) : this.plan.gate.door;
-      const start = first?.target.kind === 'home' ? this.plan.gate.door : from;
+      const from = first ? this.#targetPoint(first.target, j.hero) : this.plan.gate.doorAt;
+      const start = first?.target.kind === 'home' ? this.plan.gate.doorAt : from;
       const kind: AgentKind = j.verb === 'airdrop' ? 'herald' : 'raven';
       const courier = this.#makeAgent(kind, start.x, start.y);
       courier.flying = kind === 'raven';
@@ -314,9 +325,9 @@ export class Sim {
       courier.journey = j;
       courier.speed = kind === 'raven' ? 6 : 3;
       courier.tasks = [
-        { type: 'walk', to: { x: home.door.x, y: home.door.y + 0.5 }, fly: courier.flying },
+        this.#toDoor(home, courier.flying),
         { type: 'act', verb: 'give', seconds: 0.8, journey: j },
-        { type: 'walk', to: this.plan.gate.door, fly: courier.flying },
+        { type: 'walk', to: this.plan.gate.doorAt, fly: courier.flying },
         { type: 'vanish' },
       ];
       this.agents.push(courier);
@@ -325,30 +336,30 @@ export class Sim {
 
     const tasks: Task[] = [];
     if (j.feeUsd !== null && j.feeUsd > 0) {
-      tasks.push({ type: 'walk', to: this.plan.tower.door });
+      tasks.push(this.#toDoor(this.plan.tower));
       tasks.push({ type: 'act', verb: 'toll', seconds: 0.5, journey: j });
     }
     for (const step of j.steps) {
-      tasks.push({ type: 'walk', to: this.#targetPoint(step.target, j.hero) });
+      tasks.push(this.#toDoor(this.#targetPlace(step.target, j.hero)));
       tasks.push({ type: 'act', verb: step.verb, seconds: 1.3 + j.drama * 0.4, journey: j });
     }
-    tasks.push({ type: 'walk', to: { x: home.door.x, y: home.door.y + 0.6 } });
+    tasks.push(this.#toDoor(home));
     // Mark the start of this journey so `carrying` is set when it begins.
     hero.tasks.push({ type: 'act', verb: 'unknown', seconds: 0, journey: j }, ...tasks);
   }
 
   #liquidation(j: Journey, home: Placed): void {
     const step = j.steps[0];
-    const bank = step ? this.#targetPoint(step.target, j.hero) : home.door;
+    const bank = step ? this.#targetPlace(step.target, j.hero) : home;
     const count = j.drama === 1 ? 1 : j.drama === 2 ? 3 : 6;
     for (let i = 0; i < count; i++) {
-      const b = this.#makeAgent('bailiff', this.plan.gate.door.x + (i % 3) - 1, this.plan.gate.door.y + Math.floor(i / 3));
+      const b = this.#makeAgent('bailiff', this.plan.gate.doorAt.x + ((i % 3) - 1) * 0.3, this.plan.gate.doorAt.y + Math.floor(i / 3) * 0.3);
       b.speed = 3 + i * 0.1;
       b.journey = j;
       b.tasks = [
-        { type: 'walk', to: { x: bank.x + (i % 3) - 1, y: bank.y + 0.5 } },
+        this.#toDoor(bank),
         { type: 'act', verb: 'seize', seconds: 1.6, journey: j },
-        { type: 'walk', to: this.plan.gate.door },
+        { type: 'walk', to: this.plan.gate.doorAt },
         { type: 'vanish' },
       ];
       b.carrying = null;
@@ -363,19 +374,49 @@ export class Sim {
     }
   }
 
-  #targetPoint(target: Target, hero: string): Pt {
+  #targetPlace(target: Target, hero: string): Placed {
     switch (target.kind) {
-      case 'building': {
-        const b = this.plan.byProtocol.get(target.protocolId);
-        return b ? b.door : this.plan.gate.door;
-      }
-      case 'home': {
-        const h = this.plan.homes.get(target.address) ?? this.plan.homes.get(hero);
-        return h ? { x: h.door.x, y: h.door.y } : this.plan.gate.door;
-      }
+      case 'building':
+        return this.plan.byProtocol.get(target.protocolId) ?? this.plan.gate;
+      case 'home':
+        return this.plan.homes.get(target.address) ?? this.plan.homes.get(hero) ?? this.plan.gate;
       case 'gate':
-        return this.plan.gate.door;
+        return this.plan.gate;
     }
+  }
+
+  #targetPoint(target: Target, hero: string): Pt {
+    return this.#targetPlace(target, hero).doorAt;
+  }
+
+  /** Walk (or fly) to a building's door and wait at a free spot there. */
+  #toDoor(b: Placed, fly?: boolean): Task {
+    return fly === undefined ? { type: 'walk', to: b.doorAt, door: b } : { type: 'walk', to: b.doorAt, door: b, fly };
+  }
+
+  // --- door slots: nobody stands inside anybody else -----------------------
+  readonly #slots = new Map<string, (string | null)[]>();
+
+  #claimSlot(a: Agent, b: Placed): Pt {
+    this.#releaseSlot(a);
+    const taken = this.#slots.get(b.id) ?? [];
+    let n = taken.indexOf(null);
+    if (n === -1) n = taken.length;
+    taken[n] = a.id;
+    this.#slots.set(b.id, taken);
+    a.slotAt = b.id;
+    return doorSlot(b, n);
+  }
+
+  #releaseSlot(a: Agent): void {
+    if (a.slotAt === null) return;
+    const taken = this.#slots.get(a.slotAt);
+    if (taken) {
+      const i = taken.indexOf(a.id);
+      if (i >= 0) taken[i] = null;
+      while (taken.length > 0 && taken[taken.length - 1] === null) taken.pop();
+    }
+    a.slotAt = null;
   }
 
   // --- movement --------------------------------------------------------------
@@ -395,16 +436,19 @@ export class Sim {
         if (p === undefined) break;
         const dx = p.x - a.x;
         const dy = p.y - a.y;
-        const d = Math.hypot(dx, dy);
+        const dz = (p.z ?? 0) - a.alt;
+        const d = Math.hypot(dx, dy, dz);
         if (Math.abs(dx) > 0.01) a.facing = dx > 0 ? 1 : -1;
         if (d <= budget) {
           a.x = p.x;
           a.y = p.y;
+          a.alt = p.z ?? 0;
           a.path.shift();
           budget -= d;
         } else {
           a.x += (dx / d) * budget;
           a.y += (dy / d) * budget;
+          a.alt += (dz / d) * budget;
           budget = 0;
         }
       }
@@ -418,9 +462,11 @@ export class Sim {
       return;
     }
     switch (task.type) {
-      case 'walk':
-        a.path = task.fly === true || a.flying ? [task.to] : findPath(this.plan, a, task.to);
+      case 'walk': {
+        const to = task.door ? this.#claimSlot(a, task.door) : (this.#releaseSlot(a), task.to);
+        a.path = task.fly === true || a.flying ? flightRoute(a, to) : walkRoute(this.plan, a, to);
         break;
+      }
       case 'act':
         if (task.seconds === 0) {
           // Journey start marker.
@@ -432,6 +478,7 @@ export class Sim {
         if (task.journey) this.#actEffects(a, task.verb, task.journey);
         break;
       case 'vanish':
+        this.#releaseSlot(a);
         a.gone = true;
         break;
     }
@@ -470,10 +517,11 @@ export class Sim {
     if (a.kind === 'villager') {
       const b = this.plan.buildings[Math.floor(this.#rng() * this.plan.buildings.length)];
       if (b === undefined || this.agents.filter((x) => x.kind === 'villager').length > this.#villagerTarget + 2) {
+        this.#releaseSlot(a);
         a.gone = true;
         return;
       }
-      a.tasks = [{ type: 'walk', to: b.door }, { type: 'act', verb: 'unknown', seconds: 0.5 + this.#rng() * 2 }];
+      a.tasks = [this.#toDoor(b), { type: 'act', verb: 'unknown', seconds: 0.5 + this.#rng() * 2 }];
       a.acting = null;
     }
   }
@@ -490,6 +538,8 @@ export class Sim {
       facing: 1,
       speed: WALK_SPEED,
       flying: false,
+      alt: 0,
+      slotAt: null,
       carrying: null,
       journey: null,
       trail: [],
@@ -503,7 +553,7 @@ export class Sim {
     for (const hero of this.guild.heroes) {
       const home = this.plan.homes.get(hero.address);
       if (home === undefined) continue;
-      const a = this.#makeAgent('hero', home.door.x, home.door.y + 0.6);
+      const a = this.#makeAgent('hero', home.doorAt.x, home.doorAt.y);
       a.hero = hero;
       a.speed = WALK_SPEED * (MOUNT_SPEED[hero.tier] ?? 1);
       a.flying = hero.tier >= 5; // griffins and dragons do not use roads
@@ -514,8 +564,8 @@ export class Sim {
 
   #spawnVillager(anywhere: boolean): void {
     const from = anywhere
-      ? this.plan.buildings[Math.floor(this.#rng() * this.plan.buildings.length)]?.door
-      : this.plan.gate.door;
+      ? this.plan.buildings[Math.floor(this.#rng() * this.plan.buildings.length)]?.doorAt
+      : this.plan.gate.doorAt;
     if (from === undefined) return;
     this.agents.push(this.#makeAgent('villager', from.x, from.y));
   }

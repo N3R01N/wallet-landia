@@ -99,12 +99,12 @@ export function floatingText(c: CanvasRenderingContext2D, sim: Sim, project: Pro
 }
 
 /** `headOf` gives the screen point above a hero's head, or null to skip. */
-export function nameTags(c: CanvasRenderingContext2D, sim: Sim, headOf: (x: number, y: number, flying: boolean) => [number, number] | null): void {
+export function nameTags(c: CanvasRenderingContext2D, sim: Sim, headOf: (x: number, y: number, alt: number) => [number, number] | null): void {
   c.font = '600 10px system-ui, sans-serif';
   c.textAlign = 'center';
   for (const a of sim.agents) {
     if (a.kind !== 'hero' || !a.hero) continue;
-    const p = headOf(a.x, a.y, a.flying && a.path.length > 0);
+    const p = headOf(a.x, a.y, a.alt);
     if (p === null) continue;
     const label = `${a.hero.name} · ${approxUsd(a.hero.netWorth)}`;
     const w = c.measureText(label).width + 8;

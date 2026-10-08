@@ -709,7 +709,8 @@ export class Renderer3D implements WorldView {
       if (Math.abs(screenRight) > 0.001) flip = screenRight < 0;
       this.#facing.set(a.id, flip);
     }
-    const lift = (a.flying && (moving || a.kind === 'raven') ? 0.7 + Math.sin(a.phase) * 0.1 : 0) + (moving ? 0 : Math.abs(Math.sin(a.phase * 2)) * 0.02);
+    // Height comes from the simulation: flyers cruise above the rooftops.
+    const lift = a.alt + (a.alt > 0.05 ? Math.sin(a.phase) * 0.1 : moving ? 0 : Math.abs(Math.sin(a.phase * 2)) * 0.02);
     let s: Sprite;
     if (a.kind === 'hero' && a.hero) {
       const h = hashString(a.hero.address);
@@ -864,7 +865,7 @@ export class Renderer3D implements WorldView {
     this.#signLogos(c);
     markers(c, sim, tops);
     floatingText(c, sim, this.#project, 2.6);
-    if (this.#distance < 55) nameTags(c, sim, (x, y, flying) => this.#project(x, y, flying ? 3.3 : 2.6));
+    if (this.#distance < 55) nameTags(c, sim, (x, y, alt) => this.#project(x, y, 2.6 + alt));
   }
 
   /**

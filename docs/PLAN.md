@@ -235,6 +235,18 @@ Same scope for both: **the Town view only.**
 5. ~~**Asset-pack slots:**~~ done 2026-10-08. Slot catalogue, data-only pack format with strict validation, registry with a per-slot loadout (specific → general → built-in), 🎨 Looks panel, folder import into IndexedDB (blob: URLs, CSP unchanged for remote origins), glTF models in 3D, the **Ember & Frost** sample pack, and the creator guide `docs/PACKS.md`.
 6. **Also done:** valuations stay fresh while the page is open. A wallet that moved re-measures its tokens (2 requests) or, after a protocol interaction, everything (4). Portfolio totals refresh hourly for price drift, only while more than 150 requests are left.
 
+7. ~~**Road-true movement (Plan B):**~~ done 2026-10-08.
+   - **Root cause found:** path points were tile *corners*, not centres, so people walked along building edges. Paths now use tile centres, and each building has a door point at the centre of its door tile.
+   - **Footpaths:** every door gets one, carved to the nearest road.
+   - **Road-favouring costs:** grass costs 40× a road step, so walks stay on road, plaza or path (0% off-street on the captured wallets, was 20%).
+   - **Keep-right lanes:** walkers keep 0.2 tiles to the right.
+   - **Corners rounded by a fixed small cut:** every route is verified by sampling along its whole length, falling back to an unrounded route if needed.
+   - **Real flights:** griffins, dragons and ravens climb within 0.45 tiles of a door to 8.5 tiles (above the tower), cruise, and land at the destination door.
+   - **Waiting spots:** each arrival claims a free spot on the door tile.
+   - **Layout fixes:** three building slots that covered other doors were removed.
+   - **Tests:** the layout table, door connectivity, ~2,200 routes sampled point by point, roof clearance for flights, and a long simulation with no walker inside a building.
+8. **Next: characters (Plan A1)**, procedural 3D chibi heroes and mounts, approved direction pending.
+
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.
 - Approvals as a keyring (needs RPC/log reads), and the health factor for lending.

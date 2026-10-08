@@ -538,7 +538,7 @@ export class App {
     // After opening: opening any panel clears the previous route.
     this.#sim.route = this.#sim.routeFor(j);
     const home = this.#sim.plan.homes.get(j.hero);
-    if (home) this.#renderer.focus(home.door.x, home.door.y);
+    if (home) this.#renderer.focus(home.doorAt.x, home.doorAt.y);
   }
 
   #replay(j: Journey): void {
