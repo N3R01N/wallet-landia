@@ -6,7 +6,12 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   // three.js + post-processing is ~650 kB but only loads when the 3D view opens.
-  build: { target: 'es2022', chunkSizeWarningLimit: 700 },
+  build: {
+    target: 'es2022',
+    chunkSizeWarningLimit: 700,
+    // Two pages: the town, and the look sandbox.
+    rollupOptions: { input: { main: 'index.html', sandbox: 'sandbox.html' } },
+  },
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],

@@ -245,7 +245,15 @@ Same scope for both: **the Town view only.**
    - **Waiting spots:** each arrival claims a free spot on the door tile.
    - **Layout fixes:** three building slots that covered other doors were removed.
    - **Tests:** the layout table, door connectivity, ~2,200 routes sampled point by point, roof clearance for flights, and a long simulation with no walker inside a building.
-8. **Next: characters (Plan A1)**, procedural 3D chibi heroes and mounts, approved direction pending.
+8. **Realism & themes** (research: `docs/RESEARCH_REALISM.md`). Decisions 2026-10-08: stylised realism; CC0 assets for characters, animations and animals; generated buildings and terrain (kits as alternatives); ≤ 15 MB per theme; WebGL now, WebGPU later.
+   - ~~Phase 1, look sandbox~~ done: `sandbox.html`.
+     - Theme picker (baseline "Hearth & Harvest"; medieval, sci-fi and modern listed as planned, with their needs).
+     - Idle/walk/run on a track; hero tier; sky by hour or pinned; hour slider; quality; views final/no-post/AO/no-grade/wireframe/normals; camera bookmarks; live perf panel.
+     - Every control is also a URL parameter.
+     - HDRI image-based lighting from four CC0 Poly Haven skies (`public/env`).
+     - `BuildingFactory`, `buildPropMeshes` and `buildGrassWhere` extracted for reuse.
+   - Phase 2: theme bundle format (pack v2). Phase 3: rigged CC0 characters + animation state machine + mounts. Phase 4: building grammar v2 + PBR. Phase 5: terrain and surroundings. Phase 6: medieval / sci-fi / modern bundles. Phase 7: into the town.
+   - Known: ~450 draw calls in the sandbox (buildings are many small meshes); merge per building in Phase 4.
 
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.

@@ -8,6 +8,10 @@ import * as THREE from 'three';
 import { makeRng } from '../../util/rng.js';
 import { MAP_H, MAP_W, tileAt, type TownPlan } from '../../world/layout.js';
 import { applyWind } from './wind.js';
+import { makeRng as makePropRng } from '../../util/rng.js';
+import { P } from '../pixel.js';
+import type { Prop } from '../ground.js';
+import { packModel } from './models.js';
 
 export interface Lamp {
   x: number;
@@ -90,8 +94,26 @@ export function buildLamps(lamps: Lamp[]): LampSet {
   };
 }
 
-/** Grass tufts on open lawn: three crossed blades each, coloured by clump. */
+/** Grass tufts on the town's open lawn. */
 export function buildGrass(plan: TownPlan, count = 1800): THREE.InstancedMesh {
+  return buildGrassWhere(
+    { x: 0, y: 0, w: MAP_W, h: MAP_H },
+    (x, y) => {
+      const kind = tileAt(plan, Math.floor(x), Math.floor(y));
+      return (kind === 'grass' || kind === 'wilds') && plan.walkable[Math.floor(y) * MAP_W + Math.floor(x)] === 1;
+    },
+    count,
+    (x, y) => tileAt(plan, Math.floor(x), Math.floor(y)) === 'wilds',
+  );
+}
+
+/** Grass tufts anywhere `accept` allows: three crossed blades each, coloured by clump. */
+export function buildGrassWhere(
+  area: { x: number; y: number; w: number; h: number },
+  accept: (x: number, y: number) => boolean,
+  count = 1800,
+  darker: (x: number, y: number) => boolean = () => false,
+): THREE.InstancedMesh {
   const blade = (angle: number): THREE.BufferGeometry => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute([-0.05, 0, 0, 0.05, 0, 0, 0, 0.32, 0.03], 3));
@@ -118,17 +140,16 @@ export function buildGrass(plan: TownPlan, count = 1800): THREE.InstancedMesh {
   const color = new THREE.Color();
   let n = 0;
   for (let tries = 0; n < count && tries < count * 6; tries++) {
-    const x = rng() * MAP_W;
-    const y = rng() * MAP_H;
-    const kind = tileAt(plan, Math.floor(x), Math.floor(y));
-    if ((kind !== 'grass' && kind !== 'wilds') || plan.walkable[Math.floor(y) * MAP_W + Math.floor(x)] === 0) continue;
+    const x = area.x + rng() * area.w;
+    const y = area.y + rng() * area.h;
+    if (!accept(x, y)) continue;
     const s = 0.7 + rng() * 0.8;
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI * 2);
     m4.compose(new THREE.Vector3(x, 0, y), q, new THREE.Vector3(s, s * (0.8 + rng() * 0.6), s));
     mesh.setMatrixAt(n, m4);
     // clumps: low-frequency colour variation across the lawn
     const clump = Math.sin(x * 0.35) * Math.cos(y * 0.41) * 0.5 + 0.5;
-    color.setHSL(0.27 + clump * 0.05 - (kind === 'wilds' ? 0.02 : 0), 0.5, 0.36 + clump * 0.12 + rng() * 0.05);
+    color.setHSL(0.27 + clump * 0.05 - (darker(x, y) ? 0.02 : 0), 0.5, 0.36 + clump * 0.12 + rng() * 0.05);
     mesh.setColorAt(n, color);
     n++;
   }
@@ -136,4 +157,73 @@ export function buildGrass(plan: TownPlan, count = 1800): THREE.InstancedMesh {
   mesh.receiveShadow = true;
   applyWind(mesh, 0.35);
   return mesh;
+}
+
+/**
+ * Trees, pines, bushes and rocks as instanced meshes (foliage sways in the
+ * wind), or a pack's models where the loadout picks them.
+ */
+export function buildPropMeshes(props: Prop[], mat: (color: string) => THREE.Material): THREE.Object3D[] {
+const out: THREE.Object3D[] = [];
+  const rng = makePropRng(11);
+  const parts: Record<string, { geo: THREE.BufferGeometry; mat: THREE.Material; list: THREE.Matrix4[] }> = {
+    trunk: { geo: new THREE.CylinderGeometry(0.08, 0.11, 0.6, 5), mat: mat(P.woodDark), list: [] },
+    crown: { geo: new THREE.IcosahedronGeometry(0.5, 0), mat: mat('#4a9a42'), list: [] },
+    crown2: { geo: new THREE.IcosahedronGeometry(0.38, 0), mat: mat('#5aaa4a'), list: [] },
+    pine: { geo: new THREE.ConeGeometry(0.5, 1.1, 6), mat: mat('#2f6a3a'), list: [] },
+    pineTop: { geo: new THREE.ConeGeometry(0.36, 0.8, 6), mat: mat('#3a7a44'), list: [] },
+    bush: { geo: new THREE.IcosahedronGeometry(0.28, 0), mat: mat('#4a9a42'), list: [] },
+    rock: { geo: new THREE.DodecahedronGeometry(0.22, 0), mat: mat(P.stoneDark), list: [] },
+  };
+  const put = (key: string, x: number, y: number, z: number, s: number, ry = 0): void => {
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0)), new THREE.Vector3(s, s, s));
+    parts[key]?.list.push(m);
+  };
+  const models = new Map<Prop['kind'], ReturnType<typeof packModel>>();
+  for (const k of ['tree', 'pine', 'bush', 'rock'] as const) models.set(k, packModel([`prop.${k}`]));
+  for (const p of props) {
+    const s = 0.8 + rng() * 0.5;
+    const x = p.x + (rng() - 0.5) * 0.4;
+    const z = p.y - 0.3 + (rng() - 0.5) * 0.4;
+    const model = models.get(p.kind);
+    if (model) {
+      const m = model.scene.clone(true);
+      m.scale.multiplyScalar(model.scale * s);
+      m.position.set(x, 0, z);
+      m.rotation.y = rng() * Math.PI * 2;
+      out.push(m);
+      continue;
+    }
+    switch (p.kind) {
+      case 'tree':
+        put('trunk', x, 0.3 * s, z, s);
+        put('crown', x, 0.95 * s, z, s, rng() * 3);
+        put('crown2', x + 0.15, 1.3 * s, z - 0.1, s, rng() * 3);
+        break;
+      case 'pine':
+        put('trunk', x, 0.3 * s, z, s * 0.8);
+        put('pine', x, 0.85 * s, z, s);
+        put('pineTop', x, 1.35 * s, z, s);
+        break;
+      case 'bush':
+        put('bush', x, 0.2, z, s);
+        break;
+      case 'rock':
+        put('rock', x, 0.1, z, s, rng() * 3);
+        break;
+    }
+  }
+  // Foliage sways in the wind; trunks and rocks stay put.
+  const sways: Record<string, number> = { crown: 1.6, crown2: 1.6, pine: 1.8, pineTop: 1.8, bush: 0.6 };
+  for (const [key, part] of Object.entries(parts)) {
+    if (part.list.length === 0) continue;
+    const mesh = new THREE.InstancedMesh(part.geo, part.mat, part.list.length);
+    part.list.forEach((m, i) => mesh.setMatrixAt(i, m));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    const ref = sways[key];
+    if (ref !== undefined) applyWind(mesh, ref);
+    out.push(mesh);
+  }
+  return out;
 }

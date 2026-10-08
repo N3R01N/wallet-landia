@@ -115,8 +115,8 @@ export function nameTags(c: CanvasRenderingContext2D, sim: Sim, headOf: (x: numb
   }
 }
 
-/** `?hour=22` pins the clock, for validating night views by day. */
-const HOUR_OVERRIDE = (() => {
+/** `?hour=22` pins the clock, for validating night views by day; the sandbox sets it live. */
+let HOUR_OVERRIDE: number | null = (() => {
   try {
     const h = new URLSearchParams(location.search).get('hour');
     return h === null ? null : Number(h);
@@ -124,6 +124,17 @@ const HOUR_OVERRIDE = (() => {
     return null;
   }
 })();
+
+/** Pin the clock to an hour (0–24), or `null` for real local time. */
+export function setHour(hour: number | null): void {
+  HOUR_OVERRIDE = hour;
+}
+
+/** The hour the world is showing (pinned or real). */
+export function currentHour(): number {
+  const now = new Date();
+  return HOUR_OVERRIDE ?? now.getHours() + now.getMinutes() / 60;
+}
 
 /** 0 at noon, 1 at midnight, with a gentle dusk. Real local time. */
 export function nightFactor(): number {
