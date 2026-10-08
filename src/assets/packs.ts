@@ -9,7 +9,7 @@ import { openCache, type KV } from '../data/cache.js';
 import { referencedFiles, validatePack, type PackManifest } from './pack.js';
 import { assets, type LoadedPack } from './registry.js';
 
-const STORABLE = /\.(png|webp|gif|jpe?g|svg|gltf|glb|bin)$/i;
+const STORABLE = /\.(png|webp|gif|jpe?g|svg|gltf|glb|bin|fbx)$/i;
 const MAX_FILES = 300;
 const MAX_BYTES = 25 * 1024 * 1024;
 const INDEX_KEY = 'packs:index';

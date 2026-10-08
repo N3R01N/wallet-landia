@@ -8,7 +8,7 @@ Players install packs in **🎨 Looks → Import pack folder…** (pick the fold
 
 ```jsonc
 {
-  "format": "wallet-landia-pack/1",
+  "format": "wallet-landia-pack/2", // "/1" still works for slot-only packs
   "id": "ember-frost",            // 2–40 chars: a-z 0-9 -   ("default" is reserved)
   "name": "Ember & Frost",
   "author": "You",
@@ -70,3 +70,72 @@ The full list is in [`src/assets/catalog.ts`](../src/assets/catalog.ts). Familie
 - Every file `pack.json` refers to must be present.
 
 Imported packs stay in your browser (IndexedDB). Bundled packs are listed in `public/packs/index.json`.
+
+## Theme bundles (format 2)
+
+A pack can also carry a whole look in a `theme` block: sky, materials, ground, buildings, surroundings, characters and mounts. Themes appear in the look sandbox's **Theme** picker (bundled ones from `public/themes/index.json`, and imported packs that have a theme). Bringing them into the town itself is the next step (Phase 7).
+
+The reference bundle is [`public/themes/medieval/pack.json`](../public/themes/medieval/pack.json). [`public/themes/highland/pack.json`](../public/themes/highland/pack.json) shows a variant made with `extends` and no files of its own. The validator is [`src/assets/theme.ts`](../src/assets/theme.ts).
+
+```jsonc
+"theme": {
+  "extends": "medieval",          // optional: start from another theme, override parts
+  "sky": "overcast",              // day | sunset | night | overcast (the daytime sky)
+  "notes": ["What is still missing"],
+  "materials": {                   // by role, see below
+    "stone":   { "color": "materials/stone/color.webp", "normal": "…", "roughness": "…", "size": 1.25 },
+    "plaster": { "use": "stone", "tint": "#d8d4cc" },   // another role's textures, retinted
+    "thatch":  { "tint": "#a89880" },                    // with extends: retint the parent's
+    "iron":    { "tint": "#3a3a40", "metalness": 0.7, "roughnessValue": 0.5 }
+  },
+  "ground": { "grass": "grass", "road": "cobbles", "path": "dirt" },
+  "buildings": { "style": "medieval", "washes": ["#f4ead6"], "brandRoofs": 1 },
+  "surroundings": { "style": "medieval", "relief": 1, "woods": 1, "trees": { "oak": 0.57, "birch": 0.18, "fir": 0.25 },
+                    "grass": { "hue": 0.24, "sat": 0.45, "light": 0.17 }, "flowers": 700, "lamps": "lantern" },
+  "characters": { … }
+}
+```
+
+### Materials
+Roles: `plaster stone stoneDark timber planks roofTiles roofSlate thatch cobbles grass dirt cloth bark rock forestFloor glass fire iron gold`. The building grammar, terrain and props ask for surfaces by role, so a theme restyles everything by giving each role a material.
+- `color`, `normal` (OpenGL convention, green up), `roughness`: image files. Any can be left out.
+- `size`: metres covered by one repeat of the textures. Geometry carries UVs in metres, so a brick is the same size everywhere.
+- `tint` multiplies the colour (and is the whole colour of an untextured role). `use` takes another role's textures and size.
+- A role the theme leaves out falls back to a plain colour, so nothing goes missing.
+
+### Buildings and surroundings
+`style` picks the code that builds them: only `"medieval"` exists so far (Phase 6 adds more). The other fields tune it:
+- `washes`: plaster colours picked per building. `brandRoofs`: 0..1, how strongly a protocol's brand colour tints its roof.
+- `relief`: hill height (0 = flat). `woods`: how much land is wooded. `trees`: the species mix (firs also take over higher up). `grass`: blade colour (HSL, 0..1). `flowers`: how many clumps. `lamps`: `lantern` or `post`.
+
+### Characters
+Every part shares one skeleton, so no retargeting is needed. The only rig so far is `"ue5-universal"`: Unreal-5 bone names (`pelvis`, `thigh_l`, `Head`…) and bind pose, as in the Quaternius Universal kits.
+
+```jsonc
+"characters": {
+  "skeleton": "ue5-universal",
+  "animations": "anim/ual.glb",                       // one glTF with all clips
+  "clips": { "idle": "Idle_Loop", "walk": "Walk_Loop", "run": "Jog_Fwd_Loop", "sit": "Sitting_Idle_Loop" },
+  "speeds": { "walk": 1.25, "run": 3.0 },              // m/s at normal playback, so feet don't slide
+  "bodies": { "male": "base/M.glb", "female": "base/F.glb" },
+  "bodyParts": "head",                                 // keep only the head (outfits cover the body) or "full"
+  "outfits": { "default": {"male": "…", "female": "…"}, "villager": {…}, "merchant": {…} },  // per class optional
+  "hair": { "male": ["hair/a.glb"], "female": ["hair/b.glb"] },
+  "eyebrows": { "male": "…", "female": "…" },
+  "mounts": {                                          // by value tier, t2 … t6
+    "t3": { "model": "animals/Horse.fbx", "height": 2.0, "tint": "#4a4048",
+            "clips": { "idle": ["Idle"], "walk": ["Walk"], "run": ["Gallop", "Run"] },
+            "speeds": { "walk": 1.6, "run": 5 },
+            "seat": { "from": "Torso", "to": "Shoulders", "t": 0.33 },  // where the rider sits, between two bones
+            "wings": { "color": "#f2ead8", "span": 0.48 } }              // placeholder wings
+  }
+}
+```
+- Mount models may be `.glb`, `.gltf` or `.fbx` (many creature kits ship only FBX). Clip names match whole names, also after a `|` (`"Idle"` matches `Armature|Idle`). The first listed clip that exists wins.
+- The rider is seated with the `sit` clip, the legs turned into a straddle, and the pelvis put on the mount's back between the `seat` bones.
+
+### Inheritance
+With `extends`, every block overrides field by field: a material entry with just a `tint` keeps the parent's textures. `characters` is replaced as a whole when present. Files are resolved against the pack that names them, so a variant reuses its parent's files without copying them.
+
+### Limits
+The same rules as slots: relative paths inside the pack only, images and models only, at most 300 files and 25 MB per imported pack. Unknown fields, roles and tiers are dropped with a reason, never guessed.

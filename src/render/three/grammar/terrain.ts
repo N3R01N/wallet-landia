@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import { makeRng } from '../../../util/rng.js';
-import { TEX_SIZE, type MaterialLibrary } from './materials.js';
+import type { MaterialLibrary } from './materials.js';
 import { METRES_PER_TILE } from './medieval.js';
 
 export interface Box2 {
@@ -185,7 +185,7 @@ export class Terrain {
     const layers = ['grass', 'dirt', 'rock', 'forestFloor'] as const;
     const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, vertexColors: true });
     const uniforms = {
-      uScale: { value: new THREE.Vector4(...layers.map((l) => METRES_PER_TILE / TEX_SIZE[l])) },
+      uScale: { value: new THREE.Vector4(...layers.map((l) => METRES_PER_TILE / lib.size(l))) },
       ...Object.fromEntries(layers.flatMap((l, i) => [[`tC${i}`, { value: lib.tex(l, 'color') }], [`tN${i}`, { value: lib.tex(l, 'normal') }]])),
     };
     mat.onBeforeCompile = (shader) => {

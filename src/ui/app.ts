@@ -153,7 +153,7 @@ export class App {
       // Refresh the Guild panel for the new town, unless the player is typing
       // in it: replacing the form would throw away what they typed.
       if (!this.#editingInspector()) this.#openGuild();
-    } else this.#closeInspector();
+    } else if (!this.#looksOpen) this.#closeInspector(); // Looks does not depend on the town: keep it open
   }
 
   /** Same town, newer data: rebuild quietly and play only what is new, live. */

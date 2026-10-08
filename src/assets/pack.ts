@@ -5,8 +5,11 @@
  */
 
 import { slotInfo, type SlotForm } from './catalog.js';
+import { themeFiles, validateTheme, type ThemeSpec } from './theme.js';
 
-export const PACK_FORMAT = 'wallet-landia-pack/1';
+/** Format 1: slots. Format 2: slots plus an optional theme bundle (docs/PACKS.md). */
+export const PACK_FORMAT = 'wallet-landia-pack/2';
+export const PACK_FORMATS = ['wallet-landia-pack/1', PACK_FORMAT] as const;
 
 export interface Rect {
   x: number;
@@ -41,7 +44,7 @@ export interface SlotEntry {
 }
 
 export interface PackManifest {
-  format: typeof PACK_FORMAT;
+  format: (typeof PACK_FORMATS)[number];
   id: string;
   name: string;
   author: string;
@@ -49,6 +52,8 @@ export interface PackManifest {
   description?: string;
   license?: string;
   slots: Record<string, SlotEntry>;
+  /** A whole look (format 2). */
+  theme?: ThemeSpec;
 }
 
 export interface Validated {
@@ -58,13 +63,15 @@ export interface Validated {
 
 const IMAGE = /\.(png|webp|gif|jpe?g|svg)$/i;
 const MODEL = /\.(gltf|glb)$/i;
+/** Animals may also come as FBX (many CC0 creature kits ship only that); parsed, never executed. */
+const ANIMAL = /\.(gltf|glb|fbx)$/i;
 
 /** Relative paths inside the pack only: no schemes, no absolute paths, no `..`. */
-export function safePath(p: unknown, kind: 'image' | 'model'): string | null {
+export function safePath(p: unknown, kind: 'image' | 'model' | 'animal'): string | null {
   if (typeof p !== 'string' || p.length === 0 || p.length > 200) return null;
   if (/^[a-z][a-z0-9+.-]*:/i.test(p) || p.startsWith('/') || p.startsWith('\\') || p.includes('\\')) return null;
   if (p.split('/').some((seg) => seg === '..' || seg === '')) return null;
-  return (kind === 'image' ? IMAGE : MODEL).test(p) ? p : null;
+  return (kind === 'image' ? IMAGE : kind === 'model' ? MODEL : ANIMAL).test(p) ? p : null;
 }
 
 const num = (v: unknown, min: number, max: number): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? v : null);
@@ -95,7 +102,8 @@ export function validatePack(input: unknown): Validated {
   const problems: string[] = [];
   if (typeof input !== 'object' || input === null) return { manifest: null, problems: ['pack.json is not an object'] };
   const o = input as Record<string, unknown>;
-  if (o.format !== PACK_FORMAT) problems.push(`format must be "${PACK_FORMAT}"`);
+  const format = PACK_FORMATS.find((f) => f === o.format);
+  if (!format) problems.push(`format must be "${PACK_FORMAT}" (or "${PACK_FORMATS[0]}")`);
   const id = typeof o.id === 'string' && /^[a-z0-9][a-z0-9-]{1,39}$/.test(o.id) ? o.id : null;
   if (id === null) problems.push('id must be 2–40 chars of a-z, 0-9 and -');
   if (id === 'default') problems.push('id "default" is reserved');
@@ -105,7 +113,7 @@ export function validatePack(input: unknown): Validated {
   if (!name) problems.push('name is required (≤ 60 chars)');
   if (!author) problems.push('author is required (≤ 60 chars)');
   if (!version) problems.push('version is required');
-  if (problems.length > 0 || id === null || !name || !author || !version) return { manifest: null, problems };
+  if (problems.length > 0 || !format || id === null || !name || !author || !version) return { manifest: null, problems };
 
   const slots: Record<string, SlotEntry> = {};
   const rawSlots = typeof o.slots === 'object' && o.slots !== null ? (o.slots as Record<string, unknown>) : {};
@@ -142,7 +150,13 @@ export function validatePack(input: unknown): Validated {
     }
     if (Object.keys(entry).length > 0) slots[key] = entry;
   }
-  const manifest: PackManifest = { format: PACK_FORMAT, id, name, author, version, slots };
+  const manifest: PackManifest = { format, id, name, author, version, slots };
+  if (o.theme !== undefined) {
+    if (format === PACK_FORMAT) {
+      const theme = validateTheme(o.theme, problems);
+      if (theme) manifest.theme = theme;
+    } else problems.push(`a theme needs format "${PACK_FORMAT}" (ignored)`);
+  }
   const description = text(o.description, 300);
   const license = text(o.license, 60);
   if (description) manifest.description = description;
@@ -157,5 +171,6 @@ export function referencedFiles(m: PackManifest): string[] {
     for (const r of [e.sprite, e.top, e.iso]) if (r) out.add(r.src);
     if (e.model) out.add(e.model.src);
   }
+  if (m.theme) for (const f of themeFiles(m.theme)) out.add(f);
   return [...out];
 }

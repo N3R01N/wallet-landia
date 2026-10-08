@@ -14,7 +14,7 @@
 import * as THREE from 'three';
 import { makeRng } from '../../../util/rng.js';
 import { applyWind } from '../wind.js';
-import { TEX_SIZE, type MaterialLibrary } from './materials.js';
+import type { MaterialLibrary } from './materials.js';
 import { METRES_PER_TILE } from './medieval.js';
 
 export interface PlantSpot {
@@ -165,7 +165,7 @@ class GeoBuilder {
     return g;
   }
 
-  /** A tapered tube from a to b. Bark grain runs along u (the texture's grain is horizontal). */
+  /** A tapered tube from a to b. Bark grain runs along u (the medieval bark texture's grain is horizontal). */
   tube(a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number, sides: number, v0: number): number {
     const dir = new THREE.Vector3().subVectors(b, a);
     const len = dir.length();
@@ -173,7 +173,7 @@ class GeoBuilder {
     const side = Math.abs(dir.y) > 0.95 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
     const p = new THREE.Vector3().crossVectors(dir, side).normalize();
     const q = new THREE.Vector3().crossVectors(dir, p).normalize();
-    const bark = TEX_SIZE.bark / METRES_PER_TILE;
+    const bark = 1 / METRES_PER_TILE; // UVs in metres; the bark texture repeats per its size
     const base = this.pos.length / 3;
     for (let ring = 0; ring < 2; ring++) {
       const c = ring === 0 ? a : b;

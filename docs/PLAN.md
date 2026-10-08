@@ -270,7 +270,12 @@ Same scope for both: **the Town view only.**
      - `props.ts`: well, barrels, crates, hay, woodpiles, post-and-rail fences and dry-stone walls that follow the ground, a signpost, boulders, timber lantern posts with night pools.
      - Added CC0 ambientCG bark, rock and forest-floor textures; the medieval theme is now 11 MB.
      - Open: ~0.9M triangles a frame in the medieval sandbox (woods + characters); vegetation LOD/impostors; water (river, pond); paths into the woods; the town still uses the old scenery (Phase 7).
-   - Phase 2: theme bundle format (pack v2). Phase 6: sci-fi / modern bundles. Phase 7: into the town.
+   - ~~Phase 2, theme bundle format~~ done: pack format 2 adds a `theme` block (docs/PACKS.md, `src/assets/theme.ts`).
+     - Materials by role with real-world sizes (UVs in metres), ground, building and surroundings parameters, characters (files, outfits per class, clips, speeds) and mounts per tier (model incl. FBX, height, tint, clips, seat bones, wings).
+     - `extends` with field-by-field overrides and `use` for reusing another role's textures; validated and unit-tested; problems are reported, never fatal.
+     - `public/themes/medieval/pack.json` now drives everything the medieval theme used to hard-code; `public/themes/highland` is a variant with no files of its own. The sandbox lists bundled themes and imported packs that carry one.
+     - Open: only the `medieval` building/surroundings style and the `ue5-universal` rig exist; the town does not use themes yet (Phase 7); the Looks panel does not show theme blocks yet.
+   - Phase 6: sci-fi / modern bundles. Phase 7: into the town.
 
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.

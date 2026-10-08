@@ -3,13 +3,13 @@
  * quads and triangles (counter-clockwise seen from outside) into one buffer
  * per material, so a whole building is a handful of draw calls.
  *
- * UVs are world-aligned in metres: walls map u horizontally and v up, roofs
+ * UVs are world-aligned in metres (each texture repeats per its material's size): walls map u horizontally and v up, roofs
  * u along the eave and v up the slope, flat faces map x/z. Coplanar faces
  * therefore continue the same texture without seams.
  */
 
 import * as THREE from 'three';
-import { TEX_SIZE, type MatKey, type MaterialLibrary } from './materials.js';
+import type { MatKey, MaterialLibrary } from './materials.js';
 
 export type V3 = [number, number, number];
 export type Mat = MatKey | { key: MatKey; tint?: string };
@@ -65,12 +65,11 @@ export class MeshWriter {
       _v.crossVectors(_n, _u).normalize();
     }
     const part = this.#part(mat);
-    const size = TEX_SIZE[part.key];
     const emit = (q: V3): void => {
       _p.fromArray(q);
       part.pos.push(q[0], q[1], q[2]);
       part.nor.push(_n.x, _n.y, _n.z);
-      part.uv.push(_p.dot(_u) / size, _p.dot(_v) / size);
+      part.uv.push(_p.dot(_u), _p.dot(_v));
     };
     for (let i = 1; i < pts.length - 1; i++) {
       emit(pts[0]!);

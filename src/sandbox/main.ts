@@ -25,7 +25,9 @@ import { nightFactor, setHour } from '../render/overlay.js';
 import type { PlacedKind } from '../world/layout.js';
 import type { Prop } from '../render/ground.js';
 import type { Site } from '../render/three/grammar/surroundings.js';
-import { THEMES, type AnimState, type CharacterLook, type SandboxCharacter, type Theme } from './themes.js';
+import { loadImportedPacks } from '../assets/packs.js';
+import { assets } from '../assets/registry.js';
+import { loadThemes, THEMES, type AnimState, type CharacterLook, type SandboxCharacter, type Theme } from './themes.js';
 import { setSpriteTint } from './characters.js';
 import { el } from '../ui/dom.js';
 
@@ -188,17 +190,16 @@ class Sandbox {
     this.#characters = [];
     this.#stage.clear();
     const t = this.theme;
-    // Textured ground repeats in world units (tiles → metres ÷ texture size).
+    // Textured ground: UVs in metres; the material repeats per its texture size.
     const surface = (geo: THREE.BufferGeometry, which: 'grass' | 'road' | 'path', color: string): THREE.Mesh => {
-      const tex = t.groundMaterial?.(which);
-      if (tex) {
+      const material = t.groundMaterial?.(which);
+      if (material) {
         const pos = geo.getAttribute('position');
         const uv = geo.getAttribute('uv');
-        const k = METRES_PER_TILE / tex.size;
-        for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) * k, -pos.getZ(i) * k);
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) * METRES_PER_TILE, -pos.getZ(i) * METRES_PER_TILE);
         uv.needsUpdate = true;
       }
-      return new THREE.Mesh(geo, tex?.material ?? new THREE.MeshStandardMaterial({ color, roughness: 1 }));
+      return new THREE.Mesh(geo, material ?? new THREE.MeshStandardMaterial({ color, roughness: 1 }));
     };
     const flat = (w: number, d: number, which: 'grass' | 'road' | 'path', x: number, z: number, y = 0.01): THREE.Mesh => {
       const geo = new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2).translate(x, 0, z);
@@ -334,7 +335,9 @@ class Sandbox {
 
   #applySky(): void {
     setHour(this.hour);
-    const id: SkyId | null = this.sky === 'none' ? null : this.sky === 'auto' ? skyForHour(this.hour) : this.sky;
+    // by the hour, a theme's daytime sky stands in for plain day (an overcast highland)
+    const byHour = skyForHour(this.hour);
+    const id: SkyId | null = this.sky === 'none' ? null : this.sky === 'auto' ? (byHour === 'day' ? this.theme.defaultSky : byHour) : this.sky;
     this.env.use(id, this.fallbackSky);
   }
 
@@ -486,6 +489,9 @@ const host = document.querySelector<HTMLDivElement>('#sandbox');
 if (!host) throw new Error('#sandbox missing');
 const world = el('main', { class: 'world' });
 host.append(world);
+// Theme bundles first (bundled ones, and packs imported in the game's Looks panel).
+await loadImportedPacks().catch(() => undefined);
+await loadThemes([...assets.packs.values()]);
 const sandbox = new Sandbox(world);
 // For tests and debugging in the console.
 (window as unknown as { sandbox: Sandbox }).sandbox = sandbox;

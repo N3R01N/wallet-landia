@@ -55,7 +55,7 @@ test('the medieval theme loads rigged characters and mounts', async ({ page }) =
   });
   expect(counts.sprites).toBe(0); // no pixel billboards in this theme
   expect(counts.skinned).toBeGreaterThan(12 * 4); // body/outfit/hair parts for 12 people, plus horses
-  await expect(page.locator('.note')).toContainText('Rigged CC0 characters');
+  await expect(page.locator('.note')).toContainText('Rigged characters from the Medieval bundle');
   // buildings come from the grammar (one mesh per material, named by it) and their PBR textures load
   await page.waitForFunction(
     () => {
@@ -78,5 +78,28 @@ test('the medieval theme loads rigged characters and mounts', async ({ page }) =
     return [...seen];
   });
   expect(names).toEqual(expect.arrayContaining(['terrain', 'foliage-oak', 'foliage-fir', 'bark', 'props', 'rocks', 'flowers']));
+  expect(errors).toEqual([]);
+});
+
+/** A theme bundle that only extends another (no files of its own) loads with its parent's assets. */
+test('a variant bundle (highland extends medieval) loads and uses its own sky', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error' && !/CORS|ERR_|Failed to load resource/.test(m.text())) errors.push(m.text());
+  });
+  await page.goto('/sandbox.html?theme=highland&quality=low&hour=12&cam=buildings');
+  await page.waitForFunction(() => (window as unknown as { sandbox?: { ready: boolean } }).sandbox?.ready === true, null, { timeout: 90_000 });
+  await expect(page.locator('select[aria-label="Theme"] option')).toContainText(['Medieval', 'Highland']);
+  await expect(page.locator('.note')).toContainText('Rigged characters from the Highland bundle');
+  await expect.poll(() => page.evaluate(() => (window as unknown as { sandbox: { env: { current: string | null } } }).sandbox.env.current), { timeout: 30_000 }).toBe('overcast');
+  const skinned = await page.evaluate(() => {
+    let n = 0;
+    (window as unknown as { sandbox: { scene: { traverse(f: (o: { isSkinnedMesh?: boolean }) => void): void } } }).sandbox.scene.traverse((o) => {
+      if (o.isSkinnedMesh) n++;
+    });
+    return n;
+  });
+  expect(skinned).toBeGreaterThan(12 * 4);
   expect(errors).toEqual([]);
 });

@@ -9,12 +9,12 @@
 
 import * as THREE from 'three';
 import { makeRng } from '../../../util/rng.js';
-import { buildGrassWhere, type Lamp, type LampSet } from '../scenery.js';
+import type { SurroundingsStyle } from '../../../assets/theme.js';
+import { buildGrassWhere, buildLamps, type Lamp, type LampSet } from '../scenery.js';
 import type { MaterialLibrary } from './materials.js';
 import { buildLanterns, buildRocks, PropWriter } from './props.js';
 import { makeNoise, outside, Terrain, type Box2 } from './terrain.js';
-import type { Vegetation} from './vegetation.js';
-import { type PlantSpot } from './vegetation.js';
+import type { PlantSpot, Vegetation } from './vegetation.js';
 
 export interface Site {
   /** Where the town stands; kept flat. */
@@ -40,7 +40,11 @@ const smooth = (e0: number, e1: number, x: number): number => {
   return t * t * (3 - 2 * t);
 };
 
-export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vegetation): Surroundings {
+export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vegetation, style: SurroundingsStyle = { style: 'medieval' }): Surroundings {
+  const relief = style.relief ?? 1;
+  const wooded = style.woods ?? 1;
+  const mix = { oak: style.trees?.oak ?? 0.57, birch: style.trees?.birch ?? 0.18, fir: style.trees?.fir ?? 0.25 };
+  const mixTotal = Math.max(1e-6, mix.oak + mix.birch + mix.fir);
   const { flat } = site;
   const n = makeNoise(site.seed + 7);
   const rng = makeRng(site.seed);
@@ -50,10 +54,10 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
   const woods = (x: number, z: number): number => {
     const edge = smooth(3, 10, outside(flat, x, z));
     const south = z > flat.z1 ? 0.12 + 0.88 * smooth(flat.z1 + 26, flat.z1 + 42, z) : 1;
-    return edge * south * smooth(0.36, 0.56, n.fbm(x * 0.05, z * 0.05, 3));
+    return Math.min(1, edge * south * smooth(0.36, 0.56, n.fbm(x * 0.05, z * 0.05, 3)) * wooded);
   };
   const bounds: Box2 = { x0: centre.x - 130, x1: centre.x + 130, z0: centre.z - 120, z1: centre.z + 120 };
-  const terrain = new Terrain({ flat, bounds, wear: site.wear, woods: (x, z) => smooth(0.15, 0.6, woods(x, z)), relief: (_x, z) => 0.3 + 0.7 * smooth(flat.z1 + 22, flat.z1 + 45, z), seed: site.seed }, lib);
+  const terrain = new Terrain({ flat, bounds, wear: site.wear, woods: (x, z) => smooth(0.15, 0.6, woods(x, z)), relief: (_x, z) => relief * (0.3 + 0.7 * smooth(flat.z1 + 22, flat.z1 + 45, z)), seed: site.seed }, lib);
   const h = (x: number, z: number): number => terrain.heightAt(x, z);
   const group = new THREE.Group();
   group.name = 'surroundings';
@@ -87,7 +91,11 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
         const s = 1.35 + rng() * 0.7;
         const pick = rng();
         const high = smooth(4, 12, y);
-        const kind = pick < 0.25 + high * 0.55 ? 'fir' : pick < 0.82 ? 'oak' : 'birch';
+        // firs take over higher up
+        const fir = mix.fir / mixTotal;
+        const firShare = fir + (1 - fir) * high * (fir > 0 ? 0.6 : 0);
+        const oakShare = (1 - firShare) * (mix.oak / Math.max(1e-6, mix.oak + mix.birch));
+        const kind = pick < firShare ? 'fir' : pick < firShare + oakShare ? 'oak' : 'birch';
         trees[kind].push({ x, y: y - 0.05, z, s: kind === 'fir' ? s * 1.15 : s });
       } else if (r < d * 1.6 + 0.02 && far < 60 && free(x, z, 0.6)) {
         bushes.push({ x, y, z, s: 0.7 + rng() * 0.7 });
@@ -111,10 +119,10 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
   // --- meadow: grass, flowers --------------------------------------------------------
   const grassArea = { x: flat.x0 - 14, y: flat.z0 - 10, w: flat.x1 - flat.x0 + 28, h: flat.z1 - flat.z0 + 32 };
   group.add(
-    buildGrassWhere(grassArea, (x, z) => !site.taken(x, z) && site.wear(x, z) < 0.4 && woods(x, z) < 0.5, 5000, (x, z) => woods(x, z) > 0.2, h, { hue: 0.24, sat: 0.45, light: 0.17 }),
+    buildGrassWhere(grassArea, (x, z) => !site.taken(x, z) && site.wear(x, z) < 0.4 && woods(x, z) < 0.5, 5000, (x, z) => woods(x, z) > 0.2, h, style.grass ?? { hue: 0.24, sat: 0.45, light: 0.17 }),
   );
   const flowers: PlantSpot[] = [];
-  for (let k = 0; k < 6000 && flowers.length < 700; k++) {
+  for (let k = 0; k < 6000 && flowers.length < (style.flowers ?? 700); k++) {
     const x = grassArea.x + rng() * grassArea.w;
     const z = grassArea.y + rng() * grassArea.h;
     if (n.fbm(x * 0.15 + 30, z * 0.15, 2) < 0.55 || site.taken(x, z) || site.wear(x, z) > 0.3 || woods(x, z) > 0.3) continue;
@@ -167,7 +175,7 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
   }
   group.add(props.build(lib));
 
-  const lamps = buildLanterns(site.lamps, lib, h);
+  const lamps = style.lamps === 'post' ? buildLamps(site.lamps) : buildLanterns(site.lamps, lib, h);
   group.add(lamps.group);
   return { group, lamps, heightAt: h };
 }

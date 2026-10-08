@@ -14,6 +14,7 @@ import type { BuildingSpec, BuiltBuilding } from '../buildingFactory.js';
 import type { BuildingFactory } from '../buildingFactory.js';
 import { styleFor } from '../../buildings.js';
 import { hashString, makeRng } from '../../../util/rng.js';
+import type { BuildingStyle } from '../../../assets/theme.js';
 import type { MaterialLibrary } from './materials.js';
 import { MeshWriter, type Mat, type V3 } from './meshWriter.js';
 
@@ -275,8 +276,10 @@ class Mason {
 
 interface Ctx {
   m: Mason;
-  /** Roof colour (a protocol brand) as a tint for roof textures. */
-  brand: string;
+  /** Roof tint from the protocol's brand colour (softened, scaled by the theme). */
+  roof: string;
+  /** Roof tint from the guild's banner colour. */
+  bannerRoof: string;
   banner: string;
   tier: number;
   /** The plaster wash for this building. */
@@ -293,12 +296,16 @@ interface Made {
   bell?: THREE.Object3D;
 }
 
-/** A soft version of a brand colour, so tinted roof tiles still read as tiles. */
-function roofTint(hex: string): string {
+/**
+ * A soft version of a brand colour, so tinted roof tiles still read as tiles;
+ * `strength` (the theme's brandRoofs) fades it towards no tint at all.
+ */
+function roofTint(hex: string, strength: number): string {
   const c = new THREE.Color(hex);
   const hsl = { h: 0, s: 0, l: 0 };
   c.getHSL(hsl);
-  return `#${new THREE.Color().setHSL(hsl.h, Math.min(0.32, hsl.s * 0.6), THREE.MathUtils.clamp(hsl.l, 0.5, 0.72)).getHexString()}`;
+  const soft = new THREE.Color().setHSL(hsl.h, Math.min(0.32, hsl.s * 0.6), THREE.MathUtils.clamp(hsl.l, 0.5, 0.72));
+  return `#${new THREE.Color('#ffffff').lerp(soft, strength).getHexString()}`;
 }
 
 const WASHES = ['#f4ead6', '#efe2c4', '#e9dccb', '#f2e6d0', '#e6d6b8'];
@@ -363,7 +370,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     }
     m.box([0, 2.95, 0], [W + 0.2, 0.2, r.d + 0.2], 'timber');
     m.storey(r, 3.05, { h: 2.4, wall: { key: 'plaster', tint: c.wash }, timber: true, shutters: true });
-    const top = m.gable(r, 5.45, r.d * 0.6, 0.5, { key: 'roofTiles', tint: roofTint(c.brand) }, { key: 'plaster', tint: c.wash });
+    const top = m.gable(r, 5.45, r.d * 0.6, 0.5, { key: 'roofTiles', tint: c.roof }, { key: 'plaster', tint: c.wash });
     // stalls under the arcade
     for (const [x, col] of [[-W * 0.25, '#b04040'], [W * 0.25, '#d8b040']] as const) {
       m.box([x, 0.55, 0.2], [1.1, 0.8, 0.6], 'planks');
@@ -373,12 +380,12 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
   },
   /** A narrow merchant's townhouse with the gable to the street. */
   broker(c) {
-    return timberHouse(c, { w: c.W * 0.72, d: c.D * 0.85, storeys: 3, jetty: 0.25, roof: { key: 'roofTiles', tint: roofTint(c.brand) }, alongZ: true, rise: 2.6 });
+    return timberHouse(c, { w: c.W * 0.72, d: c.D * 0.85, storeys: 3, jetty: 0.25, roof: { key: 'roofTiles', tint: c.roof }, alongZ: true, rise: 2.6 });
   },
   /** A stone counting house behind a columned portico. */
   bank(c) {
     const { m, W, D } = c;
-    const body = stoneHall(c, { w: W, d: D * 0.72, storeys: 2, roof: 'hip', roofMat: { key: 'roofSlate', tint: roofTint(c.brand) } });
+    const body = stoneHall(c, { w: W, d: D * 0.72, storeys: 2, roof: 'hip', roofMat: { key: 'roofSlate', tint: c.roof } });
     const fz = body.r.d / 2;
     m.box([0, 0.12, fz + 0.65], [W + 0.2, 0.24, 1.3], 'stoneDark');
     for (let i = 0; i < 4; i++) {
@@ -391,8 +398,8 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     const y = 3.48;
     const half = W / 2 + 0.15;
     m.w.slab([[-half, y, fz + 1.2], [half, y, fz + 1.2], [0, y + 1.1, fz + 1.2]], 0.15, 'stone', 'stone');
-    m.w.slab([[half, y, fz + 1.2], [half, y, fz], [0, y + 1.1, fz], [0, y + 1.1, fz + 1.2]], 0.1, { key: 'roofSlate', tint: roofTint(c.brand) }, 'timber');
-    m.w.slab([[-half, y, fz], [-half, y, fz + 1.2], [0, y + 1.1, fz + 1.2], [0, y + 1.1, fz]], 0.1, { key: 'roofSlate', tint: roofTint(c.brand) }, 'timber');
+    m.w.slab([[half, y, fz + 1.2], [half, y, fz], [0, y + 1.1, fz], [0, y + 1.1, fz + 1.2]], 0.1, { key: 'roofSlate', tint: c.roof }, 'timber');
+    m.w.slab([[-half, y, fz], [-half, y, fz + 1.2], [0, y + 1.1, fz + 1.2], [0, y + 1.1, fz]], 0.1, { key: 'roofSlate', tint: c.roof }, 'timber');
     m.box([0, y + 0.45, fz + 1.36], [0.5, 0.5, 0.05], 'gold');
     return { top: body.top, sign: [W / 2 - 0.4, 2.2, fz + 1.5] };
   },
@@ -402,7 +409,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     const nave: Rect = { cx: 0, cz: -0.5, w: W * 0.65, d: D * 0.75 };
     m.plinth(nave, 0.4);
     m.storey(nave, 0.4, { h: 3.6, wall: 'stone', quoins: true, win: [0.5, 1.6], windows: ['left', 'right', 'back'] });
-    m.gable(nave, 4.0, 2.4, 0.3, { key: 'roofSlate', tint: roofTint(c.brand) }, 'stone', true);
+    m.gable(nave, 4.0, 2.4, 0.3, { key: 'roofSlate', tint: c.roof }, 'stone', true);
     const tw: Rect = { cx: 0, cz: nave.cz + nave.d / 2 + 0.6, w: 1.7, d: 1.7 };
     m.plinth(tw, 0.4);
     m.storey(tw, 0.4, { h: 6.2, wall: 'stone', quoins: true, door: { w: 1.0, h: 2.2 }, win: [0.4, 1.0], windows: ['left', 'right'] });
@@ -410,7 +417,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     // belfry openings
     for (const f of FACES) m.panel(tw, f, -0.35, 0.35, 5.2, 6.2, 0.02, 'glass');
     const spireH = 4.2;
-    m.hip(tw, 6.75, spireH, 0.15, { key: 'roofSlate', tint: roofTint(c.brand) });
+    m.hip(tw, 6.75, spireH, 0.15, { key: 'roofSlate', tint: c.roof });
     m.box([0, 6.75 + spireH + 0.5, tw.cz], [0.06, 0.9, 0.06], 'gold');
     m.box([0, 6.75 + spireH + 0.65, tw.cz], [0.5, 0.06, 0.06], 'gold');
     return { top: 6.75 + spireH + 1, sign: [W / 2 - 0.3, 2.2, tw.cz + 1.4] };
@@ -426,10 +433,10 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
   /** A round alchemist's tower with a green-glassed lantern. */
   alchemist(c) {
     const { m, W } = c;
-    const top = m.roundTower(0, -0.3, W * 0.36, 8.5, { key: 'roofTiles', tint: roofTint(c.brand) });
+    const top = m.roundTower(0, -0.3, W * 0.36, 8.5, { key: 'roofTiles', tint: c.roof });
     const r: Rect = { cx: 0, cz: 0.9, w: 1.6, d: 1.4 };
     m.storey(r, 0, { h: 2.6, wall: { key: 'plaster', tint: c.wash }, timber: true, door: { w: 0.9, h: 2.0 }, windows: [] });
-    m.gable(r, 2.6, 0.9, 0.25, { key: 'roofTiles', tint: roofTint(c.brand) }, { key: 'plaster', tint: c.wash }, true);
+    m.gable(r, 2.6, 0.9, 0.25, { key: 'roofTiles', tint: c.roof }, { key: 'plaster', tint: c.wash }, true);
     return { top, sign: [1.2, 2.4, 2.0] };
   },
   /** A big auction hall with a wide door. */
@@ -439,7 +446,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     m.plinth(r, 0.4);
     m.storey(r, 0.4, { h: 3.4, wall: 'stone', quoins: true, door: { w: 1.6, h: 2.6 }, win: [0.7, 1.4] });
     m.storey(r, 3.8, { h: 2.2, wall: { key: 'plaster', tint: c.wash }, timber: true, win: [0.6, 0.7] });
-    const top = m.gable(r, 6.0, r.d * 0.5, 0.45, { key: 'roofTiles', tint: roofTint(c.brand) }, { key: 'plaster', tint: c.wash });
+    const top = m.gable(r, 6.0, r.d * 0.5, 0.45, { key: 'roofTiles', tint: c.roof }, { key: 'plaster', tint: c.wash });
     // a dormer with a hoist beam
     m.box([0, 6.6, r.d / 2 + 0.3], [0.15, 0.15, 1.0], 'timber');
     return { top, sign: [W / 2 - 0.4, 3.0, r.d / 2 + 0.5] };
@@ -450,7 +457,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     const r: Rect = { cx: -0.4, cz: -0.2, w: W * 0.75, d: D * 0.7 };
     m.plinth(r, 0.3);
     m.storey(r, 0.3, { h: 3.0, wall: 'planks', door: { w: 1.4, h: 2.4 }, win: [0.5, 0.6], shutters: true });
-    const top = m.gable(r, 3.3, r.d * 0.55, 0.4, { key: 'roofTiles', tint: roofTint(c.brand) }, 'planks');
+    const top = m.gable(r, 3.3, r.d * 0.55, 0.4, { key: 'roofTiles', tint: c.roof }, 'planks');
     // pier on posts
     const px = W / 2 - 0.3;
     m.box([px, 0.35, 0.4], [1.2, 0.1, D * 0.95], 'planks');
@@ -466,17 +473,17 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     m.plinth(r, 0.45);
     m.storey(r, 0.45, { h: 3.0, wall: 'stone', quoins: true, door: { w: 1.3, h: 2.4 }, win: [0.6, 1.2] });
     m.storey(r, 3.45, { h: 2.6, wall: { key: 'plaster', tint: c.wash }, timber: true, shutters: true });
-    m.hip(r, 6.05, 2.0, 0.45, { key: 'roofSlate', tint: roofTint(c.brand) });
+    m.hip(r, 6.05, 2.0, 0.45, { key: 'roofSlate', tint: c.roof });
     const t: Rect = { cx: 0, cz: 0, w: 0.9, d: 0.9 };
     m.walls({ ...t }, 7.6, 1.2, 'timber');
     for (const f of FACES) m.panel(t, f, -0.25, 0.25, 7.9, 8.6, 0.02, 'glass');
-    m.hip(t, 8.8, 1.4, 0.15, { key: 'roofSlate', tint: roofTint(c.brand) });
+    m.hip(t, 8.8, 1.4, 0.15, { key: 'roofSlate', tint: c.roof });
     m.pole(0, 0, 11.2, c.banner);
     return { top: 11.2, sign: [W / 2 - 0.4, 2.8, r.d / 2 + 0.3] };
   },
   /** A small half-timbered office. */
   names(c) {
-    return timberHouse(c, { w: c.W * 0.8, d: c.D * 0.65, storeys: 2, roof: { key: 'roofTiles', tint: roofTint(c.brand) } });
+    return timberHouse(c, { w: c.W * 0.8, d: c.D * 0.65, storeys: 2, roof: { key: 'roofTiles', tint: c.roof } });
   },
   /** A plank warehouse with crates. */
   packing(c) {
@@ -484,7 +491,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     const r: Rect = { cx: 0, cz: -0.3, w: W * 0.9, d: D * 0.65 };
     m.plinth(r, 0.3);
     m.storey(r, 0.3, { h: 3.2, wall: 'planks', door: { w: 1.6, h: 2.5 }, win: [0.5, 0.5], windows: ['left', 'right'] });
-    const top = m.gable(r, 3.5, r.d * 0.45, 0.4, { key: 'roofTiles', tint: roofTint(c.brand) }, 'planks');
+    const top = m.gable(r, 3.5, r.d * 0.45, 0.4, { key: 'roofTiles', tint: c.roof }, 'planks');
     for (const [x, z, s] of [[-W / 2 + 0.4, r.d / 2 + 0.2, 0.6], [-W / 2 + 0.6, r.d / 2 + 0.8, 0.5], [W / 2 - 0.5, r.d / 2 + 0.4, 0.55], [-W / 2 + 0.45, r.d / 2 + 0.25, 0.45]] as const) {
       const y = s === 0.45 ? 0.6 + s / 2 : s / 2;
       m.box([x, y, z], [s, s, s], 'planks', m.rng() * 0.4);
@@ -497,12 +504,12 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     const r: Rect = { cx: 0, cz: -0.6, w: W * 0.85, d: D * 0.55 };
     m.plinth(r, 0.3);
     m.storey(r, 0.3, { h: 2.8, wall: 'stone', quoins: true, door: { w: 1.0, h: 2.1 }, win: [0.6, 0.6] });
-    const top = m.gable(r, 3.1, 1.6, 0.35, { key: 'roofSlate', tint: roofTint(c.brand) }, 'stone');
+    const top = m.gable(r, 3.1, 1.6, 0.35, { key: 'roofSlate', tint: c.roof }, 'stone');
     m.chimney(r.w / 2 - 0.5, r.cz - 0.4, 3.0, 2.8, true);
     // the open lean-to over the anvil
     const lz = r.cz + r.d / 2;
     for (const x of [-r.w / 2 + 0.2, r.w / 2 - 0.2]) m.box([x, 1.25, lz + 1.4], [0.18, 2.5, 0.18], 'timber');
-    m.w.slab([[-r.w / 2 - 0.2, 2.5, lz + 1.7], [r.w / 2 + 0.2, 2.5, lz + 1.7], [r.w / 2 + 0.2, 3.0, lz], [-r.w / 2 - 0.2, 3.0, lz]], 0.1, { key: 'roofSlate', tint: roofTint(c.brand) }, 'timber');
+    m.w.slab([[-r.w / 2 - 0.2, 2.5, lz + 1.7], [r.w / 2 + 0.2, 2.5, lz + 1.7], [r.w / 2 + 0.2, 3.0, lz], [-r.w / 2 - 0.2, 3.0, lz]], 0.1, { key: 'roofSlate', tint: c.roof }, 'timber');
     m.box([-0.6, 0.45, lz + 0.8], [0.9, 0.9, 0.9], 'stone');
     m.box([-0.6, 0.91, lz + 0.8], [0.5, 0.04, 0.5], 'fire');
     m.box([0.7, 0.35, lz + 0.8], [0.25, 0.7, 0.25], 'timber');
@@ -545,7 +552,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     // open belfry: corner piers and a roof
     for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) m.box([(sx * r.w) / 2 - sx * 0.25, 9.15, (sz * r.d) / 2 - sz * 0.25], [0.5, 2.2, 0.5], 'stone');
     m.box([0, 10.35, 0], [r.w + 0.3, 0.3, r.d + 0.3], 'stoneDark');
-    m.hip({ ...r }, 10.5, 4.2, 0.25, { key: 'roofSlate', tint: roofTint(c.brand) });
+    m.hip({ ...r }, 10.5, 4.2, 0.25, { key: 'roofSlate', tint: c.roof });
     m.box([0, 15.2, 0], [0.06, 1.2, 0.06], 'gold');
     // a clock face
     m.onFace(r, 'front', 0, 6.2, [1.25, 1.25], 0.08, 'stoneDark');
@@ -564,7 +571,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
   },
   /** The guild hall: a big jettied half-timbered hall in the guild's colours. */
   guildhall(c) {
-    const made = timberHouse(c, { w: c.W, d: c.D * 0.7, storeys: 2, jetty: 0.35, roof: { key: 'roofTiles', tint: roofTint(c.banner) }, stoneGround: true });
+    const made = timberHouse(c, { w: c.W, d: c.D * 0.7, storeys: 2, jetty: 0.35, roof: { key: 'roofTiles', tint: c.bannerRoof }, stoneGround: true });
     for (const x of [-c.W / 2 + 0.5, c.W / 2 - 0.5]) {
       c.m.box([x, 4.4, c.D * 0.35 + 0.42], [0.7, 1.8, 0.03], { key: 'cloth', tint: c.banner });
       c.m.box([x, 5.35, c.D * 0.35 + 0.45], [0.85, 0.08, 0.08], 'timber');
@@ -644,7 +651,7 @@ function home(c: Ctx): Made {
       // a castle: a keep, four round corner towers and curtain walls
       const keep = stoneHall(c, { w: W * 0.5, d: D * 0.5, storeys: 3, roof: 'crenel', roofMat: 'stone' });
       const k = W / 2 - 0.5;
-      for (const [x, z] of [[-k, -k], [k, -k], [k, k], [-k, k]] as const) m.roundTower(x, z, 0.7, 6, { key: 'roofSlate', tint: roofTint(c.banner) });
+      for (const [x, z] of [[-k, -k], [k, -k], [k, k], [-k, k]] as const) m.roundTower(x, z, 0.7, 6, { key: 'roofSlate', tint: c.bannerRoof });
       for (const f of FACES) {
         const r: Rect = { cx: 0, cz: 0, w: 2 * k, d: 2 * k };
         m.onFace(r, f, 0, 1.8, [2 * k - 1.2, 3.6], 0.5, 'stone', -0.5);
@@ -665,20 +672,25 @@ export class MedievalBuilder {
   /** Triangles in the last building built (the sandbox's perf panel). */
   lastTriangles = 0;
 
-  constructor(lib: MaterialLibrary, factory: BuildingFactory) {
+  readonly #style: BuildingStyle;
+
+  constructor(lib: MaterialLibrary, factory: BuildingFactory, style: BuildingStyle = { style: 'medieval' }) {
     this.lib = lib;
     this.#factory = factory;
+    this.#style = style;
   }
 
   build(spec: BuildingSpec): BuiltBuilding {
     const seed = hashString(`${spec.kind}|${spec.tier}|${spec.roof ?? ''}`);
+    const washes = this.#style.washes ?? WASHES;
     const m = new Mason(seed);
     const ctx: Ctx = {
       m,
-      brand: spec.roof ?? '#a0522d',
+      roof: roofTint(spec.roof ?? '#a0522d', this.#style.brandRoofs ?? 1),
+      bannerRoof: roofTint(spec.banner ?? '#b03030', this.#style.brandRoofs ?? 1),
       banner: spec.banner ?? '#b03030',
       tier: spec.tier,
-      wash: WASHES[seed % WASHES.length]!,
+      wash: washes[seed % washes.length]!,
       W: (spec.w - 0.5) * METRES_PER_TILE,
       D: (spec.h - 0.5) * METRES_PER_TILE,
     };

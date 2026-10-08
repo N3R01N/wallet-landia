@@ -13,7 +13,9 @@ import type { Tier } from '../domain/tiers.js';
 import type { BuildingSpec, BuiltBuilding } from '../render/three/buildingFactory.js';
 import { BuildingFactory } from '../render/three/buildingFactory.js';
 import { MedievalBuilder } from '../render/three/grammar/medieval.js';
-import { MaterialLibrary, TEX_SIZE, type MatKey } from '../render/three/grammar/materials.js';
+import { MaterialLibrary, type MatKey } from '../render/three/grammar/materials.js';
+import { loadThemeBundles, type ThemeBundle } from '../assets/themeBundles.js';
+import type { LoadedPack } from '../assets/registry.js';
 import { medievalSurroundings, type Site, type Surroundings } from '../render/three/grammar/surroundings.js';
 import { Vegetation } from '../render/three/grammar/vegetation.js';
 import type { SkyId } from '../render/three/environment.js';
@@ -68,8 +70,8 @@ export interface Theme {
   windowMaterial: THREE.MeshStandardMaterial;
   fireMaterial: THREE.MeshStandardMaterial;
   material(color: string): THREE.Material;
-  /** A textured ground surface (material plus metres per texture repeat); flat colours otherwise. */
-  groundMaterial?(which: keyof GroundStyle): { material: THREE.Material; size: number };
+  /** A textured ground surface (its UVs are in metres); flat colours otherwise. */
+  groundMaterial?(which: keyof GroundStyle): THREE.Material;
   /** Terrain, vegetation, props and lamps around a site; the flat-colour meadow otherwise. */
   surroundings?(site: Site): Surroundings;
 }
@@ -96,40 +98,49 @@ function planned(id: string, name: string, description: string, needs: string[])
   return { ...t, id, name, description, status: 'planned', needs };
 }
 
-function medieval(): Theme {
+/** A theme from a bundle (pack format 2): everything it looks like comes from its data. */
+export function bundleTheme(b: ThemeBundle): Theme {
+  const spec = b.spec;
   const factory = new BuildingFactory();
-  const lib = new MaterialLibrary('/themes/medieval/materials');
-  const builder = new MedievalBuilder(lib, factory);
+  const lib = new MaterialLibrary(spec.materials);
+  const builder = new MedievalBuilder(lib, factory, spec.buildings);
   let veg: Vegetation | undefined;
-  const GROUND: Record<keyof GroundStyle, MatKey> = { grass: 'grass', road: 'cobbles', path: 'dirt' };
+  const ground: Record<keyof GroundStyle, MatKey> = { grass: 'grass', road: 'cobbles', path: 'dirt', ...spec.ground };
+  const base = baseline();
   const theme: Theme = {
-    ...baseline(),
-    id: 'medieval',
-    name: 'Medieval',
-    description: 'Rigged CC0 people (Quaternius) in fantasy outfits on horses; grammar-built stone, timber and plaster buildings with CC0 PBR textures (ambientCG); hills, woods, meadow and props around them.',
-    status: 'partial',
-    needs: [
-      'Real griffin and dragon mounts (wings are placeholders); class gear (shield, staff, lute, bow)',
-      'More outfits: the free kit has only Peasant and Ranger',
-    ],
-    ground: { grass: '#6f9a4a', road: '#9a8f80', path: '#8a7556' },
-    building: (spec) => builder.build(spec),
+    ...base,
+    id: b.id,
+    name: b.name,
+    description: [b.description, `by ${b.author}`, b.license ? `(${b.license})` : ''].filter(Boolean).join(' '),
+    status: spec.notes && spec.notes.length > 0 ? 'partial' : 'ready',
+    defaultSky: spec.sky ?? 'day',
+    building: (s) => builder.build(s),
     windowMaterial: lib.glass,
     fireMaterial: lib.fire,
-    groundMaterial: (which) => ({ material: lib.get(GROUND[which]), size: TEX_SIZE[GROUND[which]] }),
-    surroundings: (site) => medievalSurroundings(site, lib, (veg ??= new Vegetation(lib))),
-    async prepare() {
-      const { loadMedievalKit, riggedProvider } = await import('./rigged.js');
-      theme.characters = riggedProvider(await loadMedievalKit());
-      delete theme.prepare; // once
-    },
+    material: (c) => factory.mat(c),
+    groundMaterial: (which) => lib.get(ground[which]),
+    surroundings: (site) => medievalSurroundings(site, lib, (veg ??= new Vegetation(lib)), spec.surroundings),
   };
+  if (spec.notes) theme.needs = spec.notes;
+  const characters = spec.characters;
+  if (characters) {
+    theme.prepare = async () => {
+      const { loadKit, riggedProvider } = await import('./rigged.js');
+      theme.characters = riggedProvider(await loadKit(characters), `Rigged characters from the ${b.name} bundle`);
+      delete theme.prepare; // once
+    };
+  }
   return theme;
+}
+
+/** Add the bundled (and imported) theme bundles after the baseline, before the planned ones. */
+export async function loadThemes(imported: Iterable<LoadedPack> = []): Promise<void> {
+  const bundles = await loadThemeBundles('/themes', imported);
+  THEMES.splice(1, 0, ...bundles.map(bundleTheme));
 }
 
 export const THEMES: Theme[] = [
   baseline(),
-  medieval(),
   planned('scifi', 'Sci-fi (planned)', 'Panelled hab modules, neon, drones.', [
     'Sci-fi outfits on the same universal skeleton (or KayKit alternative)',
     'Quaternius Modular Sci-Fi MegaKit or panel grammar + metal/emissive PBR',

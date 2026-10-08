@@ -1,0 +1,359 @@
+{
+  "format": "wallet-landia-pack/2",
+  "id": "medieval",
+  "name": "Medieval",
+  "author": "wallet-landia; assets by Quaternius and ambientCG",
+  "version": "0.3.0",
+  "license": "CC0-1.0",
+  "description": "Rigged people in fantasy outfits on horses; grammar-built stone, timber and plaster buildings with PBR textures; hills, woods, meadow and props around them.",
+  "slots": {},
+  "theme": {
+    "sky": "day",
+    "notes": [
+      "Real griffin and dragon mounts (wings are placeholders); class gear (shield, staff, lute, bow)",
+      "More outfits: the free kit has only Peasant and Ranger"
+    ],
+    "materials": {
+      "plaster": {
+        "color": "materials/plaster/color.webp",
+        "normal": "materials/plaster/normal.webp",
+        "roughness": "materials/plaster/roughness.webp",
+        "size": 2.2
+      },
+      "stone": {
+        "color": "materials/stone/color.webp",
+        "normal": "materials/stone/normal.webp",
+        "roughness": "materials/stone/roughness.webp",
+        "size": 1.25
+      },
+      "stoneDark": {
+        "color": "materials/stoneDark/color.webp",
+        "normal": "materials/stoneDark/normal.webp",
+        "roughness": "materials/stoneDark/roughness.webp",
+        "size": 1.25
+      },
+      "timber": {
+        "color": "materials/timber/color.webp",
+        "normal": "materials/timber/normal.webp",
+        "roughness": "materials/timber/roughness.webp",
+        "size": 1.2
+      },
+      "planks": {
+        "color": "materials/planks/color.webp",
+        "normal": "materials/planks/normal.webp",
+        "roughness": "materials/planks/roughness.webp",
+        "size": 1.4
+      },
+      "roofTiles": {
+        "color": "materials/roofTiles/color.webp",
+        "normal": "materials/roofTiles/normal.webp",
+        "roughness": "materials/roofTiles/roughness.webp",
+        "size": 1.8
+      },
+      "roofSlate": {
+        "color": "materials/roofSlate/color.webp",
+        "normal": "materials/roofSlate/normal.webp",
+        "roughness": "materials/roofSlate/roughness.webp",
+        "size": 1.4
+      },
+      "thatch": {
+        "color": "materials/thatch/color.webp",
+        "normal": "materials/thatch/normal.webp",
+        "roughness": "materials/thatch/roughness.webp",
+        "size": 2.4
+      },
+      "cobbles": {
+        "color": "materials/cobbles/color.webp",
+        "normal": "materials/cobbles/normal.webp",
+        "roughness": "materials/cobbles/roughness.webp",
+        "size": 2.4
+      },
+      "grass": {
+        "color": "materials/grass/color.webp",
+        "normal": "materials/grass/normal.webp",
+        "roughness": "materials/grass/roughness.webp",
+        "size": 3
+      },
+      "dirt": {
+        "color": "materials/dirt/color.webp",
+        "normal": "materials/dirt/normal.webp",
+        "roughness": "materials/dirt/roughness.webp",
+        "size": 3
+      },
+      "cloth": {
+        "color": "materials/cloth/color.webp",
+        "normal": "materials/cloth/normal.webp",
+        "roughness": "materials/cloth/roughness.webp",
+        "size": 1.2
+      },
+      "bark": {
+        "color": "materials/bark/color.webp",
+        "normal": "materials/bark/normal.webp",
+        "roughness": "materials/bark/roughness.webp",
+        "size": 1.2
+      },
+      "rock": {
+        "color": "materials/rock/color.webp",
+        "normal": "materials/rock/normal.webp",
+        "roughness": "materials/rock/roughness.webp",
+        "size": 2.5
+      },
+      "forestFloor": {
+        "color": "materials/forestFloor/color.webp",
+        "normal": "materials/forestFloor/normal.webp",
+        "roughness": "materials/forestFloor/roughness.webp",
+        "size": 3
+      },
+      "glass": {
+        "tint": "#2c3a48"
+      },
+      "fire": {
+        "tint": "#ff8a2a"
+      },
+      "iron": {
+        "tint": "#3a3a40",
+        "metalness": 0.7,
+        "roughnessValue": 0.5
+      },
+      "gold": {
+        "tint": "#d8a830",
+        "metalness": 0.9,
+        "roughnessValue": 0.35
+      }
+    },
+    "ground": {
+      "grass": "grass",
+      "road": "cobbles",
+      "path": "dirt"
+    },
+    "buildings": {
+      "style": "medieval",
+      "washes": [
+        "#f4ead6",
+        "#efe2c4",
+        "#e9dccb",
+        "#f2e6d0",
+        "#e6d6b8"
+      ],
+      "brandRoofs": 1
+    },
+    "surroundings": {
+      "style": "medieval",
+      "relief": 1,
+      "woods": 1,
+      "trees": {
+        "oak": 0.57,
+        "birch": 0.18,
+        "fir": 0.25
+      },
+      "grass": {
+        "hue": 0.24,
+        "sat": 0.45,
+        "light": 0.17
+      },
+      "flowers": 700,
+      "lamps": "lantern"
+    },
+    "characters": {
+      "skeleton": "ue5-universal",
+      "animations": "anim/ual.glb",
+      "clips": {
+        "idle": "Idle_Loop",
+        "walk": "Walk_Loop",
+        "run": "Jog_Fwd_Loop",
+        "sit": "Sitting_Idle_Loop"
+      },
+      "speeds": {
+        "walk": 1.25,
+        "run": 3.0
+      },
+      "bodies": {
+        "male": "base/Superhero_Male_FullBody.glb",
+        "female": "base/Superhero_Female_FullBody.glb"
+      },
+      "bodyParts": "head",
+      "outfits": {
+        "default": {
+          "male": "outfits/Male_Ranger.glb",
+          "female": "outfits/Female_Ranger.glb"
+        },
+        "villager": {
+          "male": "outfits/Male_Peasant.glb",
+          "female": "outfits/Female_Peasant.glb"
+        },
+        "merchant": {
+          "male": "outfits/Male_Peasant.glb",
+          "female": "outfits/Female_Peasant.glb"
+        },
+        "monk": {
+          "male": "outfits/Male_Peasant.glb",
+          "female": "outfits/Female_Peasant.glb"
+        },
+        "sleeper": {
+          "male": "outfits/Male_Peasant.glb",
+          "female": "outfits/Female_Peasant.glb"
+        }
+      },
+      "hair": {
+        "male": [
+          "hair/Hair_SimpleParted.glb",
+          "hair/Hair_Buzzed.glb",
+          "hair/Hair_Beard.glb"
+        ],
+        "female": [
+          "hair/Hair_Long.glb",
+          "hair/Hair_Buns.glb",
+          "hair/Hair_BuzzedFemale.glb"
+        ]
+      },
+      "eyebrows": {
+        "male": "hair/Eyebrows_Regular.glb",
+        "female": "hair/Eyebrows_Female.glb"
+      },
+      "mounts": {
+        "t2": {
+          "model": "animals/Horse.fbx",
+          "height": 1.5,
+          "clips": {
+            "idle": [
+              "Idle"
+            ],
+            "walk": [
+              "Walk",
+              "WalkSlow"
+            ],
+            "run": [
+              "Gallop",
+              "Run"
+            ]
+          },
+          "speeds": {
+            "walk": 1.6,
+            "run": 5
+          },
+          "seat": {
+            "from": "Torso",
+            "to": "Shoulders",
+            "t": 0.33
+          },
+          "tint": "#8a8a8a"
+        },
+        "t3": {
+          "model": "animals/Horse.fbx",
+          "height": 2.0,
+          "clips": {
+            "idle": [
+              "Idle"
+            ],
+            "walk": [
+              "Walk",
+              "WalkSlow"
+            ],
+            "run": [
+              "Gallop",
+              "Run"
+            ]
+          },
+          "speeds": {
+            "walk": 1.6,
+            "run": 5
+          },
+          "seat": {
+            "from": "Torso",
+            "to": "Shoulders",
+            "t": 0.33
+          }
+        },
+        "t4": {
+          "model": "animals/Horse.fbx",
+          "height": 2.0,
+          "clips": {
+            "idle": [
+              "Idle"
+            ],
+            "walk": [
+              "Walk",
+              "WalkSlow"
+            ],
+            "run": [
+              "Gallop",
+              "Run"
+            ]
+          },
+          "speeds": {
+            "walk": 1.6,
+            "run": 5
+          },
+          "seat": {
+            "from": "Torso",
+            "to": "Shoulders",
+            "t": 0.33
+          },
+          "tint": "#4a4048"
+        },
+        "t5": {
+          "model": "animals/Horse.fbx",
+          "height": 2.0,
+          "clips": {
+            "idle": [
+              "Idle"
+            ],
+            "walk": [
+              "Walk",
+              "WalkSlow"
+            ],
+            "run": [
+              "Gallop",
+              "Run"
+            ]
+          },
+          "speeds": {
+            "walk": 1.6,
+            "run": 5
+          },
+          "seat": {
+            "from": "Torso",
+            "to": "Shoulders",
+            "t": 0.33
+          },
+          "tint": "#d8b060",
+          "wings": {
+            "color": "#f2ead8",
+            "span": 0.48
+          }
+        },
+        "t6": {
+          "model": "animals/Horse.fbx",
+          "height": 2.0,
+          "clips": {
+            "idle": [
+              "Idle"
+            ],
+            "walk": [
+              "Walk",
+              "WalkSlow"
+            ],
+            "run": [
+              "Gallop",
+              "Run"
+            ]
+          },
+          "speeds": {
+            "walk": 1.6,
+            "run": 5
+          },
+          "seat": {
+            "from": "Torso",
+            "to": "Shoulders",
+            "t": 0.33
+          },
+          "tint": "#a8302a",
+          "wings": {
+            "color": "#5a1a18",
+            "span": 0.62
+          }
+        }
+      }
+    }
+  }
+}

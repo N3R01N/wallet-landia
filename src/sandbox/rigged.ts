@@ -1,5 +1,6 @@
 /**
- * Rigged characters from the CC0 Quaternius kits (public/themes/medieval):
+ * Rigged characters as a theme bundle describes them (theme.characters in
+ * pack.json; the medieval bundle uses the CC0 Quaternius kits):
  * base body + outfit + hair on one shared 65-joint skeleton, animated by the
  * Universal Animation Library. No retargeting: every part uses the same bone
  * names and bind pose (docs/RESEARCH_REALISM.md).
@@ -8,8 +9,8 @@
  *   body is one mesh), so the head is cut out by bone weights.
  * - Animation: idle / walk / run cross-fade; playback rate follows speed so
  *   the feet do not slide.
- * - Mounts: the Farm Animals horse, sized and tinted per value tier. Griffin
- *   and dragon wings are placeholders until real creatures are sourced.
+ * - Mounts per value tier: a model, its height and tint, its clips, where the
+ *   rider sits. Wings are placeholders until real creatures are sourced.
  */
 
 import * as THREE from 'three';
@@ -17,59 +18,63 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import type { HeroClass } from '../domain/model.js';
+import type { CharacterSpec, MountSpec } from '../assets/theme.js';
 import type { AnimState, CharacterLook, CharacterProvider, SandboxCharacter } from './themes.js';
 
 /** World scale: one tile is this many metres, so a person is about one tile tall. */
 import { METRES_PER_TILE } from '../render/three/grammar/medieval.js';
 export { METRES_PER_TILE };
-/** Natural speeds of the in-place clips at timeScale 1 (m/s), tuned so feet stay planted. */
-const CLIP_SPEED = { walk: 1.25, run: 3.0 };
 const FADE = 0.3;
 
-interface Kit {
-  clips: Map<string, THREE.AnimationClip>;
-  bodies: { male: THREE.Group; female: THREE.Group };
-  outfits: Map<string, THREE.Group>;
-  hair: Map<string, THREE.Group>;
-  horse: { scene: THREE.Group; clips: THREE.AnimationClip[] } | null;
+interface Animal {
+  scene: THREE.Group;
+  clips: THREE.AnimationClip[];
 }
 
-/** Which free outfit each class wears (the free kit has Peasant and Ranger). */
-const OUTFIT_OF: Record<HeroClass, 'Peasant' | 'Ranger'> = {
-  merchant: 'Peasant',
-  monk: 'Peasant',
-  sleeper: 'Peasant',
-  paladin: 'Ranger',
-  ranger: 'Ranger',
-  bard: 'Ranger',
-  adventurer: 'Ranger',
-};
-const HAIR = { male: ['Hair_SimpleParted', 'Hair_Buzzed', 'Hair_Beard'], female: ['Hair_Long', 'Hair_Buns', 'Hair_BuzzedFemale'] };
+interface Kit {
+  spec: CharacterSpec;
+  clips: Map<string, THREE.AnimationClip>;
+  bodies: { male: THREE.Group; female: THREE.Group };
+  /** Outfits, hair and eyebrows by URL. */
+  parts: Map<string, THREE.Group>;
+  /** Mount models by URL. */
+  animals: Map<string, Animal>;
+}
 
 // --- loading -----------------------------------------------------------------
 
-export async function loadMedievalKit(base = '/themes/medieval'): Promise<Kit> {
+/** Load every file a theme's characters use (`spec` holds URLs: a resolved theme). */
+export async function loadKit(spec: CharacterSpec): Promise<Kit> {
   const gltf = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-  const load = (p: string): Promise<THREE.Group> => gltf.loadAsync(`${base}/${p}`).then((g) => g.scene);
-  const manifest = (await (await fetch(`${base}/manifest.json`)).json()) as { hair: string[]; outfits: string[] };
-  const anim = await gltf.loadAsync(`${base}/anim/ual.glb`);
-  const [male, female] = await Promise.all([load('base/Superhero_Male_FullBody.glb'), load('base/Superhero_Female_FullBody.glb')]);
-  const outfits = new Map(await Promise.all(manifest.outfits.map(async (n) => [n, await load(`outfits/${n}.glb`)] as const)));
-  const hair = new Map(await Promise.all(manifest.hair.map(async (n) => [n, await load(`hair/${n}.glb`)] as const)));
-  let horse: Kit['horse'] = null;
-  try {
-    const fbx = await new FBXLoader().loadAsync(`${base}/animals/Horse.fbx`);
-    horse = { scene: fbx, clips: fbx.animations };
-  } catch (error) {
-    console.warn('horse unavailable', error);
+  const load = (url: string): Promise<THREE.Group> => gltf.loadAsync(url).then((g) => g.scene);
+  const anim = await gltf.loadAsync(spec.animations);
+  const [male, female] = await Promise.all([load(spec.bodies.male), load(spec.bodies.female)]);
+  const partUrls = new Set<string>([
+    ...Object.values(spec.outfits).flatMap((p) => [p.male, p.female]),
+    ...spec.hair.male,
+    ...spec.hair.female,
+    ...[spec.eyebrows?.male, spec.eyebrows?.female].filter((u): u is string => u !== undefined),
+  ]);
+  const parts = new Map(await Promise.all([...partUrls].map(async (u) => [u, await load(u)] as const)));
+  const animals = new Map<string, Animal>();
+  for (const m of Object.values(spec.mounts)) {
+    if (animals.has(m.model)) continue;
+    try {
+      const animal =
+        m.format === 'fbx'
+          ? await new FBXLoader().loadAsync(m.model).then((f) => ({ scene: f, clips: f.animations }))
+          : await gltf.loadAsync(m.model).then((g) => ({ scene: g.scene, clips: g.animations }));
+      prepareMaterials(animal.scene, true);
+      animals.set(m.model, animal);
+    } catch (error) {
+      console.warn('mount unavailable', m.model, error);
+    }
   }
-  for (const scene of [male, female, ...outfits.values(), ...hair.values()]) prepareMaterials(scene);
-  if (horse) prepareMaterials(horse.scene, true);
-  return { clips: new Map(anim.animations.map((c) => [c.name, c])), bodies: { male, female }, outfits, hair, horse };
+  for (const scene of [male, female, ...parts.values()]) prepareMaterials(scene);
+  return { spec, clips: new Map(anim.animations.map((c) => [c.name, c])), bodies: { male, female }, parts, animals };
 }
 
-/** Shadows on, and FBX's Phong materials swapped for PBR so the sky lights them consistently. */
+/** Shadows on, and Phong/Lambert materials (FBX) swapped for PBR so the sky lights them consistently. */
 function prepareMaterials(scene: THREE.Object3D, toStandard = false): void {
   scene.traverse((o) => {
     const mesh = o as THREE.Mesh;
@@ -79,6 +84,7 @@ function prepareMaterials(scene: THREE.Object3D, toStandard = false): void {
     mesh.frustumCulled = false; // skinned bounds do not follow the animation
     if (toStandard) {
       const swap = (m: THREE.Material): THREE.Material => {
+        if ((m as THREE.MeshStandardMaterial).isMeshStandardMaterial) return m;
         const src = m as THREE.MeshPhongMaterial;
         return new THREE.MeshStandardMaterial({ color: src.color?.clone() ?? new THREE.Color('#888'), map: src.map ?? null, roughness: 0.85, vertexColors: src.vertexColors });
       };
@@ -165,18 +171,18 @@ const _q6 = new THREE.Quaternion();
 const _up = new THREE.Vector3(0, 1, 0);
 
 /**
- * Where a rider sits: just behind the withers (a third of the way from the
- * Torso bone to the Shoulders; the horse's "Back" bone is over its rump), on
- * the surface of the mesh (a ray cast down onto the skinned mesh at rest).
+ * Where a rider sits: between the two bones the theme names (for the medieval
+ * horse, a third of the way from Torso to Shoulders: just behind the withers),
+ * on the surface of the mesh (a ray cast down onto the skinned mesh at rest).
  */
-function backTop(root: THREE.Object3D): THREE.Vector3 {
+function backTop(root: THREE.Object3D, seat: MountSpec['seat']): THREE.Vector3 {
   root.updateMatrixWorld(true);
   const parent = root.parent;
-  const torso = root.getObjectByName('Torso');
-  const shoulders = root.getObjectByName('Shoulders');
+  const from = seat ? root.getObjectByName(seat.from) : undefined;
+  const to = seat ? root.getObjectByName(seat.to) : undefined;
   const at =
-    torso && shoulders
-      ? torso.getWorldPosition(new THREE.Vector3()).lerp(shoulders.getWorldPosition(new THREE.Vector3()), 0.33)
+    from && to && seat
+      ? from.getWorldPosition(new THREE.Vector3()).lerp(to.getWorldPosition(new THREE.Vector3()), seat.t)
       : new THREE.Box3().setFromObject(root).getCenter(new THREE.Vector3());
   const box = new THREE.Box3().setFromObject(root);
   const ray = new THREE.Raycaster(new THREE.Vector3(at.x, box.max.y + 1, at.z), new THREE.Vector3(0, -1, 0));
@@ -193,8 +199,10 @@ interface Mount {
   run?: THREE.AnimationAction;
   current?: THREE.AnimationAction;
   wings: THREE.Object3D[];
-  /** The top of the horse's back above its Back bone (tiles, local to the character). */
+  /** The top of the mount's back where the rider sits (tiles, local to the character). */
   saddle: THREE.Vector3;
+  /** Natural speeds of its walk and run clips (m/s). */
+  speeds: { walk: number; run: number };
 }
 
 class RiggedCharacter implements SandboxCharacter {
@@ -212,17 +220,21 @@ class RiggedCharacter implements SandboxCharacter {
   /** Per bone: the clip's rotation and what the straddle turned it into. */
   readonly #posed = new Map<THREE.Bone, { clip: THREE.Quaternion; out: THREE.Quaternion }>();
   #t = 0;
+  #speeds = { walk: 1.25, run: 3 };
 
   constructor(kit: Kit, look: CharacterLook) {
     const female = look.seed % 2 === 1;
     const sex = female ? 'female' : 'male';
     const body = SkeletonUtils.clone(kit.bodies[sex]) as THREE.Group;
     this.#rider.add(body);
+    const spec = kit.spec;
     const bodyMesh = largestSkinned(body);
-    if (bodyMesh) bodyMesh.geometry = headOnly(bodyMesh);
+    if (bodyMesh && spec.bodyParts === 'head') bodyMesh.geometry = headOnly(bodyMesh);
     const skeleton = bodyMesh?.skeleton;
-    const outfitName = `${female ? 'Female' : 'Male'}_${look.kind === 'villager' ? 'Peasant' : OUTFIT_OF[look.cls]}`;
-    const parts = [kit.outfits.get(outfitName), kit.hair.get(HAIR[sex][look.seed % 3]!), kit.hair.get(female ? 'Eyebrows_Female' : 'Eyebrows_Regular')];
+    const outfit = look.kind === 'villager' ? (spec.outfits.villager ?? spec.outfits.default) : (spec.outfits[look.cls] ?? spec.outfits.default);
+    const hairs = spec.hair[sex];
+    const urls = [outfit?.[sex], hairs.length > 0 ? hairs[look.seed % hairs.length] : undefined, spec.eyebrows?.[sex]];
+    const parts = urls.map((u) => (u ? kit.parts.get(u) : undefined));
     for (const src of parts) {
       if (!src || !skeleton) continue;
       const part = SkeletonUtils.clone(src);
@@ -233,28 +245,30 @@ class RiggedCharacter implements SandboxCharacter {
     this.object.add(this.#rider);
 
     this.#mixer = new THREE.AnimationMixer(this.#rider);
-    for (const [state, clip] of [['idle', 'Idle_Loop'], ['walk', 'Walk_Loop'], ['run', 'Jog_Fwd_Loop'], ['sit', 'Sitting_Idle_Loop']] as const) {
-      const c = kit.clips.get(clip);
+    for (const state of ['idle', 'walk', 'run', 'sit'] as const) {
+      const c = kit.clips.get(spec.clips[state]);
       if (c) this.#actions.set(state, this.#mixer.clipAction(c));
     }
+    this.#speeds = spec.speeds;
 
-    if (look.kind === 'hero' && look.tier >= 2 && kit.horse) this.#mountUp(kit.horse, look);
+    const mount = look.kind === 'hero' ? spec.mounts[`t${look.tier}` as keyof CharacterSpec['mounts']] : undefined;
+    const animal = mount ? kit.animals.get(mount.model) : undefined;
+    if (mount && animal) this.#mountUp(animal, mount);
     if (skeleton) for (const b of skeleton.bones) this.#bones.set(b.name, b);
     this.#play(this.#mount ? 'sit' : 'idle', 0);
     this.#mixer.update(Math.random() * 2); // desynchronise the crowd
     this.#seat();
   }
 
-  /** Tier 2 donkey · 3 horse · 4 warhorse · 5 griffin · 6 dragon (5 and 6 are placeholders). */
-  #mountUp(horse: NonNullable<Kit['horse']>, look: CharacterLook): void {
-    const root = SkeletonUtils.clone(horse.scene);
-    const box = new THREE.Box3().setFromObject(horse.scene);
+  /** The mount for this hero's tier, as the theme describes it (medieval: donkey, horse, warhorse, then winged placeholders). */
+  #mountUp(animal: Animal, spec: MountSpec): void {
+    const root = SkeletonUtils.clone(animal.scene);
+    const box = new THREE.Box3().setFromObject(animal.scene);
     const size = box.getSize(new THREE.Vector3());
-    const tier = look.tier;
-    const metres = tier === 2 ? 1.5 : 2.0; // overall height incl. head
+    const metres = spec.height; // overall height incl. head
     const s = metres / Math.max(size.y, 1e-3) / METRES_PER_TILE;
     root.scale.multiplyScalar(s);
-    const tint = tier === 2 ? '#8a8a8a' : tier === 4 ? '#4a4048' : tier === 5 ? '#d8b060' : tier === 6 ? '#a8302a' : null;
+    const tint = spec.tint;
     if (tint) {
       root.traverse((o) => {
         const m = o as THREE.Mesh;
@@ -268,15 +282,15 @@ class RiggedCharacter implements SandboxCharacter {
       });
     }
     const wings: THREE.Object3D[] = [];
-    if (tier >= 5) {
+    if (spec.wings) {
       // Placeholder wings until a CC0 griffin and dragon are sourced.
       const shape = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(1.1, 0.35), new THREE.Vector2(1.5, 0.05), new THREE.Vector2(1.05, -0.2), new THREE.Vector2(0.55, -0.3)]);
-      const mat = new THREE.MeshStandardMaterial({ color: tier === 5 ? '#f2ead8' : '#5a1a18', side: THREE.DoubleSide, roughness: 0.8 });
+      const mat = new THREE.MeshStandardMaterial({ color: spec.wings.color, side: THREE.DoubleSide, roughness: 0.8 });
       for (const side of [-1, 1]) {
         const wing = new THREE.Mesh(new THREE.ShapeGeometry(shape), mat);
         wing.castShadow = true;
         // A wing spans about half a horse length, from the shoulders.
-        const span = tier === 6 ? 0.62 : 0.48;
+        const span = spec.wings.span;
         wing.scale.set(side * span, span, span);
         const pivot = new THREE.Group();
         pivot.position.set(0, (metres * 0.55) / METRES_PER_TILE, 0.12);
@@ -289,16 +303,19 @@ class RiggedCharacter implements SandboxCharacter {
       }
     }
     const mixer = new THREE.AnimationMixer(root);
-    // Clips are named "Armature|Idle" etc. Match whole names: a loose /eat/ once
-    // picked "Death" as the idle, and the horse kept falling over.
-    const find = (...names: string[]): THREE.AnimationAction | undefined => {
-      const c = horse.clips.find((x) => names.includes(x.name.split('|').pop() ?? ''));
-      return c ? mixer.clipAction(c) : undefined;
+    // Clips are named "Armature|Idle" etc.: match whole names, in the theme's order
+    // of preference (a loose /eat/ once picked "Death" and the horse kept falling over).
+    const find = (names: string[]): THREE.AnimationAction | undefined => {
+      for (const n of names) {
+        const c = animal.clips.find((x) => x.name === n || x.name.split('|').pop() === n);
+        if (c) return mixer.clipAction(c);
+      }
+      return undefined;
     };
-    const m: Mount = { root, mixer, wings, saddle: backTop(root) };
-    const idle = find('Idle', 'Eating');
-    const walk = find('Walk', 'WalkSlow');
-    const run = find('Gallop', 'Run');
+    const m: Mount = { root, mixer, wings, saddle: backTop(root, spec.seat), speeds: spec.speeds ?? { walk: 1.6, run: 5 } };
+    const idle = find(spec.clips.idle);
+    const walk = find(spec.clips.walk);
+    const run = find(spec.clips.run);
     if (idle) m.idle = idle;
     if (walk) m.walk = walk;
     if (run) m.run = run;
@@ -389,8 +406,8 @@ class RiggedCharacter implements SandboxCharacter {
     if (this.#current === null || (this.#mount === null && this.#current !== this.#actions.get(moving ? this.#state : 'idle'))) this.setState(this.#state);
     // Feet follow the ground: playback rate from real speed (no sliding).
     const metres = speed * METRES_PER_TILE;
-    if (this.#current && !this.#mount) this.#current.timeScale = moving ? THREE.MathUtils.clamp(metres / (this.#state === 'run' ? CLIP_SPEED.run : CLIP_SPEED.walk), 0.5, 1.8) : 1;
-    if (this.#mount?.current) this.#mount.current.timeScale = moving ? THREE.MathUtils.clamp(metres / (this.#state === 'run' ? 5 : 1.6), 0.5, 2) : 1;
+    if (this.#current && !this.#mount) this.#current.timeScale = moving ? THREE.MathUtils.clamp(metres / (this.#state === 'run' ? this.#speeds.run : this.#speeds.walk), 0.5, 1.8) : 1;
+    if (this.#mount?.current) this.#mount.current.timeScale = moving ? THREE.MathUtils.clamp(metres / (this.#state === 'run' ? this.#mount.speeds.run : this.#mount.speeds.walk), 0.5, 2) : 1;
     // Turn smoothly towards the direction of travel (models face +z).
     if (moving) {
       const target = Math.atan2(Math.cos(heading), Math.sin(heading));
@@ -415,9 +432,9 @@ class RiggedCharacter implements SandboxCharacter {
   }
 }
 
-export function riggedProvider(kit: Kit): CharacterProvider {
+export function riggedProvider(kit: Kit, label = 'Rigged characters'): CharacterProvider {
   return {
-    label: 'Rigged CC0 characters (Quaternius base + outfits + Universal Animation Library)',
+    label,
     create: (look) => new RiggedCharacter(kit, look),
   };
 }

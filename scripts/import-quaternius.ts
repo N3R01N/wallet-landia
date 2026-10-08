@@ -7,7 +7,8 @@
  * - picks only the files we use out of each zip (no unzip tool needed);
  * - textures → WebP, base colour ≤ 1024 px, normal/roughness ≤ 512 px;
  * - the animation library keeps only the clips we play, without its mannequin;
- * - everything is written as self-contained .glb, plus a manifest the sandbox reads.
+ * - everything is written as self-contained .glb; public/themes/medieval/pack.json
+ *   (written by hand) says how the theme uses them.
  *
  * All source assets are CC0 1.0 (see CREDITS.md written next to the output).
  */
@@ -118,7 +119,6 @@ async function main(): Promise<void> {
     return z;
   };
   const tmp = join(tmpdir(), `quaternius-${process.pid}`);
-  const manifest: Record<string, unknown> = { source: 'Quaternius (CC0 1.0)', clips: CLIPS };
   let total = 0;
 
   // animations: only the clips we play, no mannequin mesh
@@ -153,7 +153,6 @@ async function main(): Promise<void> {
       extractDir(need(zip), 'Universal Base Characters[Standard]/Base Characters/Textures/', extra);
       extractDir(need(zip), 'Universal Base Characters[Standard]/Base Characters/Textures/Normals Unity - Godot/', join(extra, 'normals'));
     }
-    manifest[group] = names;
     for (const name of names) {
       const size = await convert(join(dir, `${name}.gltf`), join(OUT, `${group}/${name}.glb`), undefined, [extra, join(extra, 'normals')]);
       console.log(`${group}/${name}.glb  ${kb(size)}  ${(await triangles(join(OUT, `${group}/${name}.glb`))).toLocaleString('en-US')} triangles`);
@@ -169,12 +168,10 @@ async function main(): Promise<void> {
     const buf = unzipEntry(zip, e);
     mkdirSync(join(OUT, 'animals'), { recursive: true });
     writeFileSync(join(OUT, 'animals/Horse.fbx'), buf);
-    manifest.animals = ['Horse'];
     console.log(`animals/Horse.fbx  ${kb(buf.length)}`);
     total += buf.length;
   }
 
-  writeFileSync(join(OUT, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   writeFileSync(
     join(OUT, 'CREDITS.md'),
     `# Medieval theme assets\n\nModels and animations by **Quaternius** (https://quaternius.com), released under **CC0 1.0** (public domain).\n\n- Universal Animation Library (Standard): a subset of clips, no mannequin\n- Universal Base Characters (Standard): Superhero male/female bodies (head used), hairstyles rigged to the head bone\n- Modular Character Outfits – Fantasy (Standard): Peasant and Ranger, male and female\n- Farm Animals Animated: Horse\n\nConverted by \`scripts/import-quaternius.ts\` (textures → WebP, ≤ 1024 px).\n`,
