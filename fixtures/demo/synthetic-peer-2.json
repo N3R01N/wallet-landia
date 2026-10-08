@@ -1,0 +1,595 @@
+{
+ "address": "0x3333333333333333333333333333333333333333",
+ "currency": "usd",
+ "capturedAt": 1785628800000,
+ "label": "Demo \u00b7 synthetic-peer-2 (synthetic, from v3)",
+ "portfolio": {
+  "type": "portfolio",
+  "id": "0x3333333333333333333333333333333333333333",
+  "attributes": {
+   "positions_distribution_by_type": {
+    "wallet": 7420.0,
+    "deposited": 0.0,
+    "borrowed": 0.0,
+    "locked": 0.0,
+    "staked": 5100.0
+   },
+   "positions_distribution_by_chain": {
+    "ethereum": 12520.0
+   },
+   "total": {
+    "positions": 12520.0
+   },
+   "changes": {
+    "absolute_1d": 640.1,
+    "percent_1d": 5.39
+   }
+  }
+ },
+ "simple": [
+  {
+   "type": "positions",
+   "id": "p2-eth",
+   "attributes": {
+    "name": "Ethereum",
+    "quantity": {
+     "int": "1420000000000000000",
+     "decimals": 18,
+     "float": 1.42,
+     "numeric": "1.42"
+    },
+    "value": 5169.42,
+    "price": 3640.44,
+    "changes": {
+     "absolute_1d": 60.2,
+     "percent_1d": 1.18
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "eth",
+     "name": "Ethereum",
+     "symbol": "ETH",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/eth.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": null,
+       "decimals": 18
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "eth"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "p2-pepe",
+   "attributes": {
+    "name": "Pepe",
+    "quantity": {
+     "int": "210000000000000008287944704",
+     "decimals": 18,
+     "float": 210000000.0,
+     "numeric": "210000000.0"
+    },
+    "value": 2205.0,
+    "price": 1.05e-05,
+    "changes": {
+     "absolute_1d": 410.0,
+     "percent_1d": 22.85
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "pepe",
+     "name": "Pepe",
+     "symbol": "PEPE",
+     "icon": {
+      "url": null
+     },
+     "flags": {
+      "verified": false
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": "0x6982",
+       "decimals": 18
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "pepe"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "p2-usdc",
+   "attributes": {
+    "name": "USD Coin",
+    "quantity": {
+     "int": "45600000",
+     "decimals": 6,
+     "float": 45.6,
+     "numeric": "45.6"
+    },
+    "value": 45.6,
+    "price": 1.0,
+    "changes": {
+     "absolute_1d": 0.0,
+     "percent_1d": 0.0
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "usdc",
+     "name": "USD Coin",
+     "symbol": "USDC",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": "0xa0b8",
+       "decimals": 6
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "usdc"
+     }
+    }
+   }
+  }
+ ],
+ "complex": [
+  {
+   "type": "positions",
+   "id": "p2-curve-stake",
+   "attributes": {
+    "name": "Ethereum",
+    "quantity": {
+     "int": "1400000000000000000",
+     "decimals": 18,
+     "float": 1.4,
+     "numeric": "1.4"
+    },
+    "value": 5100.0,
+    "price": 3640.44,
+    "protocol": "Curve",
+    "protocol_module": "staked",
+    "position_type": "staked",
+    "group_id": "curve-eth-pool",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "eth",
+     "name": "Ethereum",
+     "symbol": "ETH",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/eth.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": null,
+       "decimals": 18
+      }
+     ]
+    },
+    "application_metadata": {
+     "name": "Curve",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/curve.png"
+     },
+     "url": "https://curve.fi"
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "eth"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "curve"
+     }
+    }
+   }
+  }
+ ],
+ "nfts": [],
+ "transactions": [
+  {
+   "type": "transactions",
+   "id": "p2-tx-01",
+   "attributes": {
+    "operation_type": "receive",
+    "hash": "0xcc10",
+    "mined_at_block": 21400120,
+    "mined_at": "2026-07-28T20:10:00Z",
+    "sent_from": "0x1111111111111111111111111111111111111111",
+    "sent_to": "0x3333333333333333333333333333333333333333",
+    "status": "confirmed",
+    "nonce": 0,
+    "fee": {
+     "value": 1.4,
+     "price": 3622.0
+    },
+    "transfers": [
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "4000000000000000000",
+       "decimals": 18,
+       "float": 4.0,
+       "numeric": "4.0"
+      },
+      "value": 14488.0,
+      "price": 3622.0,
+      "sender": "0x1111111111111111111111111111111111111111",
+      "recipient": "0x3333333333333333333333333333333333333333",
+      "fungible_info": {
+       "id": "eth",
+       "name": "Ethereum",
+       "symbol": "ETH",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/eth.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "p2-tx-02",
+   "attributes": {
+    "operation_type": "trade",
+    "hash": "0xcc11",
+    "mined_at_block": 21400205,
+    "mined_at": "2026-07-30T11:30:00Z",
+    "sent_from": "0x3333333333333333333333333333333333333333",
+    "sent_to": "0x68b3",
+    "status": "confirmed",
+    "nonce": 1,
+    "fee": {
+     "value": 2.2,
+     "price": 3632.0
+    },
+    "transfers": [
+     {
+      "direction": "out",
+      "quantity": {
+       "int": "800000000000000000",
+       "decimals": 18,
+       "float": 0.8,
+       "numeric": "0.8"
+      },
+      "value": 2905.6,
+      "price": 3632.0,
+      "sender": "0x3333333333333333333333333333333333333333",
+      "recipient": "0x68b3",
+      "fungible_info": {
+       "id": "eth",
+       "name": "Ethereum",
+       "symbol": "ETH",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/eth.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     },
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "279999999999999999597346816",
+       "decimals": 18,
+       "float": 280000000.0,
+       "numeric": "280000000.0"
+      },
+      "value": 2900.0,
+      "price": 1.03e-05,
+      "sender": "0x68b3",
+      "recipient": "0x3333333333333333333333333333333333333333",
+      "fungible_info": {
+       "id": "pepe",
+       "name": "Pepe",
+       "symbol": "PEPE",
+       "icon": {
+        "url": null
+       },
+       "flags": {
+        "verified": false
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "p2-tx-03",
+   "attributes": {
+    "operation_type": "deposit",
+    "hash": "0xcc12",
+    "mined_at_block": 21400300,
+    "mined_at": "2026-07-31T08:15:00Z",
+    "sent_from": "0x3333333333333333333333333333333333333333",
+    "sent_to": "0xd51a",
+    "status": "confirmed",
+    "nonce": 2,
+    "fee": {
+     "value": 2.9,
+     "price": 3638.0
+    },
+    "transfers": [
+     {
+      "direction": "out",
+      "quantity": {
+       "int": "1400000000000000000",
+       "decimals": 18,
+       "float": 1.4,
+       "numeric": "1.4"
+      },
+      "value": 5093.0,
+      "price": 3638.0,
+      "sender": "0x3333333333333333333333333333333333333333",
+      "recipient": "0xd51a",
+      "fungible_info": {
+       "id": "eth",
+       "name": "Ethereum",
+       "symbol": "ETH",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/eth.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    },
+    "application_metadata": {
+     "name": "Curve",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/curve.png"
+     },
+     "url": "https://curve.fi"
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "curve"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "p2-tx-04",
+   "attributes": {
+    "operation_type": "send",
+    "hash": "0xaa11",
+    "mined_at_block": 21400420,
+    "mined_at": "2026-08-01T16:02:00Z",
+    "sent_from": "0x3333333333333333333333333333333333333333",
+    "sent_to": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "status": "confirmed",
+    "nonce": 3,
+    "fee": {
+     "value": 0.88,
+     "price": 3646.0
+    },
+    "transfers": [
+     {
+      "direction": "out",
+      "quantity": {
+       "int": "4200000000000000251658240",
+       "decimals": 18,
+       "float": 4200000.0,
+       "numeric": "4200000.0"
+      },
+      "value": 44.1,
+      "price": 1.05e-05,
+      "sender": "0x3333333333333333333333333333333333333333",
+      "recipient": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "fungible_info": {
+       "id": "pepe",
+       "name": "Pepe",
+       "symbol": "PEPE",
+       "icon": {
+        "url": null
+       },
+       "flags": {
+        "verified": false
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "p2-tx-05",
+   "attributes": {
+    "operation_type": "send",
+    "hash": "0xcc01",
+    "mined_at_block": 21400500,
+    "mined_at": "2026-08-02T09:00:00Z",
+    "sent_from": "0x3333333333333333333333333333333333333333",
+    "sent_to": "0x2222222222222222222222222222222222222222",
+    "status": "confirmed",
+    "nonce": 4,
+    "fee": {
+     "value": 1.6,
+     "price": 3650.0
+    },
+    "transfers": [
+     {
+      "direction": "out",
+      "quantity": {
+       "int": "1200000000000000000",
+       "decimals": 18,
+       "float": 1.2,
+       "numeric": "1.2"
+      },
+      "value": 4380.0,
+      "price": 3650.0,
+      "sender": "0x3333333333333333333333333333333333333333",
+      "recipient": "0x2222222222222222222222222222222222222222",
+      "fungible_info": {
+       "id": "eth",
+       "name": "Ethereum",
+       "symbol": "ETH",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/eth.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    }
+   }
+  }
+ ]
+}

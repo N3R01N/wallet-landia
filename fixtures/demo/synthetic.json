@@ -1,0 +1,1793 @@
+{
+ "address": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+ "currency": "usd",
+ "capturedAt": 1785628800000,
+ "label": "Demo \u00b7 synthetic (synthetic, from v3)",
+ "portfolio": {
+  "type": "portfolio",
+  "id": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "attributes": {
+   "positions_distribution_by_type": {
+    "wallet": 26256.97,
+    "deposited": 22300.0,
+    "borrowed": 4200.0,
+    "locked": 0.0,
+    "staked": 9800.0
+   },
+   "positions_distribution_by_chain": {
+    "ethereum": 48706.97,
+    "base": 3100.5,
+    "arbitrum": 1840.25,
+    "optimism": 620.1
+   },
+   "total": {
+    "positions": 54156.97
+   },
+   "changes": {
+    "absolute_1d": 812.44,
+    "percent_1d": 1.52
+   }
+  }
+ },
+ "simple": [
+  {
+   "type": "positions",
+   "id": "synthetic-eth-ethereum",
+   "attributes": {
+    "name": "Ethereum",
+    "quantity": {
+     "int": "3420000000000000000",
+     "decimals": 18,
+     "float": 3.42,
+     "numeric": "3.42"
+    },
+    "value": 12450.32,
+    "price": 3640.44,
+    "changes": {
+     "absolute_1d": 210.5,
+     "percent_1d": 1.72
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "eth",
+     "name": "Ethereum",
+     "symbol": "ETH",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/eth.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": null,
+       "decimals": 18
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "eth"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "synthetic-usdc-ethereum",
+   "attributes": {
+    "name": "USD Coin",
+    "quantity": {
+     "int": "8200000000",
+     "decimals": 6,
+     "float": 8200.0,
+     "numeric": "8200"
+    },
+    "value": 8200.0,
+    "price": 1.0,
+    "changes": {
+     "absolute_1d": 0.4,
+     "percent_1d": 0.0
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "usdc",
+     "name": "USD Coin",
+     "symbol": "USDC",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": "0xa0b8",
+       "decimals": 6
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "usdc"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "synthetic-usdc-base",
+   "attributes": {
+    "name": "USD Coin",
+    "quantity": {
+     "int": "3100500000",
+     "decimals": 6,
+     "float": 3100.5,
+     "numeric": "3100.5"
+    },
+    "value": 3100.5,
+    "price": 1.0,
+    "changes": {
+     "absolute_1d": 0.1,
+     "percent_1d": 0.0
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "usdc",
+     "name": "USD Coin",
+     "symbol": "USDC",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "base",
+       "address": "0x8335",
+       "decimals": 6
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "base"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "usdc"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "synthetic-arb-arbitrum",
+   "attributes": {
+    "name": "Arbitrum",
+    "quantity": {
+     "int": "2100000000000000000000",
+     "decimals": 18,
+     "float": 2100.0,
+     "numeric": "2100"
+    },
+    "value": 1840.25,
+    "price": 0.876,
+    "changes": {
+     "absolute_1d": -34.2,
+     "percent_1d": -1.82
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "arbitrum",
+     "name": "Arbitrum",
+     "symbol": "ARB",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/arb.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "arbitrum",
+       "address": "0x912c",
+       "decimals": 18
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "arbitrum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "arbitrum"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "synthetic-op-optimism",
+   "attributes": {
+    "name": "Optimism",
+    "quantity": {
+     "int": "540000000000000000000",
+     "decimals": 18,
+     "float": 540.0,
+     "numeric": "540"
+    },
+    "value": 620.1,
+    "price": 1.148,
+    "changes": {
+     "absolute_1d": 12.8,
+     "percent_1d": 2.1
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "optimism",
+     "name": "Optimism",
+     "symbol": "OP",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/op.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "optimism",
+       "address": "0x4200",
+       "decimals": 18
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "optimism"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "optimism"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "synthetic-pepe-ethereum",
+   "attributes": {
+    "name": "Pepe",
+    "quantity": {
+     "int": "4200000000000000000000000",
+     "decimals": 18,
+     "float": 4200000.0,
+     "numeric": "4200000"
+    },
+    "value": 45.8,
+    "price": 1.09e-05,
+    "changes": {
+     "absolute_1d": 4.1,
+     "percent_1d": 9.8
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "pepe",
+     "name": "Pepe",
+     "symbol": "PEPE",
+     "icon": {
+      "url": null
+     },
+     "flags": {
+      "verified": false
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": "0x6982",
+       "decimals": 18
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "pepe"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "synthetic-spam-token",
+   "attributes": {
+    "name": "CLAIM-REWARDS.NET",
+    "quantity": {
+     "int": "1000000000000000000000",
+     "decimals": 18,
+     "float": 1000.0,
+     "numeric": "1000"
+    },
+    "value": 99999.0,
+    "price": 99.999,
+    "position_type": "wallet",
+    "flags": {
+     "displayable": false,
+     "is_trash": true
+    },
+    "fungible_info": {
+     "id": "spam-claim",
+     "name": "CLAIM-REWARDS.NET",
+     "symbol": "CLAIM",
+     "icon": {
+      "url": null
+     },
+     "flags": {
+      "verified": false
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": "0xbad0",
+       "decimals": 18
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "spam-claim"
+     }
+    }
+   }
+  }
+ ],
+ "complex": [
+  {
+   "type": "positions",
+   "id": "synthetic-aave-supply-usdc",
+   "attributes": {
+    "name": "Supplied USDC",
+    "quantity": {
+     "int": "15000000000",
+     "decimals": 6,
+     "float": 15000.0,
+     "numeric": "15000"
+    },
+    "value": 15000.0,
+    "price": 1.0,
+    "protocol": "Aave V3",
+    "protocol_module": "lending",
+    "position_type": "deposit",
+    "group_id": "aave-v3-ethereum-core",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "usdc",
+     "name": "USD Coin",
+     "symbol": "USDC",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": "0xa0b8",
+       "decimals": 6
+      }
+     ]
+    },
+    "application_metadata": {
+     "name": "Aave V3",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/aave.png"
+     },
+     "url": "https://app.aave.com"
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "usdc"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "aave-v3"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "synthetic-aave-borrow-eth",
+   "attributes": {
+    "name": "Borrowed ETH",
+    "quantity": {
+     "int": "1153000000000000000",
+     "decimals": 18,
+     "float": 1.153,
+     "numeric": "1.153"
+    },
+    "value": 4200.0,
+    "price": 3642.67,
+    "protocol": "Aave V3",
+    "protocol_module": "lending",
+    "position_type": "loan",
+    "group_id": "aave-v3-ethereum-core",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "eth",
+     "name": "Ethereum",
+     "symbol": "ETH",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/eth.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": null,
+       "decimals": 18
+      }
+     ]
+    },
+    "application_metadata": {
+     "name": "Aave V3",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/aave.png"
+     },
+     "url": "https://app.aave.com"
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "eth"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "aave-v3"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "synthetic-uniswap-lp",
+   "attributes": {
+    "name": "ETH / USDC 0.05%",
+    "quantity": {
+     "int": "1",
+     "decimals": 0,
+     "float": 1.0,
+     "numeric": "1"
+    },
+    "value": 7300.0,
+    "price": 7300.0,
+    "protocol": "Uniswap V3",
+    "protocol_module": "liquidity_pool",
+    "position_type": "deposit",
+    "pool_address": "0x8ad5",
+    "group_id": "uniswap-v3-eth-usdc-500",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "uni-v3-eth-usdc",
+     "name": "Uniswap V3 ETH/USDC LP",
+     "symbol": "UNI-V3",
+     "icon": {
+      "url": null
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": "0x8ad5",
+       "decimals": 18
+      }
+     ]
+    },
+    "application_metadata": {
+     "name": "Uniswap V3",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/uniswap.png"
+     },
+     "url": "https://app.uniswap.org"
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "uni-v3-eth-usdc"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "uniswap-v3"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "synthetic-uniswap-lp-base",
+   "attributes": {
+    "name": "ETH / USDC 0.3%",
+    "quantity": {
+     "int": "1",
+     "decimals": 0,
+     "float": 1.0,
+     "numeric": "1"
+    },
+    "value": 1420.0,
+    "price": 1420.0,
+    "protocol": "Uniswap V3",
+    "protocol_module": "liquidity_pool",
+    "position_type": "deposit",
+    "pool_address": "0x9c11",
+    "group_id": "uniswap-v3-base-eth-usdc-3000",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "uni-v3-base-eth-usdc",
+     "name": "Uniswap V3 ETH/USDC LP",
+     "symbol": "UNI-V3",
+     "icon": {
+      "url": null
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "base",
+       "address": "0x9c11",
+       "decimals": 18
+      }
+     ]
+    },
+    "application_metadata": {
+     "name": "Uniswap V3",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/uniswap.png"
+     },
+     "url": "https://app.uniswap.org"
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "base"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "uni-v3-base-eth-usdc"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "uniswap-v3"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "synthetic-lido-staked",
+   "attributes": {
+    "name": "Staked ETH",
+    "quantity": {
+     "int": "2690000000000000000",
+     "decimals": 18,
+     "float": 2.69,
+     "numeric": "2.69"
+    },
+    "value": 9800.0,
+    "price": 3643.12,
+    "protocol": "Lido",
+    "protocol_module": "staked",
+    "position_type": "staked",
+    "group_id": "lido-steth",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "steth",
+     "name": "Lido Staked ETH",
+     "symbol": "stETH",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/steth.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": "0xae7a",
+       "decimals": 18
+      }
+     ]
+    },
+    "application_metadata": {
+     "name": "Lido",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/lido.png"
+     },
+     "url": "https://stake.lido.fi"
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "steth"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "lido"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "synthetic-lido-rewards",
+   "attributes": {
+    "name": "Unclaimed rewards",
+    "quantity": {
+     "int": "31000000000000000",
+     "decimals": 18,
+     "float": 0.031,
+     "numeric": "0.031"
+    },
+    "value": 112.9,
+    "price": 3641.93,
+    "protocol": "Lido",
+    "protocol_module": "rewards",
+    "position_type": "reward",
+    "group_id": "lido-steth",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "steth",
+     "name": "Lido Staked ETH",
+     "symbol": "stETH",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/steth.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": "0xae7a",
+       "decimals": 18
+      }
+     ]
+    },
+    "application_metadata": {
+     "name": "Lido",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/lido.png"
+     },
+     "url": "https://stake.lido.fi"
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "steth"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "lido"
+     }
+    }
+   }
+  }
+ ],
+ "nfts": [],
+ "transactions": [
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-01",
+   "attributes": {
+    "operation_type": "receive",
+    "hash": "0xaa01",
+    "mined_at_block": 21400001,
+    "mined_at": "2026-07-28T09:14:00Z",
+    "sent_from": "0x1111111111111111111111111111111111111111",
+    "sent_to": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "status": "confirmed",
+    "nonce": 0,
+    "fee": {
+     "value": 2.14,
+     "price": 3620.0
+    },
+    "transfers": [
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "5000000000000000000",
+       "decimals": 18,
+       "float": 5.0,
+       "numeric": "5"
+      },
+      "value": 18100.0,
+      "price": 3620.0,
+      "sender": "0x1111111111111111111111111111111111111111",
+      "recipient": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "fungible_info": {
+       "id": "eth",
+       "name": "Ethereum",
+       "symbol": "ETH",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/eth.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-02",
+   "attributes": {
+    "operation_type": "approve",
+    "hash": "0xaa02",
+    "mined_at_block": 21400020,
+    "mined_at": "2026-07-28T09:41:00Z",
+    "sent_from": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "sent_to": "0x68b3",
+    "status": "confirmed",
+    "nonce": 1,
+    "fee": {
+     "value": 0.92,
+     "price": 3620.0
+    },
+    "transfers": [],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    },
+    "application_metadata": {
+     "contract_address": "0x68b3",
+     "name": "Uniswap V3",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/uniswap.png"
+     },
+     "method": {
+      "id": "0x095ea7b3",
+      "name": "approve"
+     }
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "uniswap-v3"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-03",
+   "attributes": {
+    "operation_type": "trade",
+    "hash": "0xaa03",
+    "mined_at_block": 21400044,
+    "mined_at": "2026-07-28T09:52:00Z",
+    "sent_from": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "sent_to": "0x68b3",
+    "status": "confirmed",
+    "nonce": 2,
+    "fee": {
+     "value": 4.31,
+     "price": 3620.0
+    },
+    "transfers": [
+     {
+      "direction": "out",
+      "quantity": {
+       "int": "2000000000000000000",
+       "decimals": 18,
+       "float": 2.0,
+       "numeric": "2"
+      },
+      "value": 7240.0,
+      "price": 3620.0,
+      "sender": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "recipient": "0x68b3",
+      "fungible_info": {
+       "id": "eth",
+       "name": "Ethereum",
+       "symbol": "ETH",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/eth.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     },
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "7235000000",
+       "decimals": 6,
+       "float": 7235.0,
+       "numeric": "7235"
+      },
+      "value": 7235.0,
+      "price": 1.0,
+      "sender": "0x68b3",
+      "recipient": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "fungible_info": {
+       "id": "usdc",
+       "name": "USD Coin",
+       "symbol": "USDC",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    },
+    "application_metadata": {
+     "contract_address": "0x68b3",
+     "name": "Uniswap V3",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/uniswap.png"
+     },
+     "method": {
+      "id": "0x3593564c",
+      "name": "execute"
+     }
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "uniswap-v3"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-04",
+   "attributes": {
+    "operation_type": "deposit",
+    "hash": "0xaa04",
+    "mined_at_block": 21400090,
+    "mined_at": "2026-07-29T11:03:00Z",
+    "sent_from": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "sent_to": "0x8787",
+    "status": "confirmed",
+    "nonce": 3,
+    "fee": {
+     "value": 3.02,
+     "price": 3630.0
+    },
+    "transfers": [
+     {
+      "direction": "out",
+      "quantity": {
+       "int": "15000000000",
+       "decimals": 6,
+       "float": 15000.0,
+       "numeric": "15000"
+      },
+      "value": 15000.0,
+      "price": 1.0,
+      "sender": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "recipient": "0x8787",
+      "fungible_info": {
+       "id": "usdc",
+       "name": "USD Coin",
+       "symbol": "USDC",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    },
+    "application_metadata": {
+     "contract_address": "0x8787",
+     "name": "Aave V3",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/aave.png"
+     },
+     "method": {
+      "id": "0x617ba037",
+      "name": "supply"
+     }
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "aave-v3"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-05",
+   "attributes": {
+    "operation_type": "withdraw",
+    "hash": "0xaa05",
+    "mined_at_block": 21400140,
+    "mined_at": "2026-07-29T15:20:00Z",
+    "sent_from": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "sent_to": "0x8787",
+    "status": "confirmed",
+    "nonce": 4,
+    "fee": {
+     "value": 2.77,
+     "price": 3630.0
+    },
+    "transfers": [
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "1153000000000000000",
+       "decimals": 18,
+       "float": 1.153,
+       "numeric": "1.153"
+      },
+      "value": 4185.0,
+      "price": 3630.0,
+      "sender": "0x8787",
+      "recipient": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "fungible_info": {
+       "id": "eth",
+       "name": "Ethereum",
+       "symbol": "ETH",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/eth.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    },
+    "application_metadata": {
+     "contract_address": "0x8787",
+     "name": "Aave V3",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/aave.png"
+     },
+     "method": {
+      "id": "0xa415bcad",
+      "name": "borrow"
+     }
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "aave-v3"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-06",
+   "attributes": {
+    "operation_type": "deposit",
+    "hash": "0xaa06",
+    "mined_at_block": 21400200,
+    "mined_at": "2026-07-30T08:05:00Z",
+    "sent_from": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "sent_to": "0xae7a",
+    "status": "confirmed",
+    "nonce": 5,
+    "fee": {
+     "value": 1.98,
+     "price": 3635.0
+    },
+    "transfers": [
+     {
+      "direction": "out",
+      "quantity": {
+       "int": "2690000000000000000",
+       "decimals": 18,
+       "float": 2.69,
+       "numeric": "2.69"
+      },
+      "value": 9778.0,
+      "price": 3635.0,
+      "sender": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "recipient": "0xae7a",
+      "fungible_info": {
+       "id": "eth",
+       "name": "Ethereum",
+       "symbol": "ETH",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/eth.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     },
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "2690000000000000000",
+       "decimals": 18,
+       "float": 2.69,
+       "numeric": "2.69"
+      },
+      "value": 9778.0,
+      "price": 3635.0,
+      "sender": "0xae7a",
+      "recipient": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "fungible_info": {
+       "id": "steth",
+       "name": "Lido Staked ETH",
+       "symbol": "stETH",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/steth.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    },
+    "application_metadata": {
+     "contract_address": "0xae7a",
+     "name": "Lido",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/lido.png"
+     },
+     "method": {
+      "id": "0xa1903eab",
+      "name": "submit"
+     }
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "lido"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-07",
+   "attributes": {
+    "operation_type": "withdraw",
+    "hash": "0xaa07",
+    "mined_at_block": 21400260,
+    "mined_at": "2026-07-30T14:47:00Z",
+    "sent_from": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "sent_to": "0xd51a",
+    "status": "confirmed",
+    "nonce": 6,
+    "fee": {
+     "value": 5.4,
+     "price": 3638.0
+    },
+    "transfers": [
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "3400000000",
+       "decimals": 6,
+       "float": 3400.0,
+       "numeric": "3400"
+      },
+      "value": 3400.0,
+      "price": 1.0,
+      "sender": "0xd51a",
+      "recipient": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "fungible_info": {
+       "id": "usdc",
+       "name": "USD Coin",
+       "symbol": "USDC",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    },
+    "application_metadata": {
+     "contract_address": "0xd51a",
+     "name": "Curve",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/curve.png"
+     },
+     "method": {
+      "id": "0x1a4d01d2",
+      "name": "remove_liquidity_one_coin"
+     }
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "curve"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-08",
+   "attributes": {
+    "operation_type": "trade",
+    "hash": "0xaa08",
+    "mined_at_block": 8800100,
+    "mined_at": "2026-07-31T10:12:00Z",
+    "sent_from": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "sent_to": "0x2626",
+    "status": "confirmed",
+    "nonce": 7,
+    "fee": {
+     "value": 0.04,
+     "price": 3640.0
+    },
+    "transfers": [
+     {
+      "direction": "out",
+      "quantity": {
+       "int": "1000000000",
+       "decimals": 6,
+       "float": 1000.0,
+       "numeric": "1000"
+      },
+      "value": 1000.0,
+      "price": 1.0,
+      "sender": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "recipient": "0x2626",
+      "fungible_info": {
+       "id": "usdc",
+       "name": "USD Coin",
+       "symbol": "USDC",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     },
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "1140000000000000000000",
+       "decimals": 18,
+       "float": 1140.0,
+       "numeric": "1140"
+      },
+      "value": 998.4,
+      "price": 0.876,
+      "sender": "0x2626",
+      "recipient": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "fungible_info": {
+       "id": "arbitrum",
+       "name": "Arbitrum",
+       "symbol": "ARB",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/arb.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    },
+    "application_metadata": {
+     "contract_address": "0x2626",
+     "name": "Uniswap V3",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/uniswap.png"
+     },
+     "method": {
+      "id": "0x3593564c",
+      "name": "execute"
+     }
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "arbitrum"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "uniswap-v3"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-09",
+   "attributes": {
+    "operation_type": "send",
+    "hash": "0xaa09",
+    "mined_at_block": 21400330,
+    "mined_at": "2026-07-31T18:30:00Z",
+    "sent_from": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "sent_to": "0x2222222222222222222222222222222222222222",
+    "status": "confirmed",
+    "nonce": 8,
+    "fee": {
+     "value": 1.15,
+     "price": 3641.0
+    },
+    "transfers": [
+     {
+      "direction": "out",
+      "quantity": {
+       "int": "500000000",
+       "decimals": 6,
+       "float": 500.0,
+       "numeric": "500"
+      },
+      "value": 500.0,
+      "price": 1.0,
+      "sender": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "recipient": "0x2222222222222222222222222222222222222222",
+      "fungible_info": {
+       "id": "usdc",
+       "name": "USD Coin",
+       "symbol": "USDC",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-10",
+   "attributes": {
+    "operation_type": "claim",
+    "hash": "0xaa10",
+    "mined_at_block": 12200400,
+    "mined_at": "2026-08-01T07:55:00Z",
+    "sent_from": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "sent_to": "0x4200",
+    "status": "confirmed",
+    "nonce": 9,
+    "fee": {
+     "value": 0.01,
+     "price": 3644.0
+    },
+    "transfers": [
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "540000000000000000000",
+       "decimals": 18,
+       "float": 540.0,
+       "numeric": "540"
+      },
+      "value": 619.9,
+      "price": 1.148,
+      "sender": "0x4200",
+      "recipient": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "fungible_info": {
+       "id": "optimism",
+       "name": "Optimism",
+       "symbol": "OP",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/op.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    },
+    "application_metadata": {
+     "contract_address": "0x4200",
+     "name": "Optimism Airdrop",
+     "icon": {
+      "url": null
+     },
+     "method": {
+      "id": "0x2e7ba6ef",
+      "name": "claim"
+     }
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "optimism"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "optimism-airdrop"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-11",
+   "attributes": {
+    "operation_type": "receive",
+    "hash": "0xaa11",
+    "mined_at_block": 21400420,
+    "mined_at": "2026-08-01T16:02:00Z",
+    "sent_from": "0x3333333333333333333333333333333333333333",
+    "sent_to": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "status": "confirmed",
+    "nonce": 0,
+    "fee": {
+     "value": 0.88,
+     "price": 3646.0
+    },
+    "transfers": [
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "4200000000000000000000000",
+       "decimals": 18,
+       "float": 4200000.0,
+       "numeric": "4200000"
+      },
+      "value": 44.1,
+      "price": 1.05e-05,
+      "sender": "0x3333333333333333333333333333333333333333",
+      "recipient": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "fungible_info": {
+       "id": "pepe",
+       "name": "Pepe",
+       "symbol": "PEPE",
+       "icon": {
+        "url": null
+       },
+       "flags": {
+        "verified": false
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-12",
+   "attributes": {
+    "operation_type": "deposit",
+    "hash": "0xaa12",
+    "mined_at_block": 24400500,
+    "mined_at": "2026-08-02T06:40:00Z",
+    "sent_from": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "sent_to": "0x9c11",
+    "status": "confirmed",
+    "nonce": 10,
+    "fee": {
+     "value": 0.02,
+     "price": 3648.0
+    },
+    "transfers": [
+     {
+      "direction": "out",
+      "quantity": {
+       "int": "1420000000",
+       "decimals": 6,
+       "float": 1420.0,
+       "numeric": "1420"
+      },
+      "value": 1420.0,
+      "price": 1.0,
+      "sender": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "recipient": "0x9c11",
+      "fungible_info": {
+       "id": "usdc",
+       "name": "USD Coin",
+       "symbol": "USDC",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    },
+    "application_metadata": {
+     "contract_address": "0x9c11",
+     "name": "Uniswap V3",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/uniswap.png"
+     },
+     "method": {
+      "id": "0x88316456",
+      "name": "mint"
+     }
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "base"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "uniswap-v3"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "synthetic-tx-13-spam",
+   "attributes": {
+    "operation_type": "receive",
+    "hash": "0xaa13",
+    "mined_at_block": 21400500,
+    "mined_at": "2026-08-02T07:10:00Z",
+    "sent_from": "0xbad0000000000000000000000000000000000bad",
+    "sent_to": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "status": "confirmed",
+    "nonce": 0,
+    "fee": {
+     "value": 0.0,
+     "price": 3648.0
+    },
+    "transfers": [
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "1000000000000000000000",
+       "decimals": 18,
+       "float": 1000.0,
+       "numeric": "1000"
+      },
+      "value": 99999.0,
+      "price": 99.999,
+      "sender": "0xbad0000000000000000000000000000000000bad",
+      "recipient": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "fungible_info": {
+       "id": "spam-claim",
+       "name": "CLAIM-REWARDS.NET",
+       "symbol": "CLAIM",
+       "icon": {
+        "url": null
+       },
+       "flags": {
+        "verified": false
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": true
+    },
+    "application_metadata": {
+     "contract_address": "0xbad0",
+     "name": "CLAIM-REWARDS.NET",
+     "icon": {
+      "url": null
+     }
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "spam-claim-rewards"
+     }
+    }
+   }
+  }
+ ]
+}

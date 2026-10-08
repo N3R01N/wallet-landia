@@ -1,0 +1,652 @@
+{
+ "address": "0x2222222222222222222222222222222222222222",
+ "currency": "usd",
+ "capturedAt": 1785628800000,
+ "label": "Demo \u00b7 synthetic-peer-1 (synthetic, from v3)",
+ "portfolio": {
+  "type": "portfolio",
+  "id": "0x2222222222222222222222222222222222222222",
+  "attributes": {
+   "positions_distribution_by_type": {
+    "wallet": 31820.0,
+    "deposited": 8400.0,
+    "borrowed": 0.0,
+    "locked": 0.0,
+    "staked": 0.0
+   },
+   "positions_distribution_by_chain": {
+    "ethereum": 38220.0,
+    "base": 2000.0
+   },
+   "total": {
+    "positions": 40220.0
+   },
+   "changes": {
+    "absolute_1d": -305.2,
+    "percent_1d": -0.75
+   }
+  }
+ },
+ "simple": [
+  {
+   "type": "positions",
+   "id": "p1-eth",
+   "attributes": {
+    "name": "Ethereum",
+    "quantity": {
+     "int": "4599999999999999488",
+     "decimals": 18,
+     "float": 4.6,
+     "numeric": "4.6"
+    },
+    "value": 16746.02,
+    "price": 3640.44,
+    "changes": {
+     "absolute_1d": 118.4,
+     "percent_1d": 0.71
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "eth",
+     "name": "Ethereum",
+     "symbol": "ETH",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/eth.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": null,
+       "decimals": 18
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "eth"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "p1-usdc",
+   "attributes": {
+    "name": "USD Coin",
+    "quantity": {
+     "int": "9840000000",
+     "decimals": 6,
+     "float": 9840.0,
+     "numeric": "9840.0"
+    },
+    "value": 9840.0,
+    "price": 1.0,
+    "changes": {
+     "absolute_1d": 0.0,
+     "percent_1d": 0.0
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "usdc",
+     "name": "USD Coin",
+     "symbol": "USDC",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": "0xa0b8",
+       "decimals": 6
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "usdc"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "p1-wbtc",
+   "attributes": {
+    "name": "Wrapped Bitcoin",
+    "quantity": {
+     "int": "8119999",
+     "decimals": 8,
+     "float": 0.0812,
+     "numeric": "0.0812"
+    },
+    "value": 5537.84,
+    "price": 68200.0,
+    "changes": {
+     "absolute_1d": -110.0,
+     "percent_1d": -1.95
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "wbtc",
+     "name": "Wrapped Bitcoin",
+     "symbol": "WBTC",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/wbtc.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": "0x2260",
+       "decimals": 8
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "wbtc"
+     }
+    }
+   }
+  },
+  {
+   "type": "positions",
+   "id": "p1-dust",
+   "attributes": {
+    "name": "Airdrop Dust",
+    "quantity": {
+     "int": "1200000000000000000000",
+     "decimals": 18,
+     "float": 1200.0,
+     "numeric": "1200.0"
+    },
+    "value": 0.24,
+    "price": 0.0002,
+    "changes": {
+     "absolute_1d": 0.0,
+     "percent_1d": 0.0
+    },
+    "position_type": "wallet",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "some-dust",
+     "name": "Airdrop Dust",
+     "symbol": "DUST",
+     "icon": {
+      "url": null
+     },
+     "flags": {
+      "verified": false
+     },
+     "implementations": [
+      {
+       "chain_id": "base",
+       "address": null,
+       "decimals": 18
+      }
+     ]
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "base"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "some-dust"
+     }
+    }
+   }
+  }
+ ],
+ "complex": [
+  {
+   "type": "positions",
+   "id": "p1-uni-lp",
+   "attributes": {
+    "name": "USD Coin",
+    "quantity": {
+     "int": "8400000000",
+     "decimals": 6,
+     "float": 8400.0,
+     "numeric": "8400.0"
+    },
+    "value": 8400.0,
+    "price": 1.0,
+    "protocol": "Uniswap V3",
+    "protocol_module": "liquidity_pool",
+    "position_type": "deposit",
+    "group_id": "uniswap-v3-eth-usdc",
+    "flags": {
+     "displayable": true,
+     "is_trash": false
+    },
+    "fungible_info": {
+     "id": "usdc",
+     "name": "USD Coin",
+     "symbol": "USDC",
+     "icon": {
+      "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+     },
+     "flags": {
+      "verified": true
+     },
+     "implementations": [
+      {
+       "chain_id": "ethereum",
+       "address": null,
+       "decimals": 6
+      }
+     ]
+    },
+    "application_metadata": {
+     "name": "Uniswap V3",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/uniswap.png"
+     },
+     "url": "https://app.uniswap.org"
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "fungible": {
+     "data": {
+      "type": "fungibles",
+      "id": "usdc"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "uniswap-v3"
+     }
+    }
+   }
+  }
+ ],
+ "nfts": [],
+ "transactions": [
+  {
+   "type": "transactions",
+   "id": "p1-tx-01",
+   "attributes": {
+    "operation_type": "receive",
+    "hash": "0xbb01",
+    "mined_at_block": 21400100,
+    "mined_at": "2026-07-28T12:20:00Z",
+    "sent_from": "0x1111111111111111111111111111111111111111",
+    "sent_to": "0x2222222222222222222222222222222222222222",
+    "status": "confirmed",
+    "nonce": 0,
+    "fee": {
+     "value": 1.9,
+     "price": 3620.0
+    },
+    "transfers": [
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "6000000000000000000",
+       "decimals": 18,
+       "float": 6.0,
+       "numeric": "6.0"
+      },
+      "value": 21720.0,
+      "price": 3620.0,
+      "sender": "0x1111111111111111111111111111111111111111",
+      "recipient": "0x2222222222222222222222222222222222222222",
+      "fungible_info": {
+       "id": "eth",
+       "name": "Ethereum",
+       "symbol": "ETH",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/eth.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "p1-tx-02",
+   "attributes": {
+    "operation_type": "trade",
+    "hash": "0xbb02",
+    "mined_at_block": 21400160,
+    "mined_at": "2026-07-29T09:05:00Z",
+    "sent_from": "0x2222222222222222222222222222222222222222",
+    "sent_to": "0x68b3",
+    "status": "confirmed",
+    "nonce": 1,
+    "fee": {
+     "value": 2.4,
+     "price": 3630.0
+    },
+    "transfers": [
+     {
+      "direction": "out",
+      "quantity": {
+       "int": "1500000000000000000",
+       "decimals": 18,
+       "float": 1.5,
+       "numeric": "1.5"
+      },
+      "value": 5445.0,
+      "price": 3630.0,
+      "sender": "0x2222222222222222222222222222222222222222",
+      "recipient": "0x68b3",
+      "fungible_info": {
+       "id": "eth",
+       "name": "Ethereum",
+       "symbol": "ETH",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/eth.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     },
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "8119999",
+       "decimals": 8,
+       "float": 0.0812,
+       "numeric": "0.0812"
+      },
+      "value": 5540.0,
+      "price": 68226.0,
+      "sender": "0x68b3",
+      "recipient": "0x2222222222222222222222222222222222222222",
+      "fungible_info": {
+       "id": "wbtc",
+       "name": "Wrapped Bitcoin",
+       "symbol": "WBTC",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/wbtc.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "p1-tx-03",
+   "attributes": {
+    "operation_type": "deposit",
+    "hash": "0xbb03",
+    "mined_at_block": 21400240,
+    "mined_at": "2026-07-30T16:45:00Z",
+    "sent_from": "0x2222222222222222222222222222222222222222",
+    "sent_to": "0xc36442",
+    "status": "confirmed",
+    "nonce": 2,
+    "fee": {
+     "value": 3.1,
+     "price": 3635.0
+    },
+    "transfers": [
+     {
+      "direction": "out",
+      "quantity": {
+       "int": "8400000000",
+       "decimals": 6,
+       "float": 8400.0,
+       "numeric": "8400.0"
+      },
+      "value": 8400.0,
+      "price": 1.0,
+      "sender": "0x2222222222222222222222222222222222222222",
+      "recipient": "0xc36442",
+      "fungible_info": {
+       "id": "usdc",
+       "name": "USD Coin",
+       "symbol": "USDC",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    },
+    "application_metadata": {
+     "name": "Uniswap V3",
+     "icon": {
+      "url": "https://dapp-icons.s3.amazonaws.com/uniswap.png"
+     },
+     "url": "https://app.uniswap.org"
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    },
+    "dapp": {
+     "data": {
+      "type": "dapps",
+      "id": "uniswap-v3"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "p1-tx-04",
+   "attributes": {
+    "operation_type": "receive",
+    "hash": "0xaa09",
+    "mined_at_block": 21400330,
+    "mined_at": "2026-07-31T18:30:00Z",
+    "sent_from": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "sent_to": "0x2222222222222222222222222222222222222222",
+    "status": "confirmed",
+    "nonce": 3,
+    "fee": {
+     "value": 1.15,
+     "price": 3641.0
+    },
+    "transfers": [
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "500000000",
+       "decimals": 6,
+       "float": 500.0,
+       "numeric": "500.0"
+      },
+      "value": 500.0,
+      "price": 1.0,
+      "sender": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "recipient": "0x2222222222222222222222222222222222222222",
+      "fungible_info": {
+       "id": "usdc",
+       "name": "USD Coin",
+       "symbol": "USDC",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/usdc.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    }
+   }
+  },
+  {
+   "type": "transactions",
+   "id": "p1-tx-05",
+   "attributes": {
+    "operation_type": "receive",
+    "hash": "0xcc01",
+    "mined_at_block": 21400500,
+    "mined_at": "2026-08-02T09:00:00Z",
+    "sent_from": "0x3333333333333333333333333333333333333333",
+    "sent_to": "0x2222222222222222222222222222222222222222",
+    "status": "confirmed",
+    "nonce": 4,
+    "fee": {
+     "value": 1.6,
+     "price": 3650.0
+    },
+    "transfers": [
+     {
+      "direction": "in",
+      "quantity": {
+       "int": "1200000000000000000",
+       "decimals": 18,
+       "float": 1.2,
+       "numeric": "1.2"
+      },
+      "value": 4380.0,
+      "price": 3650.0,
+      "sender": "0x3333333333333333333333333333333333333333",
+      "recipient": "0x2222222222222222222222222222222222222222",
+      "fungible_info": {
+       "id": "eth",
+       "name": "Ethereum",
+       "symbol": "ETH",
+       "icon": {
+        "url": "https://token-icons.s3.amazonaws.com/eth.png"
+       },
+       "flags": {
+        "verified": true
+       },
+       "implementations": []
+      }
+     }
+    ],
+    "approvals": [],
+    "flags": {
+     "is_trash": false
+    }
+   },
+   "relationships": {
+    "chain": {
+     "data": {
+      "type": "chains",
+      "id": "ethereum"
+     }
+    }
+   }
+  }
+ ]
+}
