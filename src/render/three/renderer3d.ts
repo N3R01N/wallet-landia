@@ -1064,6 +1064,14 @@ export class Renderer3D implements WorldView {
     return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures, persons: this.#persons.size, agents: this.#sim.agents.length };
   }
 
+  /** Agents and their rigged stand-ins, for tests and tuning tools only. */
+  debugPeople(): { id: string; kind: string; x: number; y: number; alt: number; moving: boolean; shown: boolean | null; state: string | null; ox: number | null; oz: number | null }[] {
+    return this.#sim.agents.map((a) => {
+      const p = this.#persons.get(a.id);
+      return { id: a.id, kind: a.kind, x: a.x, y: a.y, alt: a.alt, moving: a.path.length > 0, shown: p ? p.shown : null, state: p ? p.state : null, ox: p ? p.char.object.position.x : null, oz: p ? p.char.object.position.z : null };
+    });
+  }
+
   /** The scene, for tests and tuning tools only. */
   debugScene(): THREE.Scene {
     return this.#scene;

@@ -73,6 +73,7 @@ export async function loadKit(spec: CharacterSpec, vehicles: VehicleFactory | nu
           : await gltf.loadAsync(url).then((g) => ({ scene: g.scene, clips: g.animations }));
       prepareMaterials(animal.scene, true);
       singleMaterial(animal.scene);
+      for (const c of animal.clips) trimHold(c);
       animals.set(url, animal);
     } catch (error) {
       console.warn('mount unavailable', m.model, error);
@@ -80,6 +81,48 @@ export async function loadKit(spec: CharacterSpec, vehicles: VehicleFactory | nu
   }
   for (const scene of [male, female, ...parts.values()]) prepareMaterials(scene);
   return { spec, vehicles, clips: new Map(anim.animations.map((c) => [c.name, c])), bodies: { male, female }, parts, animals };
+}
+
+/**
+ * Cut a clip where its motion ends. Some exports run the clip's range past
+ * the last real keyframe (the farm horse's Walk: legs move for 1.33 s, then a
+ * lone key at 2.67 s holds the pose), so a looping walk froze half the time
+ * and the horse glided along with still legs.
+ */
+export function trimHold(clip: THREE.AnimationClip): void {
+  let end = 0;
+  for (const t of clip.tracks) {
+    const n = t.times.length;
+    const size = t.getValueSize();
+    const last = (n - 1) * size;
+    // "the same pose" within 1% of how far this track moves at all (exports carry noise)
+    let range = 0;
+    for (let k = 0; k < size; k++) {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let i = 0; i < n; i++) {
+        lo = Math.min(lo, t.values[i * size + k]!);
+        hi = Math.max(hi, t.values[i * size + k]!);
+      }
+      range = Math.max(range, hi - lo);
+    }
+    if (range < 1e-6) continue; // a still track says nothing about where motion ends
+    // rotations: also never finer than ~0.6° (a tail twitching 0.1° is not motion)
+    const tol = Math.max(range * 0.01, t.ValueTypeName === 'quaternion' ? 0.005 : 0);
+    // the last key that differs from the final pose; motion ends at the key after it
+    for (let i = n - 2; i >= 0; i--) {
+      let differs = false;
+      for (let k = 0; k < size; k++) if (Math.abs(t.values[i * size + k]! - t.values[last + k]!) > tol) differs = true;
+      if (differs) {
+        end = Math.max(end, t.times[i + 1]!);
+        break;
+      }
+    }
+  }
+  if (end > 0.2 && end < clip.duration * 0.95) {
+    for (const t of clip.tracks) t.trim(0, end);
+    clip.duration = end;
+  }
 }
 
 /**
@@ -491,6 +534,7 @@ class RiggedCharacter implements SandboxCharacter {
       }
     }
     const mixer = new THREE.AnimationMixer(root);
+    root.userData.mixer = mixer; // for debugging tools
     // Clips are named "Armature|Idle" etc.: match whole names, in the theme's order
     // of preference (a loose /eat/ once picked "Death" and the horse kept falling over).
     const find = (names: string[]): THREE.AnimationAction | undefined => {
