@@ -26,7 +26,15 @@ export interface Site {
   lamps: Lamp[];
   /** Building footprints: centre and size in tiles; the front faces +z. */
   buildings: { x: number; z: number; w: number; d: number; kind: string }[];
+  /** Spots the town already chose for scenery (its 2D trees and rocks); planted as they are. */
+  plants?: SitePlant[];
   seed: number;
+}
+
+export interface SitePlant {
+  x: number;
+  z: number;
+  kind: 'oak' | 'birch' | 'fir' | 'bush' | 'rock';
 }
 
 export interface Surroundings {
@@ -103,8 +111,15 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
       if (far < 70 && outside(flat, x, z) > 3 && rng() < 0.03 + smooth(0.4, 0.9, terrain.slopeAt(x, z)) * 0.5 && free(x, z, 0.8)) rocks.push({ x, y, z, s: 0.4 + rng() * 1.1 });
     }
   }
-  // a few shade trees inside the town, where there is room
-  for (let k = 0, placed = 0; k < 300 && placed < 6; k++) {
+  // the site's own scenery spots, else a few shade trees where there is room
+  for (const p of site.plants ?? []) {
+    // garden and street trees: smaller than the forest's
+    const spot = { x: p.x, y: h(p.x, p.z), z: p.z, s: 0.7 + rng() * 0.35 };
+    if (p.kind === 'rock') rocks.push({ ...spot, s: 0.35 + rng() * 0.4 });
+    else if (p.kind === 'bush') bushes.push({ ...spot, s: 0.8 + rng() * 0.5 });
+    else trees[p.kind].push(spot);
+  }
+  for (let k = 0, placed = site.plants ? 6 : 0; k < 300 && placed < 6; k++) {
     const x = flat.x0 + rng() * (flat.x1 - flat.x0);
     const z = flat.z0 + rng() * (flat.z1 - flat.z0);
     if (free(x, z, 2.2)) {
@@ -138,6 +153,7 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
     const x = b.x + side * (b.w / 2 + 0.3);
     const z = b.z + b.d / 2 - 0.45;
     const r = rng();
+    if (!free(x, z, 0.3) || !free(x, b.z - 0.2, 0.3)) continue; // a road or a neighbour there
     if (b.kind === 'home' || r < 0.25) props.woodpile(x, b.z - 0.2, Math.PI / 2);
     else if (r < 0.6) {
       props.barrel(x, z);
@@ -151,7 +167,8 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
   for (let k = 0; k < 200; k++) {
     const x = centre.x + (rng() - 0.5) * (flat.x1 - flat.x0) * 0.8;
     const z = centre.z + (rng() - 0.5) * (flat.z1 - flat.z0) * 0.8;
-    if (free(x, z, 1.4) && site.wear(x, z) < 0.2) {
+    const shaded = (site.plants ?? []).some((p) => Math.hypot(p.x - x, p.z - z) < 2.2);
+    if (free(x, z, 1.4) && site.wear(x, z) < 0.2 && !shaded) {
       props.well(x, z);
       props.barrel(x + 0.9, z + 0.4);
       break;

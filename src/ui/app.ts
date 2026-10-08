@@ -10,7 +10,7 @@ import type { RawWallet } from '../data/zerion/endpoints.js';
 import { Session, type Shown } from '../data/session.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { guildPanel } from './guildPanel.js';
-import { looksPanel } from './looksPanel.js';
+import { looksPanel, themePicker, type LooksContext } from './looksPanel.js';
 import { assets } from '../assets/registry.js';
 import { loadBundledPacks, loadImportedPacks } from '../assets/packs.js';
 import { startHeartbeat, type BlockBeat } from '../data/rpc.js';
@@ -20,6 +20,8 @@ import { Sim } from '../world/sim.js';
 import { Renderer } from '../render/renderer.js';
 import type { HitTarget, ViewKind, WorldView } from '../render/view.js';
 import { loadPrefs, savePrefs, type Prefs } from '../settings.js';
+import type { Renderer3D } from '../render/three/renderer3d.js';
+import { loadThemeBundles, type ThemeBundle } from '../assets/themeBundles.js';
 import { el, fmtDate } from './dom.js';
 import { buildingPanel, heroPanel, questLogRow, questPanel, type PanelContext } from './panels.js';
 
@@ -41,13 +43,15 @@ export class App {
   #bookmark: (() => void) | null = null;
   #guildOpen = false;
   #looksOpen = false;
+  /** Theme bundles for the 3D view (bundled, and imported packs that carry one). */
+  #themes: ThemeBundle[] = [];
   #guild!: Guild;
   #sim!: Sim;
   /** The view currently on screen. */
   #renderer: WorldView;
   #r2d: Renderer;
   /** Created on first use: `three` is only downloaded when someone opens 3D. */
-  #r3d: WorldView | null = null;
+  #r3d: Renderer3D | null = null;
   #canvas = el('canvas', { class: 'stage' });
   #stage = el('div', { class: 'stage-wrap' });
   #inspector = el('aside', { class: 'inspector', hidden: '' });
@@ -111,7 +115,15 @@ export class App {
       clearTimeout(rebuild);
       rebuild = setTimeout(() => this.#r3d?.setSim(this.#sim), 200);
     });
-    void loadBundledPacks().then(() => loadImportedPacks()).catch((e: unknown) => console.warn('packs', e));
+    void loadBundledPacks()
+      .then(() => loadImportedPacks())
+      .catch((e: unknown) => console.warn('packs', e))
+      .then(() => loadThemeBundles('/themes', assets.packs.values()))
+      .then((themes) => {
+        this.#themes = themes;
+        this.#applyTheme();
+        this.#refreshThemePicker();
+      });
     if (new URLSearchParams(location.search).has('freeze')) this.#sim.playing = false;
     let last = performance.now();
     const frame = (now: number): void => {
@@ -123,6 +135,16 @@ export class App {
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
+  }
+
+  /** Draw the 3D town with the chosen theme bundle (?theme= overrides, for tests). */
+  #applyTheme(): void {
+    const r = this.#r3d;
+    if (r === null) return;
+    const id = new URLSearchParams(location.search).get('theme') ?? this.#prefs.theme;
+    const bundle = this.#themes.find((t) => t.id === id) ?? null;
+    if ((bundle?.id ?? '') === r.themeId) return;
+    void r.setTheme(bundle).catch((e: unknown) => console.warn('theme', e));
   }
 
   #classOf(address: string): HeroClass {
@@ -181,18 +203,34 @@ export class App {
     this.#inkEl.classList.toggle('low', snap.remaining < 30);
   }
 
+  #looksCtx(): LooksContext {
+    return {
+      onLoadout: (loadout) => {
+        this.#prefs.loadout = { ...loadout };
+        savePrefs(this.#prefs);
+      },
+      refresh: () => this.#openLooks(),
+      themes: this.#themes.map((t) => (t.description ? { id: t.id, name: t.name, description: t.description } : { id: t.id, name: t.name })),
+      theme: this.#prefs.theme,
+      onTheme: (id) => {
+        this.#prefs.theme = id;
+        savePrefs(this.#prefs);
+        this.#applyTheme();
+        this.#refreshThemePicker();
+      },
+    };
+  }
+
   #openLooks(): void {
     this.#renderer.selected = null;
-    this.#openInspector(
-      looksPanel({
-        onLoadout: (loadout) => {
-          this.#prefs.loadout = { ...loadout };
-          savePrefs(this.#prefs);
-        },
-        refresh: () => this.#openLooks(),
-      }),
-    );
+    this.#openInspector(looksPanel(this.#looksCtx()));
     this.#looksOpen = true;
+  }
+
+  /** Update just the theme picker in an open Looks panel (rebuilding it would lose an import in progress). */
+  #refreshThemePicker(): void {
+    if (!this.#looksOpen) return;
+    this.#inspectorBody.querySelector('.theme-pick')?.replaceWith(themePicker(this.#looksCtx()));
   }
 
   #openGuild(): void {
@@ -234,6 +272,7 @@ export class App {
           r.classOf = (a) => this.#classOf(a);
           this.#r3d = r;
           this.#set3dQuality = (q) => r.setQuality(q);
+          this.#applyTheme();
           // Visual-validation hooks: ?debug=nopost|ao|nograde, ?cam=near|design|far
           const url = new URLSearchParams(location.search);
           const debug = url.get('debug');

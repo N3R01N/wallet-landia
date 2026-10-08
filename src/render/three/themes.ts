@@ -8,18 +8,18 @@
  */
 
 import type * as THREE from 'three';
-import type { HeroClass } from '../domain/model.js';
-import type { Tier } from '../domain/tiers.js';
-import type { BuildingSpec, BuiltBuilding } from '../render/three/buildingFactory.js';
-import { BuildingFactory } from '../render/three/buildingFactory.js';
-import { MedievalBuilder } from '../render/three/grammar/medieval.js';
-import { MaterialLibrary, type MatKey } from '../render/three/grammar/materials.js';
-import { loadThemeBundles, type ThemeBundle } from '../assets/themeBundles.js';
-import type { LoadedPack } from '../assets/registry.js';
-import { medievalSurroundings, type Site, type Surroundings } from '../render/three/grammar/surroundings.js';
-import { Vegetation } from '../render/three/grammar/vegetation.js';
-import type { SkyId } from '../render/three/environment.js';
-import { spriteCharacters } from './characters.js';
+import type { HeroClass } from '../../domain/model.js';
+import type { Tier } from '../../domain/tiers.js';
+import type { BuildingSpec, BuiltBuilding } from './buildingFactory.js';
+import { BuildingFactory } from './buildingFactory.js';
+import { MedievalBuilder } from './grammar/medieval.js';
+import { MaterialLibrary, type MatKey } from './grammar/materials.js';
+import { loadThemeBundles, type ThemeBundle } from '../../assets/themeBundles.js';
+import type { LoadedPack } from '../../assets/registry.js';
+import { medievalSurroundings, type Site, type Surroundings } from './grammar/surroundings.js';
+import { Vegetation } from './grammar/vegetation.js';
+import type { SkyId } from './environment.js';
+import { spriteCharacters } from './spriteCharacters.js';
 
 export type AnimState = 'idle' | 'walk' | 'run';
 

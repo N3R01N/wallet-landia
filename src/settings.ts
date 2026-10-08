@@ -23,6 +23,8 @@ export interface Prefs {
   quality: 'low' | 'medium' | 'high';
   /** Which asset pack draws each slot (slot key → pack id). */
   loadout: Record<string, string>;
+  /** The theme bundle drawing the 3D town ('' = the built-in look). */
+  theme: string;
 }
 
 const KEY = 'wallet-landia-v4/prefs/v1';
@@ -37,6 +39,7 @@ const DEFAULTS: Prefs = {
   ens: {},
   quality: 'medium',
   loadout: {},
+  theme: '',
 };
 
 export function loadPrefs(): Prefs {

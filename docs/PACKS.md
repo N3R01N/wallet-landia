@@ -73,7 +73,7 @@ Imported packs stay in your browser (IndexedDB). Bundled packs are listed in `pu
 
 ## Theme bundles (format 2)
 
-A pack can also carry a whole look in a `theme` block: sky, materials, ground, buildings, surroundings, characters and mounts. Themes appear in the look sandbox's **Theme** picker (bundled ones from `public/themes/index.json`, and imported packs that have a theme). Bringing them into the town itself is the next step (Phase 7).
+A pack can also carry a whole look in a `theme` block: sky, materials, ground, buildings, surroundings, characters and mounts. Players pick one in **🎨 Looks → World theme** to redraw the 3D town; the look sandbox lists the same themes. Bundled themes come from `public/themes/index.json`; imported packs that have a theme block appear too.
 
 The reference bundle is [`public/themes/medieval/pack.json`](../public/themes/medieval/pack.json). [`public/themes/highland/pack.json`](../public/themes/highland/pack.json) shows a variant made with `extends` and no files of its own. The validator is [`src/assets/theme.ts`](../src/assets/theme.ts).
 

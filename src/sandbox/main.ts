@@ -27,8 +27,8 @@ import type { Prop } from '../render/ground.js';
 import type { Site } from '../render/three/grammar/surroundings.js';
 import { loadImportedPacks } from '../assets/packs.js';
 import { assets } from '../assets/registry.js';
-import { loadThemes, THEMES, type AnimState, type CharacterLook, type SandboxCharacter, type Theme } from './themes.js';
-import { setSpriteTint } from './characters.js';
+import { loadThemes, THEMES, type AnimState, type CharacterLook, type SandboxCharacter, type Theme } from '../render/three/themes.js';
+import { setSpriteTint } from '../render/three/spriteCharacters.js';
 import { el } from '../ui/dom.js';
 
 type SkyChoice = SkyId | 'auto' | 'none';

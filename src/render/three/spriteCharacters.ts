@@ -5,8 +5,8 @@
  */
 
 import * as THREE from 'three';
-import { heroArt, villagerArt } from '../assets/art.js';
-import type { Sprite } from '../render/pixel.js';
+import { heroArt, villagerArt } from '../../assets/art.js';
+import type { Sprite } from '../pixel.js';
 import type { AnimState, CharacterLook, CharacterProvider, SandboxCharacter } from './themes.js';
 
 const ART_PER_TILE = 16;

@@ -18,11 +18,11 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import type { CharacterSpec, MountSpec } from '../assets/theme.js';
+import type { CharacterSpec, MountSpec } from '../../assets/theme.js';
 import type { AnimState, CharacterLook, CharacterProvider, SandboxCharacter } from './themes.js';
 
 /** World scale: one tile is this many metres, so a person is about one tile tall. */
-import { METRES_PER_TILE } from '../render/three/grammar/medieval.js';
+import { METRES_PER_TILE } from './grammar/medieval.js';
 export { METRES_PER_TILE };
 const FADE = 0.3;
 

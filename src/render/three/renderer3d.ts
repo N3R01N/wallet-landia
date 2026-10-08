@@ -1,7 +1,9 @@
 /**
- * The 3D view: a diorama of the same town. Buildings are low-poly meshes built
- * from the same style table as the 2D sprites; people stay pixel-art billboards
- * (an "HD-2D" look), so the character art is shared across all three views.
+ * The 3D view: a diorama of the same town. Built in, buildings are low-poly
+ * meshes from the same style table as the 2D sprites and people are pixel-art
+ * billboards (an "HD-2D" look). With a theme bundle (Phase 7) the town gets the
+ * theme's grammar-built buildings, terrain, woods, props and lanterns, PBR
+ * ground, sky lighting, and rigged people on their mounts.
  *
  * Loaded on demand — `three` only ships to players who open the 3D view.
  */
@@ -20,6 +22,11 @@ import { districtLabels, floatingText, markers, nameTags, nightFactor, route, we
 import { P, type Sprite } from '../pixel.js';
 import { ImagePipeline, type DebugView, type Quality } from './pipeline.js';
 import { buildGrass, buildLamps, buildPropMeshes, placeLamps, type LampSet } from './scenery.js';
+import { EnvironmentController, skyForHour } from './environment.js';
+import { bundleTheme, type CharacterProvider, type SandboxCharacter, type Theme } from './themes.js';
+import { tileSurfaces, townSite } from './townSite.js';
+import type { ThemeBundle } from '../../assets/themeBundles.js';
+import { currentHour } from '../overlay.js';
 import { wind } from './wind.js';
 import type { HitTarget, WorldView } from '../view.js';
 
@@ -27,6 +34,21 @@ import type { HitTarget, WorldView } from '../view.js';
 const ART_PER_TILE = 16;
 /** People read better a little larger than the buildings' scale. */
 const HERO_SCALE = 1.35;
+
+/** A rigged person standing in for an agent (themed towns). */
+interface Person {
+  char: SandboxCharacter;
+  /** An invisible stand-in the pointer can hit (skinned meshes raycast poorly). */
+  proxy: THREE.Mesh | null;
+  x: number;
+  y: number;
+  speed: number;
+  heading: number;
+  state: 'idle' | 'walk' | 'run';
+}
+
+/** Above this many tiles per second a rigged person runs. */
+const RUN_FROM = 1.7;
 
 interface BuildingInfo {
   placed: Placed;
@@ -93,6 +115,16 @@ export class Renderer3D implements WorldView {
   #shadowMatrix = new THREE.Matrix4();
   #spriteTint = new THREE.Color('#ffffff');
   #agentShadows = new THREE.InstancedMesh(this.#shadowGeo, new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.28, depthWrite: false }), 400);
+  /** The theme bundle drawing the town, or null for the built-in look. */
+  #theme: Theme | null = null;
+  /** Rigged people, once the theme's characters have loaded. */
+  #people: CharacterProvider | null = null;
+  #persons = new Map<string, Person>();
+  #proxyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.8, 8).translate(0, 0.9, 0);
+  #proxyMat = new THREE.MeshBasicMaterial({ visible: false });
+  #env: EnvironmentController | null = null;
+  /** Deep, glossy water that mirrors the sky (themed towns are lit by an HDRI). */
+  #themedWater = new THREE.MeshStandardMaterial({ color: '#27506a', roughness: 0.05, metalness: 0.15, transparent: true, opacity: 0.9 });
 
   constructor(sim: Sim, quality: Quality = 'medium') {
     this.#sim = sim;
@@ -151,6 +183,45 @@ export class Renderer3D implements WorldView {
   setSim(sim: Sim): void {
     this.#sim = sim;
     this.#build();
+  }
+
+  /** The theme id drawing the town ('' = built in). */
+  get themeId(): string {
+    return this.#theme?.id ?? '';
+  }
+
+  /**
+   * Draw the town with a theme bundle (null: the built-in look). Buildings and
+   * surroundings change at once; rigged people follow when their files load.
+   */
+  async setTheme(bundle: ThemeBundle | null): Promise<void> {
+    const theme = bundle ? bundleTheme(bundle) : null;
+    this.#theme = theme;
+    this.#people = null;
+    // for tests and debugging: which theme draws the town, and whether its people are in
+    this.element.dataset.theme = theme?.id ?? '';
+    this.element.dataset.people = 'sprites';
+    this.#clearPersons();
+    if (theme) {
+      this.#env ??= new EnvironmentController(this.#gl, this.#scene);
+    } else {
+      this.#env?.use(null, this.#sky);
+      this.#scene.background = this.#sky;
+    }
+    this.#build();
+    if (theme?.prepare) {
+      await theme.prepare();
+      if (this.#theme !== theme) return; // switched again meanwhile
+    }
+    if (theme) {
+      this.#people = theme.characters;
+      this.element.dataset.people = 'rigged';
+    }
+  }
+
+  #clearPersons(): void {
+    for (const p of this.#persons.values()) p.char.dispose();
+    this.#persons.clear();
   }
 
   setQuality(q: Quality): void {
@@ -266,7 +337,26 @@ export class Renderer3D implements WorldView {
       s.caravan.removeFromParent();
     }
     this.#sprites.clear();
+    this.#clearPersons();
     const plan = this.#sim.plan;
+
+    this.#bell = null;
+    for (const b of plan.buildings) {
+      const info = this.#buildBuilding(b);
+      this.#world.add(info.group);
+      this.#buildings.push(info);
+    }
+
+    const theme = this.#theme;
+    if (theme?.surroundings) {
+      // the theme's world: terrain, woods, props and lanterns around the town, PBR ground
+      const s = theme.surroundings(townSite(plan, placeLamps(plan)));
+      this.#world.add(s.group);
+      this.#lamps = s.lamps;
+      const surface = (w: 'road' | 'path'): THREE.Material => theme.groundMaterial?.(w) ?? this.#factory.mat(w === 'road' ? '#9a8f80' : '#8a7556');
+      for (const m of tileSurfaces(plan, { paved: surface('road'), trodden: surface('path'), water: this.#themedWater })) this.#world.add(m);
+      return;
+    }
 
     // the ground: the same pixel-art tiles as the top-down view, on a diorama slab
     const groundTex = new THREE.CanvasTexture(bakeTopGround(plan).canvas);
@@ -290,13 +380,6 @@ export class Renderer3D implements WorldView {
     water.rotation.x = -Math.PI / 2;
     water.position.set(42.5, 0.04, 32.5);
     this.#world.add(ground, slab, water);
-
-    this.#bell = null;
-    for (const b of plan.buildings) {
-      const info = this.#buildBuilding(b);
-      this.#world.add(info.group);
-      this.#buildings.push(info);
-    }
     this.#buildProps(scatterProps(plan));
     this.#world.add(buildGrass(plan));
     this.#lamps = buildLamps(placeLamps(plan));
@@ -317,7 +400,7 @@ export class Renderer3D implements WorldView {
       banner: b.kind === 'guildhall' || hero ? guildColor : P.red,
       iconUrl: protocol?.iconUrl ?? null,
     };
-    const built = this.#factory.build(spec);
+    const built = this.#theme ? this.#theme.building(spec) : this.#factory.build(spec);
     const g = built.group;
     g.position.set(b.x + b.w / 2, 0, b.y + b.h / 2);
     const target = { kind: 'building', placed: b } satisfies HitTarget;
@@ -371,7 +454,7 @@ export class Renderer3D implements WorldView {
     obj.position.set(x, lift, y);
   }
 
-  #syncAgents(): void {
+  #syncAgents(dt: number): void {
     this.#agentShadows.count = 0;
     const seen = new Set<string>();
     for (const a of this.#sim.agents) {
@@ -385,6 +468,10 @@ export class Renderer3D implements WorldView {
         this.#sprites.set(a.id, pair);
       }
       this.#drawAgent(a, pair.body, pair.caravan);
+      // themed towns: a rigged person stands in for the hero's or villager's sprite
+      const person = this.#people && (a.kind === 'hero' || a.kind === 'villager') ? this.#person(a) : null;
+      pair.body.visible = person === null;
+      if (person) this.#movePerson(person, a, dt);
     }
     this.#agentShadows.instanceMatrix.needsUpdate = true;
     for (const [id, pair] of this.#sprites) {
@@ -394,6 +481,60 @@ export class Renderer3D implements WorldView {
       pair.caravan.removeFromParent();
       this.#sprites.delete(id);
     }
+    for (const [id, p] of this.#persons) {
+      if (seen.has(id)) continue;
+      p.char.dispose();
+      this.#persons.delete(id);
+    }
+  }
+
+  #person(a: Agent): Person | null {
+    const people = this.#people;
+    if (people === null) return null;
+    let p = this.#persons.get(a.id);
+    if (p === undefined) {
+      const hero = a.kind === 'hero' ? a.hero : undefined;
+      const char = people.create({
+        id: a.id,
+        kind: hero ? 'hero' : 'villager',
+        cls: hero ? this.classOf(hero.address) : 'adventurer',
+        tier: hero?.tier ?? 0,
+        crest: hero ? crestColors(hero.address)[0] : '#888888',
+        seed: hashString(hero?.address ?? a.id),
+      });
+      let proxy: THREE.Mesh | null = null;
+      if (hero) {
+        proxy = new THREE.Mesh(this.#proxyGeo, this.#proxyMat);
+        proxy.userData.target = { kind: 'hero', address: hero.address } satisfies HitTarget;
+        // mounted heroes are bigger targets
+        if (hero.tier >= 2) proxy.scale.set(1.6, 1.3, 1.6);
+        char.object.add(proxy);
+      }
+      this.#scene.add(char.object);
+      p = { char, proxy, x: a.x, y: a.y, speed: 0, heading: 0, state: 'idle' };
+      char.setState('idle');
+      this.#persons.set(a.id, p);
+    }
+    return p;
+  }
+
+  /** Follow the agent: speed and heading from how it actually moved this frame. */
+  #movePerson(p: Person, a: Agent, dt: number): void {
+    const dx = a.x - p.x;
+    const dz = a.y - p.y;
+    const dist = Math.hypot(dx, dz);
+    const measured = dt > 0 ? dist / dt : 0;
+    p.speed += (measured - p.speed) * Math.min(1, dt * 8);
+    if (dist > 1e-4) p.heading = Math.atan2(dz, dx);
+    p.x = a.x;
+    p.y = a.y;
+    const state = a.path.length > 0 && p.speed > 0.05 ? (p.speed > RUN_FROM ? 'run' : 'walk') : 'idle';
+    if (state !== p.state) {
+      p.state = state;
+      p.char.setState(state);
+    }
+    p.char.object.position.set(a.x, a.alt + (a.alt > 0.05 ? Math.sin(a.phase) * 0.1 : 0), a.y);
+    p.char.update(dt, p.speed, p.heading, this.#camera);
   }
 
   #drawAgent(a: Agent, body: THREE.Sprite, caravan: THREE.Sprite): void {
@@ -467,7 +608,7 @@ export class Renderer3D implements WorldView {
     this.#lighting(dt);
     this.#swingBell(dt);
     this.#placeCamera(dt);
-    this.#syncAgents();
+    this.#syncAgents(dt);
     this.#highlight();
     if (this.#frame++ % 10 === 0) this.#occludeSigns();
     this.#pipeline.render();
@@ -508,8 +649,17 @@ export class Renderer3D implements WorldView {
     this.#hemi.intensity = 1.1 * (1 - night * 0.55) * (1 - gloom * 0.4) + this.#flash;
     // Emissive hierarchy (bloom skill): fire > lamp bulbs > windows > lit walls.
     // Only the first three exceed the HDR bloom threshold, and only at night.
-    this.#factory.windowMat.emissiveIntensity = night * 1.7;
-    this.#factory.fireMat.emissiveIntensity = 1.4 + night * 2.2;
+    const windows = this.#theme?.windowMaterial ?? this.#factory.windowMat;
+    const fire = this.#theme?.fireMaterial ?? this.#factory.fireMat;
+    windows.emissiveIntensity = night * 1.7;
+    fire.emissiveIntensity = 1.4 + night * 2.2;
+    // A themed town is lit by its sky (image-based); the fill light steps back.
+    if (this.#theme && this.#env) {
+      const byHour = skyForHour(currentHour(), gloom > 0.5);
+      const id = byHour === 'day' ? this.#theme.defaultSky : byHour;
+      if (id !== this.#env.current) this.#env.use(id, this.#sky);
+      if (this.#env.active) this.#hemi.intensity *= 0.3;
+    }
     // Billboards are unlit; tint them so people do not glow at midnight.
     this.#spriteTint.setRGB(1, 1, 1).lerp(new THREE.Color('#7f88b8'), night * 0.85).lerp(new THREE.Color('#9a9aa6'), gloom * 0.5);
     for (const m of this.#spriteMats.values()) m.color.copy(this.#spriteTint);
@@ -696,7 +846,8 @@ export class Renderer3D implements WorldView {
   hitTest(sx: number, sy: number): HitTarget | null {
     const ndc = new THREE.Vector2((sx / this.canvas.clientWidth) * 2 - 1, -(sy / this.canvas.clientHeight) * 2 + 1);
     this.#raycaster.setFromCamera(ndc, this.#camera);
-    const heroes = [...this.#sprites.values()].map((p) => p.body).filter((s) => s.userData.target !== undefined);
+    const heroes: THREE.Object3D[] = [...this.#sprites.values()].map((p) => p.body).filter((s) => s.visible && s.userData.target !== undefined);
+    for (const p of this.#persons.values()) if (p.proxy) heroes.push(p.proxy);
     const hitHero = this.#raycaster.intersectObjects(heroes, false)[0];
     if (hitHero) return hitHero.object.userData.target as HitTarget;
     const hit = this.#raycaster.intersectObjects(this.#buildings.map((b) => b.group), true)[0];

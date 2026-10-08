@@ -13,6 +13,29 @@ export interface LooksContext {
   /** The loadout changed: persist it. */
   onLoadout(loadout: Record<string, string>): void;
   refresh(): void;
+  /** Theme bundles the 3D town can be drawn with. */
+  themes: { id: string; name: string; description?: string }[];
+  /** The one in use ('' = built in). */
+  theme: string;
+  onTheme(id: string): void;
+}
+
+/** The world theme for the 3D view: one choice for the whole look. */
+export function themePicker(ctx: LooksContext): HTMLElement {
+  const sel = el('select', { 'aria-label': 'World theme' });
+  sel.append(el('option', { value: '' }, 'Built-in (Hearth & Harvest)'));
+  for (const t of ctx.themes) sel.append(el('option', { value: t.id }, t.name));
+  sel.value = ctx.themes.some((t) => t.id === ctx.theme) ? ctx.theme : '';
+  const about = el('div', { class: 'muted small' }, ctx.themes.find((t) => t.id === sel.value)?.description ?? 'Low-poly buildings and pixel-art people.');
+  sel.onchange = () => ctx.onTheme(sel.value);
+  return el(
+    'div',
+    { class: 'theme-pick' },
+    el('h4', { class: 'slot-family' }, 'World theme (3D view)'),
+    sel,
+    about,
+    el('div', { class: 'muted small' }, 'A theme redraws the 3D town: buildings, land, light and people. Slots below restyle the built-in look.'),
+  );
 }
 
 export function looksPanel(ctx: LooksContext): HTMLElement {
@@ -97,6 +120,7 @@ export function looksPanel(ctx: LooksContext): HTMLElement {
     { class: 'panel-body' },
     el('h2', {}, '🎨 Looks'),
     el('p', { class: 'muted' }, 'Asset packs restyle the town: heroes, townsfolk, treasure, buildings, scenery, even the names of places. Packs are images, models and text only — never code.'),
+    themePicker(ctx),
     el('h3', {}, `Installed packs (${packs.length})`),
     packs.length === 0 ? el('p', { class: 'muted' }, 'No packs yet. The town uses the built-in “Hearth & Harvest” art.') : null,
     ...packRows,

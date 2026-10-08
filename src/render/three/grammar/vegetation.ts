@@ -91,7 +91,7 @@ function needleTexture(): THREE.CanvasTexture {
         const y = 128 + (rng() - 0.5) * 2 * spread;
         const len = 10 + rng() * 12;
         const ang = (y < 128 ? -1 : 1) * (0.5 + rng() * 0.6);
-        g.strokeStyle = `hsl(${120 + rng() * 25}, ${30 + rng() * 15}%, ${12 + rng() * 16}%)`;
+        g.strokeStyle = `hsl(${105 + rng() * 30}, ${32 + rng() * 16}%, ${19 + rng() * 18}%)`;
         g.lineWidth = 2;
         g.beginPath();
         g.moveTo(x, y);

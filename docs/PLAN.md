@@ -275,7 +275,13 @@ Same scope for both: **the Town view only.**
      - `extends` with field-by-field overrides and `use` for reusing another role's textures; validated and unit-tested; problems are reported, never fatal.
      - `public/themes/medieval/pack.json` now drives everything the medieval theme used to hard-code; `public/themes/highland` is a variant with no files of its own. The sandbox lists bundled themes and imported packs that carry one.
      - Open: only the `medieval` building/surroundings style and the `ue5-universal` rig exist; the town does not use themes yet (Phase 7); the Looks panel does not show theme blocks yet.
-   - Phase 6: sci-fi / modern bundles. Phase 7: into the town.
+   - ~~Phase 7, into the town~~ first pass done for the 3D view.
+     - **🎨 Looks → World theme (3D view)** picks a bundle (saved in prefs; `?theme=` for tests). `Renderer3D.setTheme(bundle)` swaps the whole look.
+     - `townSite.ts` turns the town plan into a site: map flat, roads/paths/plaza/water/buildings taken, worn verges, the plan's own tree and rock spots planted as real trees. Roads and plaza are paved, paths and sand trodden, water glossy, all with the theme's materials.
+     - Buildings come from the theme's grammar, with signs, logos and the Chronicle bell intact. Woods, meadow, props and lanterns surround the town; an HDRI sky lights it by the hour (the theme's daytime sky by day).
+     - Heroes and villagers are rigged people with their tier's mounts once the files load (the sprites stand in until then). Speed and heading come from how each agent moves; invisible proxies keep heroes clickable.
+     - Open: ravens, heralds, bailiffs and caravans are still sprites; the 2D views keep the pixel art (baked sprites from the 3D look later); no LOD or crowd limits yet; town walkers move at about 6 m/s, so people mostly jog.
+   - Phase 6: sci-fi / modern bundles.
 
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.
