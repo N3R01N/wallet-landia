@@ -6,7 +6,11 @@ import { defineConfig } from '@playwright/test';
  */
 export default defineConfig({
   testDir: 'e2e',
-  timeout: 60_000,
+  timeout: 90_000,
+  // Software-rendered WebGL (SwiftShader) is CPU-heavy; with too many workers
+  // the 3D visual captures starve the other tests into timeouts.
+  workers: 2,
+  expect: { timeout: 15_000 },
   use: {
     baseURL: 'http://localhost:5198',
     viewport: { width: 1400, height: 860 },
