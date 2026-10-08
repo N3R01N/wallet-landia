@@ -273,6 +273,8 @@ export class App {
           this.#r3d = r;
           this.#set3dQuality = (q) => r.setQuality(q);
           this.#applyTheme();
+          // test hook: ?expose puts the 3D view on window
+          if (new URLSearchParams(location.search).has('expose')) (window as unknown as { town3d: Renderer3D }).town3d = r;
           // Visual-validation hooks: ?debug=nopost|ao|nograde, ?cam=near|design|far
           const url = new URLSearchParams(location.search);
           const debug = url.get('debug');

@@ -843,6 +843,18 @@ export class Renderer3D implements WorldView {
     }
   }
 
+  /** Where a hero stands on screen (CSS px in the canvas), for tests: the middle of its body or rider. */
+  heroOnScreen(address?: string): [number, number] | null {
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    for (const a of this.#sim.agents) {
+      if (a.kind !== 'hero' || !a.hero || (address !== undefined && a.hero.address !== address)) continue;
+      const p = this.#project(a.x, a.y, a.alt + (a.hero.tier >= 2 ? 0.9 : 0.6));
+      if (p && p[0] > 40 && p[1] > 40 && p[0] < w - 40 && p[1] < h - 40) return p;
+    }
+    return null;
+  }
+
   hitTest(sx: number, sy: number): HitTarget | null {
     const ndc = new THREE.Vector2((sx / this.canvas.clientWidth) * 2 - 1, -(sy / this.canvas.clientHeight) * 2 + 1);
     this.#raycaster.setFromCamera(ndc, this.#camera);
