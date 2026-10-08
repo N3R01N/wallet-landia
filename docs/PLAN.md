@@ -256,31 +256,31 @@ Same scope for both: **the Town view only.**
      - `npm run assets:quaternius` turns the CC0 downloads in `assets-src/quaternius` into `public/themes/medieval` (6.3 MB): WebP textures ≤ 1024 px, a 16-clip animation subset, meshopt compression, simplified meshes (~5–25k triangles a person), repaired texture references.
      - Runtime: base body (head cut out by bone weights) + outfit + hair on one skeleton; idle/walk/run cross-fades with speed-matched playback; turning towards travel; horse mounts per tier with the rider seated.
      - Riding: the rider sits on the measured back (behind the withers), legs straddling (a pose fix on top of the sitting clip); horse clips matched by exact name.
-     - Open: real griffin/dragon (wings are placeholders); class gear; more outfits (free kit: Peasant and Ranger); LOD/impostors for crowds; FBX→GLB for the horse.
+     - Open: real griffin/dragon (wings are placeholders); class gear; more outfits (free kit: Peasant and Ranger); FBX→GLB for the horse.
    - ~~Phase 4, building grammar v2 + PBR~~ first pass done for the medieval theme (sandbox only).
      - `npm run assets:textures` fetches 12 CC0 ambientCG materials (stone, plaster, timber, planks, roof tiles/slate, thatch, cobbles, grass, dirt, cloth) into `public/themes/medieval/materials` (2.8 MB, WebP colour/normal/roughness).
      - `src/render/three/grammar/`: `MaterialLibrary` (world-scale UVs in metres), `MeshWriter` (quads, boxes, slabs, cylinders, cones → one mesh per material), `medieval.ts` (storeys, plinths, half-timbering on bays, framed windows with sills and shutters, plank doors, gable/hip/crenellated/cone roofs with thickness and overhang, jetties, chimneys, quoins, hanging signs).
      - Recipes for all 18 kinds and homes t0–t6 (bedroll → tent → thatched cottage → townhouse → jettied manor → keep → castle). Brand colours tint roof textures; plaster washes vary by seed. The bell keeps its pivot.
      - Each building is about 7–12 meshes including the sign. Lit windows and the forge fire glow at night.
-     - Open: the town still uses `BuildingFactory` (Phase 7); characters dominate draw calls (~1,200 in the medieval sandbox); no LOD yet; herald cart wheels are spokes only.
+     - Open: herald cart wheels are spokes only.
    - ~~Phase 5, terrain and surroundings~~ first pass done for the medieval theme (sandbox only).
      - A theme can dress a `Site` (flat town area, taken ground, wear, lamps, footprints): `src/render/three/grammar/surroundings.ts`.
      - `terrain.ts`: heightfield flat under the town, hills and ridges around it, a gentler open meadow to the south; four PBR layers (grass, dirt, rock, forest floor) splatted per vertex by slope, wear and woods; two-scale grass and a macro tint against tiling.
      - `vegetation.ts`: procedural oaks, birches and firs (bark tubes + canvas-painted leaf/needle cards with crown-spherical normals), bushes, wildflowers; instanced, swaying, with cut-out shadows.
      - `props.ts`: well, barrels, crates, hay, woodpiles, post-and-rail fences and dry-stone walls that follow the ground, a signpost, boulders, timber lantern posts with night pools.
      - Added CC0 ambientCG bark, rock and forest-floor textures; the medieval theme is now 11 MB.
-     - Open: ~0.9M triangles a frame in the medieval sandbox (woods + characters); vegetation LOD/impostors; water (river, pond); paths into the woods; the town still uses the old scenery (Phase 7).
+     - Open: water (river, pond); paths into the woods.
    - ~~Phase 2, theme bundle format~~ done: pack format 2 adds a `theme` block (docs/PACKS.md, `src/assets/theme.ts`).
      - Materials by role with real-world sizes (UVs in metres), ground, building and surroundings parameters, characters (files, outfits per class, clips, speeds) and mounts per tier (model incl. FBX, height, tint, clips, seat bones, wings).
      - `extends` with field-by-field overrides and `use` for reusing another role's textures; validated and unit-tested; problems are reported, never fatal.
      - `public/themes/medieval/pack.json` now drives everything the medieval theme used to hard-code; `public/themes/highland` is a variant with no files of its own. The sandbox lists bundled themes and imported packs that carry one.
-     - Open: only the `medieval` building/surroundings style and the `ue5-universal` rig exist; the town does not use themes yet (Phase 7); the Looks panel does not show theme blocks yet.
+     - Open: only the `ue5-universal` rig exists; the Looks panel does not preview themes.
    - ~~Phase 7, into the town~~ first pass done for the 3D view.
      - **🎨 Looks → World theme (3D view)** picks a bundle (saved in prefs; `?theme=` for tests). `Renderer3D.setTheme(bundle)` swaps the whole look.
      - `townSite.ts` turns the town plan into a site: map flat, roads/paths/plaza/water/buildings taken, worn verges, the plan's own tree and rock spots planted as real trees. Roads and plaza are paved, paths and sand trodden, water glossy, all with the theme's materials.
      - Buildings come from the theme's grammar, with signs, logos and the Chronicle bell intact. Woods, meadow, props and lanterns surround the town; an HDRI sky lights it by the hour (the theme's daytime sky by day).
      - Heroes and villagers are rigged people with their tier's mounts once the files load (the sprites stand in until then). Speed and heading come from how each agent moves; invisible proxies keep heroes clickable.
-     - Open: ravens, heralds, bailiffs and caravans are still sprites; the 2D views keep the pixel art (baked sprites from the 3D look later); no LOD or crowd limits yet; town walkers move at about 6 m/s, so people mostly jog.
+     - Open: ravens, heralds, bailiffs and caravans are still sprites; the 2D views keep the pixel art (baked sprites from the 3D look later); town walkers move at about 6 m/s, so people mostly jog.
    - ~~Phase 6, sci-fi and modern bundles~~ first pass done.
      - `public/themes/modern` and `public/themes/scifi` extend medieval: 9 and 12 CC0 ambientCG materials (0.95 MB and 1.15 MB), their own building grammar (`grammar/modern.ts`, `grammar/scifi.ts`; `builder.ts` picks the style), props (urban, colony), lamps (post, beacon) and skies (day, a sunset-lit dusty world).
      - Modern: shopfronts with brand-coloured awnings, offices, a glass bank tower, a concrete church, a container port with a gantry crane, a works with a sawtooth roof, a clock-and-mast Chronicle Tower; homes from a cardboard shelter to a glass skyscraper with a helipad.
@@ -288,6 +288,12 @@ Same scope for both: **the Town view only.**
      - Vehicle mounts built in code (`grammar/vehicles.ts`): bicycle, scooter, motorbike, helicopter, jet; hover scooter, hoverbike, heavy hoverbike, skiff, starship. Riders straddle bikes and sit in cockpits; wheels and rotors spin, hover craft bob.
      - Format: `asphalt` role, `plaza` ground, styles `modern`/`scifi`, `beacon` lamps, vehicle mounts, partial `characters` with `extends`.
      - Open: modern and sci-fi people still wear the medieval outfits (no CC0 outfits for these on the universal skeleton yet; the base body alone is underwear); vehicles are simple primitives; no smoke or exhaust effects.
+
+   - ~~Performance pass~~ done (themed town, near camera, all passes: 1,436 → 356 draw calls, 1.32M → ~0.7M triangles; the built-in look 1,011 → ~230 calls).
+     - Buildings: every static part merged per material into a few meshes; invisible footprint boxes keep hover, click and sign occlusion.
+     - People: rigged models within 70 tiles of the camera, at most 20, the nearest first (sprites beyond, no animation updates); real shadows for the nearest 8 only; each character's parts merged per material and bind pose (16 → 7–8 skinned meshes; quantisation offsets baked in); the horse's flat-colour materials baked into vertex colours.
+     - Woods: low-detail trees (one trunk, big leaf cards) without shadows beyond 10 tiles from town; fewer bark sides near; boulders cast no shadows.
+     - `Renderer3D.stats()` and an e2e budget (< 800 calls, < 1.2M triangles) guard it.
 
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.

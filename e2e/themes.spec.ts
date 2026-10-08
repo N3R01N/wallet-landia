@@ -41,6 +41,10 @@ test('a rigged hero in a themed town answers hover and click', async ({ page }) 
   const where = (): Promise<[number, number] | null> => page.evaluate(() => (window as unknown as { town3d: { heroOnScreen(): [number, number] | null } }).town3d.heroOnScreen());
   // once a hero is out on foot (or horseback), pause so it stands still for the pointer
   await expect.poll(where, { timeout: 60_000 }).not.toBeNull();
+  // a performance budget for a themed town (merged buildings, people LOD, far woods without shadows)
+  const stats = await page.evaluate(() => (window as unknown as { town3d: { stats(): { calls: number; triangles: number } } }).town3d.stats());
+  expect(stats.calls).toBeLessThan(800);
+  expect(stats.triangles).toBeLessThan(1_200_000);
   await page.keyboard.press('Space');
   await expect(page.locator('.btn[title^="Play / pause"]')).toHaveText('▶');
   await page.waitForTimeout(1000);

@@ -9,6 +9,7 @@
  */
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { HeroClass } from '../../domain/model.js';
 import type { Tier } from '../../domain/tiers.js';
 import { crestColors, hashString } from '../../util/rng.js';
@@ -45,10 +46,20 @@ interface Person {
   speed: number;
   heading: number;
   state: 'idle' | 'walk' | 'run';
+  /** Drawn as a rigged model now (else the sprite stands in). */
+  shown: boolean;
+  /** Casting shadows now. */
+  shadow: boolean;
 }
 
 /** Above this many tiles per second a rigged person runs. */
 const RUN_FROM = 1.7;
+/**
+ * Level of detail for people (tiles from the camera): rigged models up close,
+ * sprites beyond; only so many rigged at once, the nearest first; only the
+ * nearest cast shadows. The gap between show and hide stops flicker.
+ */
+const RIG = { show: 70, hide: 78, max: 20, shadow: 42, shadowMax: 8 };
 
 interface BuildingInfo {
   placed: Placed;
@@ -140,6 +151,8 @@ export class Renderer3D implements WorldView {
     this.#gl.shadowMap.enabled = true;
     this.#gl.shadowMap.type = THREE.PCFShadowMap; // soft PCF is the default filter since r18x
     this.#gl.outputColorSpace = THREE.SRGBColorSpace;
+    // count every pass of a frame (shadows, post) together; reset in draw()
+    this.#gl.info.autoReset = false;
     this.#pipeline = new ImagePipeline(this.#gl, this.#scene, this.#camera, quality);
     this.#pipeline.aoExclusions = () => {
       const out: THREE.Object3D[] = [this.#agentShadows];
@@ -346,6 +359,7 @@ export class Renderer3D implements WorldView {
       this.#world.add(info.group);
       this.#buildings.push(info);
     }
+    this.#mergeBuildings();
 
     const theme = this.#theme;
     if (theme?.surroundings) {
@@ -384,6 +398,61 @@ export class Renderer3D implements WorldView {
     this.#world.add(buildGrass(plan));
     this.#lamps = buildLamps(placeLamps(plan));
     this.#world.add(this.#lamps.group);
+  }
+
+  /**
+   * Bake every static building mesh into a few big meshes, one per material
+   * (a town is ~40 buildings × ~8 parts: hundreds of draw calls, twice over
+   * with shadows). The bell keeps swinging on its own; each building keeps an
+   * invisible footprint box for hover, click and sign occlusion.
+   */
+  #mergeBuildings(): void {
+    const buckets = new Map<string, { mat: THREE.Material; cast: boolean; geos: THREE.BufferGeometry[] }>();
+    const bell = this.#bell;
+    for (const b of this.#buildings) {
+      b.group.updateMatrixWorld(true);
+      const merged: THREE.Mesh[] = [];
+      b.group.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh || (mesh as unknown as THREE.SkinnedMesh).isSkinnedMesh || Array.isArray(mesh.material)) return;
+        for (let p: THREE.Object3D | null = o; p; p = p.parent) if (p === bell) return;
+        let geo = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+        const keep = new THREE.BufferGeometry();
+        keep.setAttribute('position', geo.getAttribute('position'));
+        if (!geo.getAttribute('normal')) geo.computeVertexNormals();
+        keep.setAttribute('normal', geo.getAttribute('normal'));
+        const uv = geo.getAttribute('uv') ?? new THREE.Float32BufferAttribute(new Float32Array(geo.getAttribute('position').count * 2), 2);
+        keep.setAttribute('uv', uv);
+        keep.applyMatrix4(mesh.matrixWorld);
+        geo = keep;
+        const mat = mesh.material;
+        const key = `${mat.uuid}|${mesh.castShadow ? 1 : 0}`;
+        let bucket = buckets.get(key);
+        if (!bucket) {
+          bucket = { mat, cast: mesh.castShadow, geos: [] };
+          buckets.set(key, bucket);
+        }
+        bucket.geos.push(geo);
+        merged.push(mesh);
+      });
+      for (const m of merged) m.removeFromParent();
+      // the stand-in the pointer and the sign rays hit
+      const proxy = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.5, b.placed.w - 0.4), Math.max(0.5, b.top), Math.max(0.5, b.placed.h - 0.4)), this.#proxyMat);
+      proxy.position.set(0, Math.max(0.5, b.top) / 2, 0);
+      proxy.userData.target = { kind: 'building', placed: b.placed } satisfies HitTarget;
+      b.group.add(proxy);
+    }
+    for (const { mat, cast, geos } of buckets.values()) {
+      const geo = mergeGeometries(geos, false);
+      for (const g of geos) g.dispose();
+      if (!geo) continue;
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = cast;
+      mesh.receiveShadow = true;
+      mesh.name = 'buildings';
+      this.#world.add(mesh);
+    }
   }
 
   #buildBuilding(b: Placed): BuildingInfo {
@@ -457,6 +526,16 @@ export class Renderer3D implements WorldView {
   #syncAgents(dt: number): void {
     this.#agentShadows.count = 0;
     const seen = new Set<string>();
+    // people nearest the camera get the rigged models (see RIG)
+    const cam = this.#camera.position;
+    const ranks = new Map<string, { dist: number; rank: number }>();
+    if (this.#people) {
+      const near = this.#sim.agents
+        .filter((a) => a.kind === 'hero' || a.kind === 'villager')
+        .map((a) => [a.id, Math.hypot(a.x - cam.x, a.alt - cam.y, a.y - cam.z)] as const)
+        .sort((x, y) => x[1] - y[1]);
+      near.forEach(([id, d], i) => ranks.set(id, { dist: i < RIG.max ? d : Infinity, rank: i }));
+    }
     for (const a of this.#sim.agents) {
       seen.add(a.id);
       let pair = this.#sprites.get(a.id);
@@ -470,7 +549,8 @@ export class Renderer3D implements WorldView {
       this.#drawAgent(a, pair.body, pair.caravan);
       // themed towns: a rigged person stands in for the hero's or villager's sprite
       const person = this.#people && (a.kind === 'hero' || a.kind === 'villager') ? this.#person(a) : null;
-      pair.body.visible = person === null;
+      const rigged = person !== null && this.#lod(person, ranks.get(a.id) ?? { dist: Infinity, rank: Infinity });
+      pair.body.visible = !rigged;
       if (person) this.#movePerson(person, a, dt);
     }
     this.#agentShadows.instanceMatrix.needsUpdate = true;
@@ -511,11 +591,29 @@ export class Renderer3D implements WorldView {
         char.object.add(proxy);
       }
       this.#scene.add(char.object);
-      p = { char, proxy, x: a.x, y: a.y, speed: 0, heading: 0, state: 'idle' };
+      p = { char, proxy, x: a.x, y: a.y, speed: 0, heading: 0, state: 'idle', shown: true, shadow: true };
       char.setState('idle');
       this.#persons.set(a.id, p);
     }
     return p;
+  }
+
+  /** Rigged or sprite, shadows or not, for this frame. `dist` is Infinity past the cap; `rank` 0 is the nearest. */
+  #lod(p: Person, { dist, rank }: { dist: number; rank: number }): boolean {
+    const show = dist < (p.shown ? RIG.hide : RIG.show);
+    if (show !== p.shown) {
+      p.shown = show;
+      p.char.object.visible = show;
+    }
+    // real shadows only for the nearest few; everyone keeps the soft contact blob
+    const shadow = show && dist < RIG.shadow && rank < RIG.shadowMax;
+    if (shadow !== p.shadow) {
+      p.shadow = shadow;
+      p.char.object.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh && o !== p.proxy) o.castShadow = shadow;
+      });
+    }
+    return show;
   }
 
   /** Follow the agent: speed and heading from how it actually moved this frame. */
@@ -533,6 +631,7 @@ export class Renderer3D implements WorldView {
       p.state = state;
       p.char.setState(state);
     }
+    if (!p.shown) return; // a sprite stands in: no need to animate
     p.char.object.position.set(a.x, a.alt + (a.alt > 0.05 ? Math.sin(a.phase) * 0.1 : 0), a.y);
     p.char.update(dt, p.speed, p.heading, this.#camera);
   }
@@ -605,6 +704,7 @@ export class Renderer3D implements WorldView {
       this.canvas.height = Math.round(h * dpr);
     }
 
+    this.#gl.info.reset();
     this.#lighting(dt);
     this.#swingBell(dt);
     this.#placeCamera(dt);
@@ -843,6 +943,17 @@ export class Renderer3D implements WorldView {
     }
   }
 
+  /** What the last frame cost (all passes), for tests and tuning. */
+  stats(): { calls: number; triangles: number; geometries: number; textures: number; persons: number; agents: number } {
+    const i = this.#gl.info;
+    return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures, persons: this.#persons.size, agents: this.#sim.agents.length };
+  }
+
+  /** The scene, for tests and tuning tools only. */
+  debugScene(): THREE.Scene {
+    return this.#scene;
+  }
+
   /** Where a hero stands on screen (CSS px in the canvas), for tests: the middle of its body or rider. */
   heroOnScreen(address?: string): [number, number] | null {
     const w = this.canvas.clientWidth;
@@ -859,7 +970,7 @@ export class Renderer3D implements WorldView {
     const ndc = new THREE.Vector2((sx / this.canvas.clientWidth) * 2 - 1, -(sy / this.canvas.clientHeight) * 2 + 1);
     this.#raycaster.setFromCamera(ndc, this.#camera);
     const heroes: THREE.Object3D[] = [...this.#sprites.values()].map((p) => p.body).filter((s) => s.visible && s.userData.target !== undefined);
-    for (const p of this.#persons.values()) if (p.proxy) heroes.push(p.proxy);
+    for (const p of this.#persons.values()) if (p.proxy && p.shown) heroes.push(p.proxy);
     const hitHero = this.#raycaster.intersectObjects(heroes, false)[0];
     if (hitHero) return hitHero.object.userData.target as HitTarget;
     const hit = this.#raycaster.intersectObjects(this.#buildings.map((b) => b.group), true)[0];

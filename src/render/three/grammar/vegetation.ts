@@ -218,7 +218,11 @@ interface Species {
 }
 
 /** A broadleaf tree: a leaning trunk, two orders of branches, leaf clumps at the twigs. */
-function broadleaf(seed: number, shape: 'round' | 'tall'): Species {
+/**
+ * `far`: the distant-woods version (level of detail): one trunk tube and a
+ * dozen big leaf cards make the same silhouette at a fraction of the cost.
+ */
+function broadleaf(seed: number, shape: 'round' | 'tall', far = false): Species {
   const rng = makeRng(seed);
   const wood = new GeoBuilder();
   const leaves = new GeoBuilder();
@@ -229,7 +233,16 @@ function broadleaf(seed: number, shape: 'round' | 'tall'): Species {
   const pts = [new THREE.Vector3(0, -0.1, 0)];
   for (let i = 1; i <= 3; i++) pts.push(new THREE.Vector3((rng() - 0.5) * 0.18, (H * 0.62 * i) / 3, (rng() - 0.5) * 0.18));
   let v = 0;
-  for (let i = 0; i < 3; i++) v = wood.tube(pts[i]!, pts[i + 1]!, trunkR * (1 - i * 0.22) * (i === 0 ? 1.25 : 1), trunkR * (1 - (i + 1) * 0.22), 7, v);
+  if (far) {
+    wood.tube(pts[0]!, pts[3]!, trunkR * 1.2, trunkR * 0.5, 5, 0);
+    for (let c = 0; c < 13; c++) {
+      const a = rng() * Math.PI * 2;
+      const r = Math.sqrt(rng()) * (shape === 'tall' ? 0.7 : 1.15);
+      leaves.card(new THREE.Vector3(Math.cos(a) * r, crown.y + (rng() - 0.35) * (shape === 'tall' ? 1.8 : 1.3), Math.sin(a) * r), 1.5 + rng() * 0.5, rng, crown);
+    }
+    return { wood: wood.geometry(), foliage: leaves.geometry(), height: H + 0.6 };
+  }
+  for (let i = 0; i < 3; i++) v = wood.tube(pts[i]!, pts[i + 1]!, trunkR * (1 - i * 0.22) * (i === 0 ? 1.25 : 1), trunkR * (1 - (i + 1) * 0.22), 5, v);
   const top = pts[3]!;
   const branches = shape === 'tall' ? 5 : 6;
   for (let i = 0; i < branches; i++) {
@@ -238,12 +251,12 @@ function broadleaf(seed: number, shape: 'round' | 'tall'): Species {
     const start = new THREE.Vector3(top.x * (startY / top.y), startY, top.z * (startY / top.y));
     const out = shape === 'tall' ? 0.6 + rng() * 0.3 : 0.95 + rng() * 0.4;
     const end = start.clone().add(new THREE.Vector3(Math.cos(a) * out, 0.55 + rng() * 0.6, Math.sin(a) * out));
-    wood.tube(start, end, trunkR * 0.45, trunkR * 0.18, 5, 0);
+    wood.tube(start, end, trunkR * 0.45, trunkR * 0.18, 4, 0);
     for (let k = 0; k < 2; k++) {
       const t = 0.55 + k * 0.35;
       const s = start.clone().lerp(end, t);
       const tip = s.clone().add(new THREE.Vector3(Math.cos(a + (k ? 0.7 : -0.7)) * 0.45, 0.35 + rng() * 0.3, Math.sin(a + (k ? 0.7 : -0.7)) * 0.45));
-      wood.tube(s, tip, trunkR * 0.16, trunkR * 0.06, 4, 0);
+      wood.tube(s, tip, trunkR * 0.16, trunkR * 0.06, 3, 0);
       for (let c = 0; c < 4; c++) leaves.card(tip.clone().add(new THREE.Vector3((rng() - 0.5) * 0.5, (rng() - 0.5) * 0.4, (rng() - 0.5) * 0.5)), 0.85 + rng() * 0.45, rng, crown);
     }
     for (let c = 0; c < 3; c++) leaves.card(end.clone().add(new THREE.Vector3((rng() - 0.5) * 0.5, rng() * 0.3, (rng() - 0.5) * 0.5)), 0.9 + rng() * 0.4, rng, crown);
@@ -258,17 +271,17 @@ function broadleaf(seed: number, shape: 'round' | 'tall'): Species {
 }
 
 /** A fir: a straight trunk and tiers of drooping needle cards, narrowing up. */
-function fir(seed: number): Species {
+function fir(seed: number, far = false): Species {
   const rng = makeRng(seed);
   const wood = new GeoBuilder();
   const needles = new GeoBuilder();
   const H = 4.2;
-  wood.tube(new THREE.Vector3(0, -0.1, 0), new THREE.Vector3(0, H, 0), 0.12, 0.02, 6, 0);
-  const tiers = 9;
+  wood.tube(new THREE.Vector3(0, -0.1, 0), new THREE.Vector3(0, H, 0), 0.12, 0.02, far ? 4 : 5, 0);
+  const tiers = far ? 5 : 9;
   for (let t = 0; t < tiers; t++) {
     const y = 0.7 + (t / tiers) * (H - 0.9);
     const len = (1 - t / tiers) * 1.35 + 0.25;
-    const n = Math.max(4, Math.round(8 - t * 0.4));
+    const n = far ? 5 : Math.max(4, Math.round(8 - t * 0.4));
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + t * 0.7 + rng() * 0.3;
       const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
@@ -312,6 +325,8 @@ export class Vegetation {
   readonly #needleMat: THREE.MeshStandardMaterial;
   readonly #flowerMat: THREE.MeshStandardMaterial;
   readonly #species: Record<'oak' | 'birch' | 'fir' | 'bush', Species[]>;
+  /** Distant-woods versions (no shadows). */
+  readonly #far: Record<'oak' | 'birch' | 'fir' | 'bush', Species[]>;
 
   constructor(lib: MaterialLibrary) {
     this.#lib = lib;
@@ -325,11 +340,18 @@ export class Vegetation {
       fir: [fir(31), fir(32)],
       bush: [bush(41), bush(42)],
     };
+    this.#far = {
+      oak: [broadleaf(11, 'round', true), broadleaf(12, 'round', true), broadleaf(13, 'round', true)],
+      birch: [broadleaf(21, 'tall', true), broadleaf(22, 'tall', true)],
+      fir: [fir(31, true), fir(32, true)],
+      bush: [bush(41), bush(42)],
+    };
   }
 
   /** Instanced meshes for one kind of plant at the given spots. */
-  plant(kind: 'oak' | 'birch' | 'fir' | 'bush', spots: PlantSpot[], seed: number): THREE.Object3D[] {
-    const variants = this.#species[kind];
+  /** `far`: the low-detail versions, casting no shadows (the distant woods). */
+  plant(kind: 'oak' | 'birch' | 'fir' | 'bush', spots: PlantSpot[], seed: number, far = false): THREE.Object3D[] {
+    const variants = (far ? this.#far : this.#species)[kind];
     const rng = makeRng(seed);
     const groups = variants.map(() => [] as THREE.Matrix4[]);
     const colours = variants.map(() => [] as THREE.Color[]);
@@ -350,7 +372,7 @@ export class Vegetation {
       if (sp.wood.getAttribute('position')) {
         const wood = new THREE.InstancedMesh(sp.wood, this.#lib.get('bark', kind === 'birch' ? '#e8e2d8' : undefined), list.length);
         list.forEach((m, i) => wood.setMatrixAt(i, m));
-        wood.castShadow = true;
+        wood.castShadow = !far;
         wood.receiveShadow = true;
         wood.name = 'bark';
         out.push(wood);
@@ -360,7 +382,7 @@ export class Vegetation {
         leaves.setMatrixAt(i, m);
         leaves.setColorAt(i, colours[v]![i]!);
       });
-      leaves.castShadow = true;
+      leaves.castShadow = !far;
       leaves.receiveShadow = true;
       leaves.name = `foliage-${kind}`;
       applyWind(leaves, sp.height * (kind === 'bush' ? 1 : 1.4));

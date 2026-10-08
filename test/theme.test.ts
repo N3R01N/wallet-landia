@@ -50,9 +50,11 @@ describe('theme bundles (pack format 2)', () => {
     const spec = validateTheme({ extends: 'nowhere', materials: {}, characters: { mounts: { t3: { vehicle: 'hoverbike' } } } }, problems)!;
     expect(spec.characters).toBeUndefined();
     expect(spec.charactersPatch?.mounts?.t3?.vehicle).toBe('hoverbike');
-    const [b] = linkBundles([rawBundle(validatePack({ format: 'wallet-landia-pack/2', id: 'lone', name: 'L', author: 'a', version: '1', theme: { materials: {} } }).manifest!, (p) => p, 'imported')!].map((r) => ({ ...r, resolved: { ...spec, extends: undefined as unknown as string } })));
+    const lone = validatePack({ format: 'wallet-landia-pack/2', id: 'lone', name: 'L', author: 'a', version: '1', theme: { extends: 'nowhere', materials: {}, characters: { mounts: { t3: { vehicle: 'hoverbike' } } } } });
+    const [b] = linkBundles([rawBundle(lone.manifest!, (p) => p, 'imported')!]);
     expect(b!.problems.join(' ')).toContain('no parent characters');
-    expect(validateTheme({ materials: {}, characters: { mounts: { t3: { vehicle: 'tank' } } } }, []).characters).toBeUndefined();
+    expect(b!.spec.characters).toBeUndefined();
+    expect(validateTheme({ materials: {}, characters: { mounts: { t3: { vehicle: 'tank' } } } }, [])?.characters).toBeUndefined();
   });
 
   it('the bundle index lists folders that exist', () => {

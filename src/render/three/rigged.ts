@@ -18,6 +18,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { CharacterSpec, MountSpec, VehicleKind } from '../../assets/theme.js';
 import type { Vehicle } from './grammar/vehicles.js';
 import type { AnimState, CharacterLook, CharacterProvider, SandboxCharacter } from './themes.js';
@@ -71,6 +72,7 @@ export async function loadKit(spec: CharacterSpec, vehicles: VehicleFactory | nu
           ? await new FBXLoader().loadAsync(url).then((f) => ({ scene: f, clips: f.animations }))
           : await gltf.loadAsync(url).then((g) => ({ scene: g.scene, clips: g.animations }));
       prepareMaterials(animal.scene, true);
+      singleMaterial(animal.scene);
       animals.set(url, animal);
     } catch (error) {
       console.warn('mount unavailable', m.model, error);
@@ -78,6 +80,37 @@ export async function loadKit(spec: CharacterSpec, vehicles: VehicleFactory | nu
   }
   for (const scene of [male, female, ...parts.values()]) prepareMaterials(scene);
   return { spec, vehicles, clips: new Map(anim.animations.map((c) => [c.name, c])), bodies: { male, female }, parts, animals };
+}
+
+/**
+ * A mesh painted with several flat-colour materials (the FBX horse) costs a
+ * draw call per colour. Bake each material's colour into vertex colours and
+ * draw it with one material. Textured materials are left alone.
+ */
+function singleMaterial(scene: THREE.Object3D): void {
+  scene.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh || !Array.isArray(mesh.material) || mesh.material.length < 2) return;
+    const mats = mesh.material as THREE.MeshStandardMaterial[];
+    if (mats.some((m) => m.map) || mesh.geometry.groups.length === 0) return;
+    const geo = mesh.geometry;
+    const n = geo.getAttribute('position').count;
+    const old = geo.getAttribute('color');
+    const out = new Float32Array(n * 3).fill(1);
+    const vertex = (i: number): number => (geo.index ? geo.index.getX(i) : i);
+    for (const g of geo.groups) {
+      const c = mats[g.materialIndex ?? 0]?.color ?? new THREE.Color(1, 1, 1);
+      for (let i = g.start; i < g.start + g.count; i++) {
+        const v = vertex(i);
+        out[v * 3] = c.r * (old ? old.getX(v) : 1);
+        out[v * 3 + 1] = c.g * (old ? old.getY(v) : 1);
+        out[v * 3 + 2] = c.b * (old ? old.getZ(v) : 1);
+      }
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(out, 3));
+    geo.clearGroups();
+    mesh.material = new THREE.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: mats[0]!.roughness, metalness: mats[0]!.metalness });
+  });
 }
 
 /** Shadows on, and Phong/Lambert materials (FBX) swapped for PBR so the sky lights them consistently. */
@@ -152,6 +185,146 @@ function attach(part: THREE.Object3D, skeleton: THREE.Skeleton): void {
   });
   // Only one set of named bones may remain, or animation tracks bind ambiguously.
   for (const b of ownBones) b.removeFromParent();
+}
+
+/** Merged parts per look: the material, the geometry, and which parts (by name) went into it. */
+const mergedCache = new Map<string, { material: THREE.Material; geometry: THREE.BufferGeometry; group: number; names: string[] }[]>();
+
+/** Same bind pose? (parts of the universal kits share it; anything else stays separate) */
+function sameMatrix(a: THREE.Matrix4, b: THREE.Matrix4, tolerance = 1e-3): boolean {
+  for (let i = 0; i < 16; i++) if (Math.abs(a.elements[i]! - b.elements[i]!) > tolerance) return false;
+  return true;
+}
+
+/**
+ * One draw call per material instead of per part: an outfit ships as ten
+ * pieces (body, arms, bracers, belts, boots, hood…), all on the body's
+ * skeleton. Parts sharing a material are merged into one skinned mesh, their
+ * bone indices remapped onto the body's skeleton; a part whose bind pose
+ * differs stays as it is. The merged geometry is shared by every character
+ * wearing the same look (`key`).
+ */
+function mergeParts(rider: THREE.Object3D, body: THREE.SkinnedMesh, key: string): void {
+  const meshes: THREE.SkinnedMesh[] = [];
+  rider.traverse((o) => {
+    const m = o as THREE.SkinnedMesh;
+    if (m.isSkinnedMesh && !Array.isArray(m.material) && m.geometry.index && sameMatrix(m.bindMatrix, body.bindMatrix)) meshes.push(m);
+  });
+  // Group parts by bind pose. Within a group, a part's pose differs from the
+  // group's reference by one transform T for all bones (the scale and offset of
+  // its quantised vertices); baking T into the vertices puts it on the
+  // reference's pose exactly. The body is the first reference; an outfit made
+  // on other proportions (the male Ranger) forms its own group.
+  const refs: THREE.SkinnedMesh[] = [body];
+  const place = new Map<THREE.SkinnedMesh, { group: number; t: THREE.Matrix4 }>();
+  const offset = (m: THREE.SkinnedMesh, r: THREE.SkinnedMesh): THREE.Matrix4 | null => {
+    const index = new Map(r.skeleton.bones.map((b, i) => [b, i]));
+    let t: THREE.Matrix4 | null = null;
+    for (let i = 0; i < m.skeleton.bones.length; i++) {
+      const j = index.get(m.skeleton.bones[i]!);
+      if (j === undefined) return null;
+      const ti = r.skeleton.boneInverses[j]!.clone().invert().multiply(m.skeleton.boneInverses[i]!);
+      if (t === null) t = ti;
+      else if (!sameMatrix(t, ti, 5e-3)) return null;
+    }
+    return t;
+  };
+  for (const m of meshes) {
+    let found = false;
+    for (let g = 0; g < refs.length && !found; g++) {
+      const t = offset(m, refs[g]!);
+      if (t) {
+        place.set(m, { group: g, t });
+        found = true;
+      }
+    }
+    if (!found && offset(m, m)) {
+      refs.push(m);
+      place.set(m, { group: refs.length - 1, t: new THREE.Matrix4() });
+    }
+  }
+  let merged = mergedCache.get(key);
+  if (!merged) {
+    const buckets = new Map<string, { material: THREE.Material; group: number; geos: THREE.BufferGeometry[]; names: string[] }>();
+    for (const m of meshes) {
+      const at = place.get(m);
+      if (!at) continue;
+      const g = new THREE.BufferGeometry();
+      let ok = true;
+      for (const name of ['position', 'normal', 'uv', 'skinWeight'] as const) {
+        const a = m.geometry.getAttribute(name);
+        if (!a) {
+          ok = false;
+          break;
+        }
+        // plain floats, whatever the file stored (quantised, normalised, interleaved): getX… de-normalise
+        const out = new Float32Array(a.count * a.itemSize);
+        const get = [(v: number) => a.getX(v), (v: number) => a.getY(v), (v: number) => a.getZ(v), (v: number) => a.getW(v)];
+        for (let v = 0; v < a.count; v++) for (let k = 0; k < a.itemSize; k++) out[v * a.itemSize + k] = get[k]!(v);
+        g.setAttribute(name, new THREE.Float32BufferAttribute(out, a.itemSize));
+      }
+      if (!ok) continue; // an odd part stays as it is
+      const mat = m.material as THREE.MeshStandardMaterial;
+      // vertex colours, when the material uses them (missing: white), always RGBA so parts merge
+      if (mat.vertexColors) {
+        const c = m.geometry.getAttribute('color');
+        const n = m.geometry.getAttribute('position').count;
+        const out = new Float32Array(n * 4).fill(1);
+        if (c)
+          for (let v = 0; v < n; v++) {
+            out[v * 4] = c.getX(v);
+            out[v * 4 + 1] = c.getY(v);
+            out[v * 4 + 2] = c.getZ(v);
+            if (c.itemSize === 4) out[v * 4 + 3] = c.getW(v);
+          }
+        g.setAttribute('color', new THREE.Float32BufferAttribute(out, 4));
+      }
+      g.getAttribute('position').applyMatrix4(at.t);
+      const n = g.getAttribute('normal');
+      n.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(at.t));
+      const v3 = new THREE.Vector3();
+      for (let v = 0; v < n.count; v++) {
+        v3.fromBufferAttribute(n, v).normalize();
+        n.setXYZ(v, v3.x, v3.y, v3.z);
+      }
+      // bone indices onto the reference's skeleton
+      const refIndex = new Map(refs[at.group]!.skeleton.bones.map((b, i) => [b, i]));
+      const si = m.geometry.getAttribute('skinIndex');
+      const remapped = new Uint16Array(si.count * 4);
+      const idx = [(v: number) => si.getX(v), (v: number) => si.getY(v), (v: number) => si.getZ(v), (v: number) => si.getW(v)];
+      for (let v = 0; v < si.count; v++) for (let k = 0; k < 4; k++) remapped[v * 4 + k] = refIndex.get(m.skeleton.bones[idx[k]!(v)]!) ?? 0;
+      g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(remapped, 4));
+      g.setIndex(m.geometry.index!.clone());
+      // each file loads its own copy of a shared material (hair and eyebrows: MI_Hair_2): group by name
+      const bucketKey = `${at.group}|${mat.name || mat.uuid}|${mat.vertexColors}`;
+      let bucket = buckets.get(bucketKey);
+      if (!bucket) {
+        bucket = { material: mat, group: at.group, geos: [], names: [] };
+        buckets.set(bucketKey, bucket);
+      }
+      bucket.geos.push(g);
+      bucket.names.push(m.name);
+    }
+    merged = [];
+    for (const b of buckets.values()) {
+      const geometry = b.geos.length === 1 ? b.geos[0]! : mergeGeometries(b.geos, false);
+      if (geometry) merged.push({ material: b.material, geometry, group: b.group, names: b.names });
+    }
+    mergedCache.set(key, merged);
+  }
+  const done = new Set(merged.flatMap((x) => x.names));
+  const parent = body.parent ?? rider;
+  for (const m of meshes) if (done.has(m.name)) m.removeFromParent();
+  for (const { material, geometry, group } of merged) {
+    const ref = refs[group];
+    if (!ref) continue;
+    const mesh = new THREE.SkinnedMesh(geometry, material);
+    mesh.bind(ref.skeleton, ref.bindMatrix);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    parent.add(mesh);
+  }
 }
 
 function largestSkinned(root: THREE.Object3D): THREE.SkinnedMesh | null {
@@ -253,6 +426,7 @@ class RiggedCharacter implements SandboxCharacter {
       this.#rider.add(part);
       attach(part, skeleton);
     }
+    if (bodyMesh) mergeParts(this.#rider, bodyMesh, `${spec.bodies[sex]}|${urls.join('|')}`);
     this.#rider.scale.setScalar(1 / METRES_PER_TILE);
     this.object.add(this.#rider);
 

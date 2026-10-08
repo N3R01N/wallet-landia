@@ -127,9 +127,18 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
       placed++;
     }
   }
-  for (const kind of ['oak', 'birch', 'fir'] as const) for (const o of veg.plant(kind, trees[kind], site.seed + kind.length)) group.add(o);
-  for (const o of veg.plant('bush', bushes, site.seed + 3)) group.add(o);
-  group.add(buildRocks(rocks, lib, site.seed));
+  // the woods beyond the town are seen from afar: low detail, no shadows (the
+  // sun's shadow map covers the town anyway)
+  const isFar = (p: PlantSpot): boolean => outside(flat, p.x, p.z) > 10;
+  for (const kind of ['oak', 'birch', 'fir'] as const) {
+    for (const o of veg.plant(kind, trees[kind].filter((p) => !isFar(p)), site.seed + kind.length)) group.add(o);
+    for (const o of veg.plant(kind, trees[kind].filter(isFar), site.seed + kind.length + 50, true)) group.add(o);
+  }
+  for (const o of veg.plant('bush', bushes.filter((p) => !isFar(p)), site.seed + 3)) group.add(o);
+  for (const o of veg.plant('bush', bushes.filter(isFar), site.seed + 4, true)) group.add(o);
+  const rockMesh = buildRocks(rocks, lib, site.seed);
+  rockMesh.castShadow = false; // mostly out on the hills
+  group.add(rockMesh);
 
   // --- meadow: grass, flowers --------------------------------------------------------
   const grassArea = { x: flat.x0 - 14, y: flat.z0 - 10, w: flat.x1 - flat.x0 + 28, h: flat.z1 - flat.z0 + 32 };
