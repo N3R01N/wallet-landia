@@ -21,6 +21,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { CharacterSpec, MountSpec, VehicleKind } from '../../assets/theme.js';
 import type { Vehicle } from './grammar/vehicles.js';
+import { attachGear, gearFor } from './gear.js';
 import type { AnimState, CharacterLook, CharacterProvider, SandboxCharacter } from './themes.js';
 
 /** World scale: one tile is this many metres, so a person is about one tile tall. */
@@ -470,6 +471,8 @@ class RiggedCharacter implements SandboxCharacter {
       attach(part, skeleton);
     }
     if (bodyMesh) mergeParts(this.#rider, bodyMesh, `${spec.bodies[sex]}|${urls.join('|')}`);
+    // heroes carry their class's gear, hung on bones in the bind pose
+    if (look.kind === 'hero' && skeleton) attachGear(gearFor(look.cls, look.crest), new Map(skeleton.bones.map((b) => [b.name, b])), this.#rider);
     this.#rider.scale.setScalar(1 / METRES_PER_TILE);
     this.object.add(this.#rider);
 

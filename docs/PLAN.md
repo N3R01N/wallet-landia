@@ -256,7 +256,8 @@ Same scope for both: **the Town view only.**
      - `npm run assets:quaternius` turns the CC0 downloads in `assets-src/quaternius` into `public/themes/medieval` (6.3 MB): WebP textures ≤ 1024 px, a 16-clip animation subset, meshopt compression, simplified meshes (~5–25k triangles a person), repaired texture references.
      - Runtime: base body (head cut out by bone weights) + outfit + hair on one skeleton; idle/walk/run cross-fades with speed-matched playback; turning towards travel; horse mounts per tier with the rider seated.
      - Riding: the rider sits on the measured back (behind the withers), legs straddling (a pose fix on top of the sitting clip); horse clips matched by exact name.
-     - Open: real griffin/dragon (wings are placeholders); class gear; more outfits (free kit: Peasant and Ranger); FBX→GLB for the horse.
+     - Class gear built in code (`gear.ts`) and hung on bones in the bind pose: paladin sword and shield, ranger bow and quiver, bard lute, monk staff, merchant satchel and purse, adventurer sword and pack, sleeper lantern.
+     - Open: real griffin/dragon (wings are placeholders); more outfits (free kit: Peasant and Ranger); FBX→GLB for the horse.
    - ~~Phase 4, building grammar v2 + PBR~~ first pass done for the medieval theme (sandbox only).
      - `npm run assets:textures` fetches 12 CC0 ambientCG materials (stone, plaster, timber, planks, roof tiles/slate, thatch, cobbles, grass, dirt, cloth) into `public/themes/medieval/materials` (2.8 MB, WebP colour/normal/roughness).
      - `src/render/three/grammar/`: `MaterialLibrary` (world-scale UVs in metres), `MeshWriter` (quads, boxes, slabs, cylinders, cones → one mesh per material), `medieval.ts` (storeys, plinths, half-timbering on bays, framed windows with sills and shutters, plank doors, gable/hip/crenellated/cone roofs with thickness and overhang, jetties, chimneys, quoins, hanging signs).

@@ -44,18 +44,23 @@ test('a rigged hero in a themed town answers hover and click', async ({ page }) 
   // a performance budget for a themed town (merged buildings, people LOD, far woods without shadows)
   const stats = await page.evaluate(() => (window as unknown as { town3d: { stats(): { calls: number; triangles: number } } }).town3d.stats());
   expect(stats.calls).toBeLessThan(800);
-  // smoke over the chimneys; no pixel-art people left near the camera (rigged or 3D instead)
-  const look = await page.evaluate(() => {
+  // smoke over the chimneys; people are rigged near the camera and sprites beyond (never both)
+  // (a rebuild after packs load recreates people on the next frame: look for a moment)
+  const observe = (): Promise<{ smoke: boolean; rigged: number; both: number }> => page.evaluate(() => {
+    const town = (window as unknown as { town3d: { debugPeople(): { id: string; shown: boolean | null }[]; debugScene(): { traverse(f: (o: { name: string; visible: boolean; isSprite?: boolean; userData: { agent?: string } }) => void): void } } }).town3d;
     let smoke = false;
-    let sprites = 0;
-    (window as unknown as { town3d: { debugScene(): { traverse(f: (o: { name: string; visible: boolean; isSprite?: boolean; userData: { agent?: string } }) => void): void } } }).town3d.debugScene().traverse((o) => {
+    const sprites = new Set<string>();
+    town.debugScene().traverse((o) => {
       if (o.name === 'smoke') smoke = true;
-      if (o.isSprite && o.visible && o.userData.agent) sprites++;
+      if (o.isSprite && o.visible && o.userData.agent) sprites.add(o.userData.agent);
     });
-    return { smoke, sprites };
+    const shown = town.debugPeople().filter((p) => p.shown === true);
+    return { smoke, rigged: shown.length, both: shown.filter((p) => sprites.has(p.id)).length };
   });
+  await expect.poll(async () => (await observe()).rigged, { timeout: 15_000 }).toBeGreaterThan(0);
+  const look = await observe();
   expect(look.smoke).toBe(true);
-  expect(look.sprites).toBeLessThanOrEqual(2);
+  expect(look.both).toBe(0);
   expect(stats.triangles).toBeLessThan(1_200_000);
   await page.keyboard.press('Space');
   await expect(page.locator('.btn[title^="Play / pause"]')).toHaveText('▶');
