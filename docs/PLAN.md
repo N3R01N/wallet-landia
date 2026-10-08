@@ -255,6 +255,7 @@ Same scope for both: **the Town view only.**
    - ~~Phase 3a, rigged characters~~ first pass done (medieval theme in the sandbox).
      - `npm run assets:quaternius` turns the CC0 downloads in `assets-src/quaternius` into `public/themes/medieval` (6.3 MB): WebP textures ≤ 1024 px, a 16-clip animation subset, meshopt compression, simplified meshes (~5–25k triangles a person), repaired texture references.
      - Runtime: base body (head cut out by bone weights) + outfit + hair on one skeleton; idle/walk/run cross-fades with speed-matched playback; turning towards travel; horse mounts per tier with the rider seated.
+     - Riding: the rider sits on the measured back (behind the withers), legs straddling (a pose fix on top of the sitting clip); horse clips matched by exact name.
      - Open: real griffin/dragon (wings are placeholders); class gear; more outfits (free kit: Peasant and Ranger); LOD/impostors for crowds; FBX→GLB for the horse.
    - ~~Phase 4, building grammar v2 + PBR~~ first pass done for the medieval theme (sandbox only).
      - `npm run assets:textures` fetches 12 CC0 ambientCG materials (stone, plaster, timber, planks, roof tiles/slate, thatch, cobbles, grass, dirt, cloth) into `public/themes/medieval/materials` (2.8 MB, WebP colour/normal/roughness).

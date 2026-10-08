@@ -153,6 +153,38 @@ function largestSkinned(root: THREE.Object3D): THREE.SkinnedMesh | null {
 
 // --- a character ----------------------------------------------------------------
 
+/** Riding pose on top of the chair-sitting clip (radians). */
+const STRADDLE = { thigh: 0.8, spread: 0.15, roll: 0.55, calf: 0.6 };
+const _q0 = new THREE.Quaternion();
+const _q1 = new THREE.Quaternion();
+const _q2 = new THREE.Quaternion();
+const _q3 = new THREE.Quaternion();
+const _q4 = new THREE.Quaternion();
+const _q5 = new THREE.Quaternion();
+const _q6 = new THREE.Quaternion();
+const _up = new THREE.Vector3(0, 1, 0);
+
+/**
+ * Where a rider sits: just behind the withers (a third of the way from the
+ * Torso bone to the Shoulders; the horse's "Back" bone is over its rump), on
+ * the surface of the mesh (a ray cast down onto the skinned mesh at rest).
+ */
+function backTop(root: THREE.Object3D): THREE.Vector3 {
+  root.updateMatrixWorld(true);
+  const parent = root.parent;
+  const torso = root.getObjectByName('Torso');
+  const shoulders = root.getObjectByName('Shoulders');
+  const at =
+    torso && shoulders
+      ? torso.getWorldPosition(new THREE.Vector3()).lerp(shoulders.getWorldPosition(new THREE.Vector3()), 0.33)
+      : new THREE.Box3().setFromObject(root).getCenter(new THREE.Vector3());
+  const box = new THREE.Box3().setFromObject(root);
+  const ray = new THREE.Raycaster(new THREE.Vector3(at.x, box.max.y + 1, at.z), new THREE.Vector3(0, -1, 0));
+  const hit = ray.intersectObject(root, true)[0];
+  const top = new THREE.Vector3(at.x, hit ? hit.point.y : box.min.y + (box.max.y - box.min.y) * 0.62, at.z);
+  return parent ? parent.worldToLocal(top) : top;
+}
+
 interface Mount {
   root: THREE.Object3D;
   mixer: THREE.AnimationMixer;
@@ -161,8 +193,8 @@ interface Mount {
   run?: THREE.AnimationAction;
   current?: THREE.AnimationAction;
   wings: THREE.Object3D[];
-  /** Saddle height in tiles. */
-  saddle: number;
+  /** The top of the horse's back above its Back bone (tiles, local to the character). */
+  saddle: THREE.Vector3;
 }
 
 class RiggedCharacter implements SandboxCharacter {
@@ -174,6 +206,11 @@ class RiggedCharacter implements SandboxCharacter {
   #state: AnimState = 'idle';
   #yaw = 0;
   #mount: Mount | null = null;
+  readonly #bones = new Map<string, THREE.Bone>();
+  /** Riding axes in the rider's frame, measured from the sitting pose. */
+  #ride: { fwd: THREE.Vector3; across: THREE.Vector3; left: number } | null = null;
+  /** Per bone: the clip's rotation and what the straddle turned it into. */
+  readonly #posed = new Map<THREE.Bone, { clip: THREE.Quaternion; out: THREE.Quaternion }>();
   #t = 0;
 
   constructor(kit: Kit, look: CharacterLook) {
@@ -202,8 +239,10 @@ class RiggedCharacter implements SandboxCharacter {
     }
 
     if (look.kind === 'hero' && look.tier >= 2 && kit.horse) this.#mountUp(kit.horse, look);
+    if (skeleton) for (const b of skeleton.bones) this.#bones.set(b.name, b);
     this.#play(this.#mount ? 'sit' : 'idle', 0);
     this.#mixer.update(Math.random() * 2); // desynchronise the crowd
+    this.#seat();
   }
 
   /** Tier 2 donkey · 3 horse · 4 warhorse · 5 griffin · 6 dragon (5 and 6 are placeholders). */
@@ -250,20 +289,74 @@ class RiggedCharacter implements SandboxCharacter {
       }
     }
     const mixer = new THREE.AnimationMixer(root);
-    const find = (re: RegExp): THREE.AnimationAction | undefined => {
-      const c = horse.clips.find((x) => re.test(x.name));
+    // Clips are named "Armature|Idle" etc. Match whole names: a loose /eat/ once
+    // picked "Death" as the idle, and the horse kept falling over.
+    const find = (...names: string[]): THREE.AnimationAction | undefined => {
+      const c = horse.clips.find((x) => names.includes(x.name.split('|').pop() ?? ''));
       return c ? mixer.clipAction(c) : undefined;
     };
-    const m: Mount = { root, mixer, wings, saddle: (metres * 0.58) / METRES_PER_TILE };
-    const idle = find(/idle|eat/i);
-    const walk = find(/walk/i);
-    const run = find(/gallop|run/i);
+    const m: Mount = { root, mixer, wings, saddle: backTop(root) };
+    const idle = find('Idle', 'Eating');
+    const walk = find('Walk', 'WalkSlow');
+    const run = find('Gallop', 'Run');
     if (idle) m.idle = idle;
     if (walk) m.walk = walk;
     if (run) m.run = run;
     this.#mount = m;
     this.object.add(root);
-    this.#rider.position.set(0, m.saddle, -0.02);
+  }
+
+  /** Put the rider's pelvis on the horse's back (measured, not guessed). */
+  #seat(): void {
+    const m = this.#mount;
+    const pelvis = this.#bones.get('pelvis');
+    if (!m || !pelvis) return;
+    this.#rider.position.set(0, 0, 0);
+    this.object.updateMatrixWorld(true);
+    const p = this.object.worldToLocal(pelvis.getWorldPosition(new THREE.Vector3()));
+    // the pelvis bone sits mid-hip; the seat is a little below it
+    this.#rider.position.set(-p.x, m.saddle.y - p.y + 0.12 / METRES_PER_TILE, m.saddle.z - p.z);
+  }
+
+  /**
+   * Turn the chair-sitting pose into a straddle: thighs down and apart, calves
+   * hanging. Axes come from the pose itself (sitting thighs point forward), so
+   * nothing depends on which way the model was authored.
+   */
+  #straddle(): void {
+    if (!this.#ride) {
+      const pos = (n: string): THREE.Vector3 => this.#rider.worldToLocal(this.#bones.get(n)?.getWorldPosition(new THREE.Vector3()) ?? new THREE.Vector3());
+      const fwd = pos('calf_l').sub(pos('thigh_l')).add(pos('calf_r').sub(pos('thigh_r'))).setY(0).normalize();
+      const across = new THREE.Vector3(0, 1, 0).cross(fwd); // rotating about this pitches forward → down
+      const left = Math.sign(pos('thigh_l').sub(pos('pelvis')).dot(across)) || 1;
+      this.#ride = { fwd, across, left };
+    }
+    const { fwd, across, left } = this.#ride;
+    const up = _up;
+    const riderQ = this.#rider.getWorldQuaternion(_q0);
+    const inv = _q1.copy(riderQ).invert();
+    const turn = (name: string, local: THREE.Quaternion): void => {
+      const bone = this.#bones.get(name);
+      if (!bone?.parent) return;
+      // The mixer only writes a bone when the clip's value changes; if it did
+      // not this frame, start again from the clip's pose, not from last frame's turn.
+      const prev = this.#posed.get(bone);
+      if (prev && bone.quaternion.equals(prev.out)) bone.quaternion.copy(prev.clip);
+      const clip = bone.quaternion.clone();
+      const delta = _q2.copy(riderQ).multiply(local).multiply(inv);
+      const world = bone.getWorldQuaternion(_q3);
+      const parent = bone.parent.getWorldQuaternion(_q4).invert();
+      bone.quaternion.copy(parent.multiply(delta.multiply(world)));
+      bone.updateMatrixWorld(true);
+      this.#posed.set(bone, { clip, out: bone.quaternion.clone() });
+    };
+    for (const [side, sign] of [['l', left], ['r', -left]] as const) {
+      // pitch the thigh down, open it a little, then roll it out round the horse's barrel
+      const thigh = _q5.setFromAxisAngle(fwd, sign * STRADDLE.roll).multiply(_q6.setFromAxisAngle(up, sign * STRADDLE.spread));
+      turn(`thigh_${side}`, thigh.multiply(_q6.setFromAxisAngle(across, STRADDLE.thigh)));
+      // the calf hangs back down along the horse's side
+      turn(`calf_${side}`, _q5.setFromAxisAngle(fwd, -sign * STRADDLE.roll * 0.7).multiply(_q6.setFromAxisAngle(across, -STRADDLE.calf)));
+    }
   }
 
   #play(name: string, fade = FADE): void {
@@ -307,6 +400,10 @@ class RiggedCharacter implements SandboxCharacter {
       this.object.rotation.y = this.#yaw;
     }
     this.#mixer.update(dt);
+    if (this.#mount) {
+      this.object.updateMatrixWorld(true);
+      this.#straddle();
+    }
     this.#mount?.mixer.update(dt);
     for (const w of this.#mount?.wings ?? []) w.rotation.z = (w.userData.side as number) * (0.25 + Math.sin(this.#t * (moving ? 7 : 2)) * (moving ? 0.5 : 0.12));
   }
