@@ -13,6 +13,7 @@ import type { SurroundingsStyle } from '../../../assets/theme.js';
 import { buildGrassWhere, buildLamps, type Lamp, type LampSet } from '../scenery.js';
 import type { MaterialLibrary } from './materials.js';
 import { buildBeacons, buildLanterns, buildRocks, PropWriter } from './props.js';
+import { waterMaterial } from '../water.js';
 import { makeNoise, outside, Terrain, type Box2 } from './terrain.js';
 import type { PlantSpot, Vegetation } from './vegetation.js';
 
@@ -26,6 +27,8 @@ export interface Site {
   lamps: Lamp[];
   /** Building footprints: centre and size in tiles; the front faces +z. */
   buildings: { x: number; z: number; w: number; d: number; kind: string }[];
+  /** No pond in the meadow (default: one). */
+  pond?: false;
   /** Spots the town already chose for scenery (its 2D trees and rocks); planted as they are. */
   plants?: SitePlant[];
   seed: number;
@@ -65,7 +68,38 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
     return Math.min(1, edge * south * smooth(0.36, 0.56, n.fbm(x * 0.05, z * 0.05, 3)) * wooded);
   };
   const bounds: Box2 = { x0: centre.x - 130, x1: centre.x + 130, z0: centre.z - 120, z1: centre.z + 120 };
-  const terrain = new Terrain({ flat, bounds, wear: site.wear, woods: (x, z) => smooth(0.15, 0.6, woods(x, z)), relief: (_x, z) => relief * (0.3 + 0.7 * smooth(flat.z1 + 22, flat.z1 + 45, z)), seed: site.seed }, lib);
+
+  // trails wandering from the town's edges up into the woods
+  const trails: [number, number][][] = [
+    [centre.x - 8, flat.z0, 0, -1],
+    [flat.x0, centre.z + 4, -1, 0.2],
+    [flat.x1, centre.z - 6, 1, -0.3],
+  ].map(([x0, z0, dx, dz]) => {
+    const pts: [number, number][] = [[x0!, z0!]];
+    let ang = Math.atan2(dz!, dx!);
+    for (let i = 0; i < 9; i++) {
+      ang += (n.noise(i * 0.7 + x0!, z0! * 0.1) - 0.5) * 0.9;
+      const [px, pz] = pts[pts.length - 1]!;
+      pts.push([px + Math.cos(ang) * 4.5, pz + Math.sin(ang) * 4.5]);
+    }
+    return pts;
+  });
+  const segDist = (x: number, z: number, a: [number, number], b: [number, number]): number => {
+    const vx = b[0] - a[0];
+    const vz = b[1] - a[1];
+    const t = THREE.MathUtils.clamp(((x - a[0]) * vx + (z - a[1]) * vz) / (vx * vx + vz * vz), 0, 1);
+    return Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t);
+  };
+  const trailDist = (x: number, z: number): number => {
+    let d = Infinity;
+    for (const t of trails) for (let i = 0; i < t.length - 1; i++) d = Math.min(d, segDist(x, z, t[i]!, t[i + 1]!));
+    return d;
+  };
+  // a pond in the meadow, if the site has one
+  const pond = site.pond === false ? null : { x: centre.x + 8, z: flat.z1 + 15, r: 4.5, depth: 1.1 };
+  const pondDist = (x: number, z: number): number => (pond ? Math.hypot(x - pond.x, z - pond.z) - pond.r : Infinity);
+  const wear = (x: number, z: number): number => Math.max(site.wear(x, z), 1 - smooth(0.3, 1.1, trailDist(x, z)), 0.8 * (1 - smooth(-0.6, 0.9, Math.abs(pondDist(x, z) + 0.4))));
+  const terrain = new Terrain({ flat, bounds, wear, ...(pond ? { dips: [pond] } : {}), woods: (x, z) => smooth(0.15, 0.6, woods(x, z)), relief: (_x, z) => relief * (0.3 + 0.7 * smooth(flat.z1 + 22, flat.z1 + 45, z)), seed: site.seed }, lib);
   const h = (x: number, z: number): number => terrain.heightAt(x, z);
   const group = new THREE.Group();
   group.name = 'surroundings';
@@ -73,7 +107,7 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
 
   /** Free ground around a point (nothing taken within r). */
   const free = (x: number, z: number, r: number): boolean => {
-    if (site.taken(x, z)) return false;
+    if (site.taken(x, z) || trailDist(x, z) < r + 0.6 || pondDist(x, z) < r + 0.3) return false;
     for (let k = 0; k < 8; k++) {
       const a = (k / 8) * Math.PI * 2;
       if (site.taken(x + Math.cos(a) * r, z + Math.sin(a) * r)) return false;
@@ -143,16 +177,34 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
   // --- meadow: grass, flowers --------------------------------------------------------
   const grassArea = { x: flat.x0 - 14, y: flat.z0 - 10, w: flat.x1 - flat.x0 + 28, h: flat.z1 - flat.z0 + 32 };
   group.add(
-    buildGrassWhere(grassArea, (x, z) => !site.taken(x, z) && site.wear(x, z) < 0.4 && woods(x, z) < 0.5, 5000, (x, z) => woods(x, z) > 0.2, h, style.grass ?? { hue: 0.24, sat: 0.45, light: 0.17 }),
+    buildGrassWhere(grassArea, (x, z) => !site.taken(x, z) && wear(x, z) < 0.4 && pondDist(x, z) > 0 && woods(x, z) < 0.5, 5000, (x, z) => woods(x, z) > 0.2, h, style.grass ?? { hue: 0.24, sat: 0.45, light: 0.17 }),
   );
   const flowers: PlantSpot[] = [];
   for (let k = 0; k < 6000 && flowers.length < (style.flowers ?? 700); k++) {
     const x = grassArea.x + rng() * grassArea.w;
     const z = grassArea.y + rng() * grassArea.h;
-    if (n.fbm(x * 0.15 + 30, z * 0.15, 2) < 0.55 || site.taken(x, z) || site.wear(x, z) > 0.3 || woods(x, z) > 0.3) continue;
+    if (n.fbm(x * 0.15 + 30, z * 0.15, 2) < 0.55 || site.taken(x, z) || wear(x, z) > 0.3 || pondDist(x, z) < 0.5 || woods(x, z) > 0.3) continue;
     flowers.push({ x, y: h(x, z), z, s: 0.8 + rng() * 0.6 });
   }
   group.add(veg.flowers(flowers, site.seed + 5));
+
+  // the pond: water a little below its rim, bushes round the shore
+  if (pond) {
+    let rim = Infinity;
+    for (let k = 0; k < 16; k++) rim = Math.min(rim, h(pond.x + Math.cos((k / 16) * Math.PI * 2) * pond.r, pond.z + Math.sin((k / 16) * Math.PI * 2) * pond.r));
+    const water = new THREE.Mesh(new THREE.CircleGeometry(pond.r * 0.97, 40).rotateX(-Math.PI / 2), waterMaterial());
+    water.position.set(pond.x, rim - 0.15, pond.z);
+    water.receiveShadow = true;
+    water.name = 'pond';
+    group.add(water);
+    const shore: PlantSpot[] = [];
+    for (let k = 0; k < 9; k++) {
+      const a = (k / 9) * Math.PI * 2 + n.noise(k, 3) * 0.6;
+      const r = pond.r + 0.6 + n.noise(k, 7) * 0.8;
+      shore.push({ x: pond.x + Math.cos(a) * r, y: h(pond.x + Math.cos(a) * r, pond.z + Math.sin(a) * r), z: pond.z + Math.sin(a) * r, s: 0.8 + n.noise(k, 9) * 0.6 });
+    }
+    for (const o of veg.plant('bush', shore, site.seed + 9)) group.add(o);
+  }
 
   // --- props: rustic (medieval), urban (modern) or colony (sci-fi) ----------------------
   const kit = style.style;

@@ -162,6 +162,8 @@ export class App {
   }
 
   #onTown(shown: Shown): void {
+    // what the open panel shows, to keep it if the new town still has it
+    const was = this.#inspector.hidden ? null : this.#renderer.selected;
     this.#shown = shown;
     this.#raws = shown.raws;
     this.#names = shown.names;
@@ -175,7 +177,25 @@ export class App {
       // Refresh the Guild panel for the new town, unless the player is typing
       // in it: replacing the form would throw away what they typed.
       if (!this.#editingInspector()) this.#openGuild();
-    } else if (!this.#looksOpen) this.#closeInspector(); // Looks does not depend on the town: keep it open
+    } else if (!this.#looksOpen && !this.#reopen(was)) this.#closeInspector(); // Looks does not depend on the town: keep it open
+  }
+
+  /**
+   * Show the same hero or building in the new town (the first load finishing
+   * just after a click, a refresh with the same wallets). False if it is gone.
+   */
+  #reopen(target: HitTarget | null): boolean {
+    if (target === null) return false;
+    if (target.kind === 'hero') {
+      if (!this.#guild.heroes.some((h) => h.address === target.address)) return false;
+      this.#selectHero(target.address);
+      return true;
+    }
+    const placed = this.#sim.plan.buildings.find((b) => b.id === target.placed.id);
+    if (!placed) return false;
+    this.#renderer.selected = { kind: 'building', placed };
+    this.#openInspector(buildingPanel(placed, this.#ctx()));
+    return true;
   }
 
   /** Same town, newer data: rebuild quietly and play only what is new, live. */

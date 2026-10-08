@@ -31,6 +31,8 @@ export interface TerrainSpec {
   woods(x: number, z: number): number;
   /** Optional 0..1 scale on the hills (an open meadow on one side). */
   relief?(x: number, z: number): number;
+  /** Hollows (ponds): a bowl of radius r (tiles) and depth at (x, z). */
+  dips?: { x: number; z: number; r: number; depth: number }[];
   seed: number;
 }
 
@@ -124,7 +126,9 @@ export class Terrain {
     const ridges = 1 - Math.abs(this.#n.fbm(x * 0.012 + 40, z * 0.012, 3) * 2 - 1);
     // gentle at first, rising towards the horizon so the valley feels enclosed
     const relief = this.#spec.relief?.(x, z) ?? 1;
-    return (rise * (hills * 7 + ridges * 6 - 2.5) + Math.max(0, d - 20) * 0.12 + rise * 1.5) * relief;
+    let h = (rise * (hills * 7 + ridges * 6 - 2.5) + Math.max(0, d - 20) * 0.12 + rise * 1.5) * relief;
+    for (const p of this.#spec.dips ?? []) h -= p.depth * smooth(p.r, p.r * 0.45, Math.hypot(x - p.x, z - p.z));
+    return h;
   }
 
   /** Steepness: rise over run. */

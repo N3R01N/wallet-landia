@@ -27,6 +27,7 @@ import { EnvironmentController, skyForHour } from './environment.js';
 import { bundleTheme, type CharacterProvider, type SandboxCharacter, type Theme } from './themes.js';
 import type { Companion } from './grammar/companions.js';
 import { Smoke, type Emitter } from './smoke.js';
+import { rippling } from './water.js';
 import { tileSurfaces, townSite } from './townSite.js';
 import type { ThemeBundle } from '../../assets/themeBundles.js';
 import { currentHour } from '../overlay.js';
@@ -52,33 +53,6 @@ interface Person {
   shown: boolean;
   /** Casting shadows now. */
   shadow: boolean;
-}
-
-/**
- * Ripples on still water: a few moving sine waves tilt the normal, so the sky
- * reflection (the theme's HDRI) shimmers. Shares the wind's clock.
- */
-function rippling(mat: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms.uWaterTime = wind.uTime;
-    shader.vertexShader = shader.vertexShader
-      .replace('void main() {', 'varying vec3 vWaterPos;\nvoid main() {')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWaterPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    shader.fragmentShader = shader.fragmentShader.replace('void main() {', 'varying vec3 vWaterPos;\nuniform float uWaterTime;\nvoid main() {').replace(
-      '#include <normal_fragment_maps>',
-      `#include <normal_fragment_maps>
-{
-  vec2 p = vWaterPos.xz;
-  float t = uWaterTime;
-  float dx = cos(p.x * 1.7 + t * 1.3) * 0.5 + cos((p.x + p.y) * 2.9 - t * 1.9) * 0.3 + cos(p.x * 5.3 + p.y * 2.1 + t * 2.7) * 0.15;
-  float dz = cos(p.y * 1.9 - t * 1.1) * 0.5 + cos((p.y - p.x) * 3.1 + t * 1.7) * 0.3 + cos(p.y * 4.7 - p.x * 1.3 - t * 2.3) * 0.15;
-  vec3 wn = normalize(vec3(dx * 0.09, 1.0, dz * 0.09));
-  normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
-}`,
-    );
-  };
-  mat.customProgramCacheKey = () => 'water-ripples';
-  return mat;
 }
 
 /** Above this many tiles per second a rigged person runs. */
