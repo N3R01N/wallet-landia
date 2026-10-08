@@ -7,6 +7,9 @@ import { buildGuild, type HistoryWindow } from '../domain/mappers.js';
 import { CLASS_LABEL, type Guild, type HeroClass } from '../domain/model.js';
 import { TIER_COLORS, TIER_FLOORS, TIER_NAMES, approxUsd } from '../domain/tiers.js';
 import type { RawWallet } from '../data/zerion/endpoints.js';
+import { Session, type Shown } from '../data/session.js';
+import type { BudgetSnapshot } from '../data/zerion/budget.js';
+import { guildPanel } from './guildPanel.js';
 import { startHeartbeat, type BlockBeat } from '../data/rpc.js';
 import { BUILDING_NAMES } from '../domain/catalog.js';
 import { planTown } from '../world/layout.js';
@@ -22,8 +25,16 @@ const SPEEDS = [0.5, 1, 2, 4, 8];
 export class App {
   readonly element: HTMLElement;
   #raws: RawWallet[];
-  #source: string;
+  #names: Map<string, string> = new Map();
+  #session: Session;
+  #shown: Shown | null = null;
   #prefs: Prefs;
+  #sourceEl = el('span', { class: 'muted' }, 'Loading…');
+  #statusEl = el('span', { class: 'status' });
+  #inkEl = el('button', { class: 'btn ink', title: 'Zerion requests left today — open the Guild panel' }, '');
+  #homeBtn = el('button', { class: 'btn', hidden: '' }, '⌂ Return home');
+  #budget: BudgetSnapshot | null = null;
+  #guildOpen = false;
   #guild!: Guild;
   #sim!: Sim;
   /** The view currently on screen. */
@@ -49,10 +60,19 @@ export class App {
   #logCount = -1;
   #selectedKey = '';
 
-  constructor(raws: RawWallet[], source: 'captured' | 'demo') {
-    this.#raws = raws;
-    this.#source = source === 'demo' ? 'Demo data (synthetic) — run `npm run capture` for real wallets' : `${raws.length} captured wallets`;
+  constructor() {
+    this.#raws = [];
     this.#prefs = loadPrefs();
+    this.#session = new Session(this.#prefs, {
+      onTown: (shown) => this.#onTown(shown),
+      onUpdate: (shown) => this.#onUpdate(shown),
+      onStatus: (text, kind) => {
+        this.#statusEl.textContent = text;
+        this.#statusEl.className = `status ${kind}`;
+      },
+      onBudget: (snap) => this.#onBudget(snap),
+    });
+    this.#onBudget(this.#session.budget.snapshot());
     this.#rebuild();
     this.#r2d = new Renderer(this.#canvas, this.#sim);
     this.#r2d.classOf = (a) => this.#classOf(a);
@@ -64,11 +84,13 @@ export class App {
     startHeartbeat((beat) => {
       this.#beat = beat;
       this.#sim.bell(beat.number, beat.busy);
+      void this.#session.onBlock();
       this.#beatLabel.textContent = `🔔 block #${beat.number.toLocaleString('en-US')} · ${beat.txCount} txs · base toll ${beat.baseFeeGwei?.toFixed(2) ?? '?'} gwei`;
     });
   }
 
   start(): void {
+    void this.#session.home();
     let last = performance.now();
     const frame = (now: number): void => {
       const dt = (now - last) / 1000;
@@ -88,11 +110,63 @@ export class App {
   }
 
   #rebuild(): void {
-    this.#guild = buildGuild(this.#raws, this.#prefs.window);
+    this.#guild = buildGuild(this.#raws, this.#prefs.window, { names: this.#names });
     const plan = planTown(this.#guild);
     this.#sim = new Sim(this.#guild, plan);
     this.#sim.speed = this.#prefs.speed;
     this.#logCount = -1;
+  }
+
+  #onTown(shown: Shown): void {
+    this.#shown = shown;
+    this.#raws = shown.raws;
+    this.#names = shown.names;
+    this.#sourceEl.textContent = shown.label;
+    this.#homeBtn.hidden = shown.visiting === null;
+    this.#rebuild();
+    this.#r2d.setSim(this.#sim);
+    this.#r3d?.setSim(this.#sim);
+    if (this.#beat) this.#sim.bell(this.#beat.number, this.#beat.busy);
+    if (this.#guildOpen) this.#openGuild();
+    else this.#closeInspector();
+  }
+
+  /** Same town, newer data: rebuild quietly and play only what is new, live. */
+  #onUpdate(shown: Shown): void {
+    const before = new Set(this.#guild.journeys.map((j) => j.key));
+    this.#shown = shown;
+    this.#raws = shown.raws;
+    this.#rebuild();
+    this.#r2d.setSim(this.#sim);
+    this.#r3d?.setSim(this.#sim);
+    this.#sim.goLive();
+    for (const j of this.#guild.journeys) if (!before.has(j.key)) this.#sim.playNow(j);
+  }
+
+  #onBudget(snap: BudgetSnapshot): void {
+    this.#budget = snap;
+    this.#inkEl.textContent = `✒ ${snap.remaining}`;
+    this.#inkEl.classList.toggle('low', snap.remaining < 30);
+  }
+
+  #openGuild(): void {
+    this.#renderer.selected = null;
+    this.#openInspector(
+      guildPanel({
+        prefs: this.#prefs,
+        budget: this.#budget ?? this.#session.budget.snapshot(),
+        visiting: this.#shown?.visiting ?? null,
+        onHomeChanged: () => void this.#session.home(),
+        onKeyChanged: () => {
+          this.#session.keyChanged();
+          void this.#session.home();
+        },
+        onVisit: (a) => void this.#session.visit(a),
+        onClearCache: () => this.#session.clearCache(),
+        refresh: () => this.#openGuild(),
+      }),
+      true,
+    );
   }
 
   #setWindow(w: HistoryWindow): void {
@@ -176,12 +250,21 @@ export class App {
       }),
     );
 
+    const guildBtn = el('button', { class: 'btn' }, '⚙ Guild');
+    guildBtn.onclick = () => (this.#guildOpen ? this.#closeInspector() : this.#openGuild());
+    this.#inkEl.onclick = () => this.#openGuild();
+    this.#homeBtn.onclick = () => void this.#session.home();
     const header = el(
       'header',
       { class: 'topbar' },
-      el('div', { class: 'brand' }, el('strong', {}, 'Wallet-landia'), el('span', { class: 'muted' }, this.#source)),
+      el('div', { class: 'brand' }, el('strong', {}, 'Wallet-landia'), this.#sourceEl),
       views,
       windowSel,
+      this.#homeBtn,
+      this.#statusEl,
+      el('div', { class: 'spacer' }),
+      this.#inkEl,
+      guildBtn,
     );
 
     const close = el('button', { class: 'btn close', 'aria-label': 'Close' }, '✕');
@@ -355,12 +438,14 @@ export class App {
     this.#openInspector(heroPanel(hero, this.#ctx()));
   }
 
-  #openInspector(body: HTMLElement): void {
+  #openInspector(body: HTMLElement, guild = false): void {
+    this.#guildOpen = guild;
     this.#inspectorBody.replaceChildren(body);
     this.#inspector.hidden = false;
   }
 
   #closeInspector(): void {
+    this.#guildOpen = false;
     this.#inspector.hidden = true;
     this.#renderer.selected = null;
   }

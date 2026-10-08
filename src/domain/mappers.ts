@@ -723,7 +723,12 @@ export function suggestClass(counts: Partial<Record<Verb, number>>): HeroClass {
 
 // --- guild -------------------------------------------------------------------
 
-export function buildGuild(raws: readonly RawWallet[], window: HistoryWindow = DEFAULT_WINDOW): Guild {
+export interface GuildOptions {
+  /** Primary ENS names; a hero with one is called by it. */
+  names?: ReadonlyMap<string, string>;
+}
+
+export function buildGuild(raws: readonly RawWallet[], window: HistoryWindow = DEFAULT_WINDOW, options: GuildOptions = {}): Guild {
   const book = new ProtocolBook();
   const learned = learnContracts(raws);
   const guild = new Set(raws.map((r) => r.address.toLowerCase()));
@@ -740,7 +745,7 @@ export function buildGuild(raws: readonly RawWallet[], window: HistoryWindow = D
     const tokenWorth = raw.portfolio?.attributes.total?.positions ?? computed;
     const nftWorth = nfts.reduce((s, n) => s + (n.usd ?? 0), 0);
     const netWorth = tokenWorth + nftWorth;
-    const name = heroName(address);
+    const name = options.names?.get(address) ?? heroName(address);
     names.set(address, name);
     heroes.push({
       address,

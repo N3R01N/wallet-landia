@@ -18,7 +18,11 @@ This opens the town with whatever is in `fixtures/`. If there are no real captur
 - **Hover** anything for an approximate value; **click** a hero or home for the character sheet, or a building for its interior with exact values.
 - The bar at the bottom replays the window (last 30 days / last N transactions) in compressed event time, then goes **LIVE**.
 
-## Real wallets
+## Live wallets (in the browser)
+
+Open **⚙ Guild**, paste your free Zerion key (stored only in this browser), and add your wallets by address, ENS name or "Connect wallet". The town goes live: cached in IndexedDB, and updated when the chain shows one of your wallets changed. Follow other addresses to visit their towns. The ✒ counter shows Zerion requests left today (300 on the free plan).
+
+## Captured fixtures (for development)
 
 Put your free Zerion key in `.env.local` (gitignored) as `ZERION_API_KEY=zk_...`, then:
 

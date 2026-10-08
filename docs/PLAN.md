@@ -207,7 +207,7 @@ Same scope for both: **the Town view only.**
 ## Next steps (3D primary)
 
 1. ~~**Housekeeping:**~~ done 2026-10-08. First commit; dev tooling upgraded (vite 8, vitest 5), `npm audit` clean; Playwright smoke tests for all three views (`npm run e2e`).
-2. **Phase 3, live data in the browser:**
+2. ~~**Phase 3, live data in the browser:**~~ done 2026-10-08 (details below).
    - Key entry ("Scribe's ink pot") stored in `localStorage`; demo mode without a key.
    - Load wallets live from Zerion; cache in IndexedDB (history forever, valuations ~2 min).
    - Add or follow any address or ENS name.
@@ -220,6 +220,31 @@ Same scope for both: **the Town view only.**
    - Logo occlusion.
    - Camera focus on click; a mobile/touch check.
 5. **Asset-pack slots:** formalise the slot catalogue in code, so the 3D meshes and sprites resolve through packs.
+
+## Live data (done 2026-10-08)
+
+- **⚙ Guild panel:**
+  - Zerion key, stored only in `localStorage`.
+  - Your wallets and followed towns, each added by address, ENS name or "Connect wallet" (EIP-1193).
+  - The day's ink, i.e. requests left (also shown in the top bar).
+  - "Clear cached data".
+- **`Session`** (`src/data/session.ts`) decides the source:
+  - key + wallets → live;
+  - otherwise captured fixtures, else the synthetic demo.
+  - Visiting a followed town is a separate read-only mode with "⌂ Return home".
+- **`LiveLoader`** (`src/data/live.ts`) on the ported Zerion client and daily budget, cached in IndexedDB (`src/data/cache.ts`):
+  - history kept forever, newest tail fetched (1 request);
+  - valuations refetched after 5 minutes (4 requests);
+  - a cold wallet costs 5; a reload within the TTL costs 0.
+  - Pinned by `test/live.test.ts`.
+- **Live updates:**
+  - On every block, one free RPC batch call reads each shown wallet's nonce and ETH balance (baseline taken at load).
+  - Zerion is asked only when one moved, plus a 15-minute catch-up for incoming tokens.
+  - New journeys play live without restarting the replay.
+- **ENS:** forward and verified reverse lookups over the public RPC, using a small self-written keccak-256 and namehash (`src/util/keccak.ts`, `src/data/ens.ts`). Primary names become hero names.
+- **e2e:** `e2e/live.spec.ts` drives the whole live path against a fake Zerion and RPC. It checks the request counts and plays a new transaction when the fake chain moves.
+- **Known gap:** while the page stays open, valuations (balances, positions) refresh only on reload or after the TTL on the next load. A periodic valuation refresh can come later.
+- Default view for new visitors is now 3D.
 
 ## Decisions log
 

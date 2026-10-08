@@ -177,6 +177,16 @@ export class Sim {
     this.gloom = 0;
   }
 
+  /** Jump to the end of the replay: from here on, only live events play. */
+  goLive(): void {
+    this.seek(this.duration);
+  }
+
+  /** Act out a journey right now (a live transaction that just arrived). */
+  playNow(j: Journey): void {
+    this.#dispatch(j);
+  }
+
   /** A new block was sealed on the real chain. */
   bell(blockNumber: number, busy: number): void {
     const t = this.plan.tower;

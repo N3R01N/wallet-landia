@@ -477,3 +477,83 @@ select {
     font-size: 11px;
   }
 }
+
+.spacer {
+  flex: 1;
+}
+
+.status {
+  font-size: 12px;
+  color: var(--parchment-dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 340px;
+}
+
+.status.busy::before {
+  content: '⏳ ';
+}
+
+.status.error {
+  color: #ffb0a0;
+  font-weight: bold;
+}
+
+.btn.ink.low {
+  background: #ffb0a0;
+}
+
+.btn.small {
+  padding: 1px 8px;
+  font-size: 12px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.wallet-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--parchment-dark);
+  font-size: 13px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.form-row {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.form-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 2px solid var(--wood-dark);
+  border-radius: 4px;
+  background: #fffaf0;
+  color: var(--ink);
+}
+
+.form-msg {
+  color: var(--bad);
+  font-size: 12px;
+  min-height: 0;
+}
+
+.inspector p.small,
+.small {
+  font-size: 11px;
+}
