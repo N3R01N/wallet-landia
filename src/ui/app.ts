@@ -149,8 +149,11 @@ export class App {
     this.#r2d.setSim(this.#sim);
     this.#r3d?.setSim(this.#sim);
     if (this.#beat) this.#sim.bell(this.#beat.number, this.#beat.busy);
-    if (this.#guildOpen) this.#openGuild();
-    else this.#closeInspector();
+    if (this.#guildOpen) {
+      // Refresh the Guild panel for the new town, unless the player is typing
+      // in it: replacing the form would throw away what they typed.
+      if (!this.#editingInspector()) this.#openGuild();
+    } else this.#closeInspector();
   }
 
   /** Same town, newer data: rebuild quietly and play only what is new, live. */
@@ -163,6 +166,13 @@ export class App {
     this.#r3d?.setSim(this.#sim);
     this.#sim.goLive();
     for (const j of this.#guild.journeys) if (!before.has(j.key)) this.#sim.playNow(j);
+  }
+
+  /** Is the player mid-edit in the inspector (focused field, or text not yet submitted)? */
+  #editingInspector(): boolean {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && this.#inspector.contains(active) && active.matches('input, select, textarea')) return true;
+    return [...this.#inspector.querySelectorAll('input')].some((i) => i.type !== 'file' && i.value !== '');
   }
 
   #onBudget(snap: BudgetSnapshot): void {
