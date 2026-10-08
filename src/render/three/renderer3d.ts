@@ -15,7 +15,7 @@ import type { Agent, Effect, Sim } from '../../world/sim.js';
 import { brandColor, drawEmblem, plate, styleFor, type Style } from '../buildings.js';
 import { caravanSprite, heroSprite, npcSprite, villagerSprite } from '../characters.js';
 import { bakeTopGround, scatterProps, type Prop } from '../ground.js';
-import { districtLabels, floatingText, markers, nameTags, nightFactor, weather, type Project } from '../overlay.js';
+import { districtLabels, floatingText, markers, nameTags, nightFactor, route, weather, type Project } from '../overlay.js';
 import { P, sprite, type Sprite } from '../pixel.js';
 import type { HitTarget, WorldView } from '../view.js';
 
@@ -144,6 +144,12 @@ export class Renderer3D implements WorldView {
   rotate(dx: number, dy: number): void {
     this.#yaw -= dx * 0.006;
     this.#pitch = Math.max(0.3, Math.min(1.45, this.#pitch + dy * 0.004));
+  }
+
+  /** Look at a tile position, coming a little closer if far away. */
+  focus(x: number, y: number): void {
+    this.#target.set(x, 0, y);
+    this.#distance = Math.min(this.#distance, 40);
   }
 
   #placeCamera(): void {
@@ -640,6 +646,7 @@ export class Renderer3D implements WorldView {
     for (const e of sim.effects) this.#effect(c, e);
     weather(c, sim, w, h, false);
     if (this.#distance > 30) districtLabels(c, this.#project);
+    if (sim.route) route(c, sim.route, this.#project, sim.elapsed);
     const tops = new Map<string, [number, number]>();
     for (const b of this.#buildings) {
       const p = this.#project(b.placed.x + b.placed.w / 2, b.placed.y + b.placed.h / 2, b.top + 0.3);

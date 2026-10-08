@@ -4,7 +4,7 @@
  */
 
 import { buildGuild, type HistoryWindow } from '../domain/mappers.js';
-import { CLASS_LABEL, type Guild, type HeroClass } from '../domain/model.js';
+import { CLASS_LABEL, type Guild, type HeroClass, type Journey } from '../domain/model.js';
 import { TIER_COLORS, TIER_FLOORS, TIER_NAMES, approxUsd } from '../domain/tiers.js';
 import type { RawWallet } from '../data/zerion/endpoints.js';
 import { Session, type Shown } from '../data/session.js';
@@ -18,7 +18,7 @@ import { Renderer } from '../render/renderer.js';
 import type { HitTarget, ViewKind, WorldView } from '../render/view.js';
 import { loadPrefs, savePrefs, type Prefs } from '../settings.js';
 import { el, fmtDate } from './dom.js';
-import { buildingPanel, heroPanel, questLogRow, type PanelContext } from './panels.js';
+import { buildingPanel, heroPanel, questLogRow, questPanel, type PanelContext } from './panels.js';
 
 const SPEEDS = [0.5, 1, 2, 4, 8];
 
@@ -305,7 +305,7 @@ export class App {
     if (sim.log.length !== this.#logCount || sim.log.at(-1)?.journey.key !== this.#selectedKey) {
       this.#logCount = sim.log.length;
       this.#selectedKey = sim.log.at(-1)?.journey.key ?? '';
-      this.#log.replaceChildren(...sim.log.slice(-8).reverse().map((e) => questLogRow(e.journey, this.#guild, (a) => this.#selectHero(a))));
+      this.#log.replaceChildren(...sim.log.slice(-8).reverse().map((e) => questLogRow(e.journey, this.#guild, (j) => this.#openJourney(j))));
     }
   }
 
@@ -412,6 +412,8 @@ export class App {
         savePrefs(this.#prefs);
       },
       onSelectHero: (a) => this.#selectHero(a),
+      onJourney: (j) => this.#openJourney(j),
+      onReplay: (j) => this.#replay(j),
       beat: this.#beat,
     };
   }
@@ -431,6 +433,22 @@ export class App {
     this.#openInspector(buildingPanel(target.placed, this.#ctx()));
   }
 
+  /** Quest Replay: the storyboard, and the route drawn in town. */
+  #openJourney(j: Journey): void {
+    this.#renderer.selected = { kind: 'hero', address: j.hero };
+    this.#openInspector(questPanel(j, this.#ctx()));
+    // After opening: opening any panel clears the previous route.
+    this.#sim.route = this.#sim.routeFor(j);
+    const home = this.#sim.plan.homes.get(j.hero);
+    if (home) this.#renderer.focus(home.door.x, home.door.y);
+  }
+
+  #replay(j: Journey): void {
+    this.#sim.route = this.#sim.routeFor(j);
+    this.#sim.solo(j);
+    if (!this.#sim.playing) this.#togglePlay();
+  }
+
   #selectHero(address: string): void {
     const hero = this.#guild.heroes.find((h) => h.address === address);
     if (!hero) return;
@@ -440,12 +458,14 @@ export class App {
 
   #openInspector(body: HTMLElement, guild = false): void {
     this.#guildOpen = guild;
+    this.#sim.route = null;
     this.#inspectorBody.replaceChildren(body);
     this.#inspector.hidden = false;
   }
 
   #closeInspector(): void {
     this.#guildOpen = false;
+    this.#sim.route = null;
     this.#inspector.hidden = true;
     this.#renderer.selected = null;
   }

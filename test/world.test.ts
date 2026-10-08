@@ -86,3 +86,44 @@ describe('schedule', () => {
     expect(longGap).toBeLessThanOrEqual(9);
   });
 });
+
+describe('Quest Replay', () => {
+  const guild = buildGuild(demo);
+  const plan = planTown(guild);
+
+  it('routes an outgoing journey home → toll → each stop → home, numbered', async () => {
+    const { Sim } = await import('../src/world/sim.js');
+    const sim = new Sim(guild, plan);
+    const j = guild.journeys.find((x) => x.initiated && x.feeUsd !== null && x.feeUsd > 0 && x.steps[0]?.target.kind === 'building')!;
+    const r = sim.routeFor(j);
+    expect(r.stops.map((s) => s.label)).toEqual(['Toll', ...j.steps.map((s) => s.verb), 'Home']);
+    expect(r.stops.map((s) => s.n)).toEqual(r.stops.map((_, i) => i + 1));
+    expect(r.points[0]).toEqual(r.points[r.points.length - 1]); // a round trip
+    for (let i = 1; i < r.points.length; i++) {
+      const a = r.points[i - 1]!;
+      const b = r.points[i]!;
+      expect(Math.abs(a.x - b.x) + Math.abs(a.y - b.y)).toBeLessThanOrEqual(1.6); // continuous
+    }
+  });
+
+  it('routes an incoming journey from its source to the home', async () => {
+    const { Sim } = await import('../src/world/sim.js');
+    const sim = new Sim(guild, plan);
+    const j = guild.journeys.find((x) => !x.initiated)!;
+    const r = sim.routeFor(j);
+    expect(r.stops.map((s) => s.label)).toEqual(['From', 'Home']);
+  });
+
+  it('holds the timeline while a solo quest plays, then lets go', async () => {
+    const { Sim } = await import('../src/world/sim.js');
+    const sim = new Sim(guild, plan);
+    const j = guild.journeys.find((x) => x.initiated)!;
+    sim.solo(j);
+    expect(sim.soloing).toBe(true);
+    const t0 = sim.t;
+    for (let i = 0; i < 20; i++) sim.step(0.1);
+    expect(sim.t).toBeCloseTo(t0, 5);
+    for (let i = 0; i < 3000 && sim.soloing; i++) sim.step(0.1);
+    expect(sim.soloing).toBe(false);
+  });
+});

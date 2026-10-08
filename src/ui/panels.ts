@@ -4,7 +4,8 @@
  */
 
 import { BUILDING_NAMES, CATEGORY_LABEL } from '../domain/catalog.js';
-import { CLASS_LABEL, type Guild, type Hero, type HeroClass, type Item, type Journey } from '../domain/model.js';
+import { CLASS_LABEL, type Goods, type Guild, type Hero, type HeroClass, type Item, type Journey, type Target, type Verb } from '../domain/model.js';
+import { verbText } from '../domain/mappers.js';
 import { TIER_COLORS, TIER_NAMES, approxUsd, exactUsd, formatQty } from '../domain/tiers.js';
 import { heroSprite, MOUNT_NAMES } from '../render/characters.js';
 import { itemIcon } from '../render/icons.js';
@@ -38,6 +39,8 @@ export interface PanelContext {
   classOf: (address: string) => HeroClass;
   setClass: (address: string, cls: HeroClass | null) => void;
   onSelectHero: (address: string) => void;
+  onJourney: (j: Journey) => void;
+  onReplay: (j: Journey) => void;
   beat: BlockBeat | null;
 }
 
@@ -94,7 +97,7 @@ function itemSlot(item: Item | null, opts: { pouch?: { count: number; usd: numbe
   return slot;
 }
 
-function journeyRow(j: Journey, guild: Guild, onHero?: (a: string) => void): HTMLElement {
+function journeyRow(j: Journey, guild: Guild, onOpen?: (j: Journey) => void): HTMLElement {
   const hero = guild.heroes.find((h) => h.address === j.hero);
   const row = el(
     'div',
@@ -106,8 +109,11 @@ function journeyRow(j: Journey, guild: Guild, onHero?: (a: string) => void): HTM
   const dot = el('span', { class: 'log-dot' });
   dot.style.background = TIER_COLORS[j.tier] ?? '#888';
   row.prepend(dot);
-  if (onHero) row.onclick = () => onHero(j.hero);
-  if (j.hash !== '') row.title = `tx ${j.hash}`;
+  if (onOpen) {
+    row.onclick = () => onOpen(j);
+    row.classList.add('clickable');
+    row.title = 'Open the quest replay';
+  }
   return row;
 }
 
@@ -165,7 +171,7 @@ export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
     hero.stashes.length > 0 ? stashes : el('p', { class: 'muted' }, 'Nothing stored in any building.'),
     hero.spamCount > 0 ? el('p', { class: 'muted' }, `🗑 ${hero.spamCount} pieces of cursed junk lie in the midden by the fence (spam tokens, hidden).`) : null,
     el('h3', {}, 'Quest log'),
-    el('div', { class: 'log' }, ...journeys.slice(-30).reverse().map((j) => journeyRow(j, ctx.guild))),
+    el('div', { class: 'log' }, ...journeys.slice(-30).reverse().map((j) => journeyRow(j, ctx.guild, ctx.onJourney))),
   );
 }
 
@@ -241,10 +247,142 @@ export function buildingPanel(b: Placed, ctx: PanelContext): HTMLElement {
           ),
         ),
     el('h3', {}, `Visits in this window (${visits.length})`),
-    el('div', { class: 'log' }, ...visits.slice(-20).reverse().map((j) => journeyRow(j, ctx.guild, ctx.onSelectHero))),
+    el('div', { class: 'log' }, ...visits.slice(-20).reverse().map((j) => journeyRow(j, ctx.guild, ctx.onJourney))),
   );
 }
 
-export function questLogRow(j: Journey, guild: Guild, onHero: (a: string) => void): HTMLElement {
-  return journeyRow(j, guild, onHero);
+export function questLogRow(j: Journey, guild: Guild, onOpen: (j: Journey) => void): HTMLElement {
+  return journeyRow(j, guild, onOpen);
+}
+
+// --- Quest Replay (one transaction, step by step) ---------------------------
+
+const EXPLORERS: Record<string, string> = {
+  ethereum: 'https://etherscan.io/tx/',
+  base: 'https://basescan.org/tx/',
+  arbitrum: 'https://arbiscan.io/tx/',
+  optimism: 'https://optimistic.etherscan.io/tx/',
+  polygon: 'https://polygonscan.com/tx/',
+};
+
+/** One line for newcomers: what this kind of journey means on-chain. */
+const VERB_EXPLAIN: Partial<Record<Verb, string>> = {
+  send: 'Sent tokens to another address.',
+  receive: 'Tokens arrived from another address.',
+  swap: 'Traded one token for another at an exchange.',
+  addLiquidity: 'Added a pair of tokens to a liquidity pool, earning a share of trading fees.',
+  removeLiquidity: 'Took tokens back out of a liquidity pool.',
+  stake: 'Locked tokens to help secure a network (or a protocol) in exchange for rewards.',
+  unstake: 'Asked for staked tokens back.',
+  supply: 'Deposited tokens into a lending protocol, where they can earn interest and serve as collateral.',
+  withdraw: 'Took deposited tokens back out of a protocol.',
+  borrow: 'Borrowed against collateral. The debt must be repaid, or the collateral can be liquidated.',
+  repay: 'Paid back (part of) a loan.',
+  liquidated: 'The loan became too risky, so someone else repaid it and took collateral as a reward.',
+  claim: 'Collected rewards that had built up.',
+  approve: 'Allowed a contract to move one of your tokens. Unlimited approvals stay open until revoked.',
+  revoke: 'Took back a contract’s permission to move your tokens.',
+  wrap: 'Turned ETH into WETH, the token form of ETH that contracts can handle.',
+  unwrap: 'Turned WETH back into plain ETH.',
+  mint: 'Created new tokens or NFTs.',
+  burn: 'Destroyed tokens or NFTs.',
+  buyNft: 'Bought an NFT at a marketplace.',
+  sellNft: 'Sold an NFT at a marketplace.',
+  bid: 'Placed a bid or listing; nothing moves until someone takes it.',
+  bridge: 'Moved assets between chains through a bridge.',
+  delegate: 'Gave someone else your voting power.',
+  deploy: 'Put a new smart contract on the chain.',
+  airdrop: 'Received free tokens from a project.',
+  deposit: 'Put tokens into a protocol.',
+  lend: 'Lent funds to a borrower through a lending protocol; they repay with interest.',
+  loanRepaid: 'A borrower repaid a loan you made, with interest.',
+  unknown: 'A contract call the town could not decode. The explorer link shows exactly what happened.',
+};
+
+function goodsList(list: Goods[], sign: '−' | '+'): HTMLElement[] {
+  return list.map((g) =>
+    el(
+      'div',
+      { class: `goods ${sign === '−' ? 'out' : 'in'}` },
+      el('span', {}, `${sign} ${g.isNft ? g.symbol : `${formatQty(g.quantity)} ${g.symbol}`}`),
+      el('span', {}, exactUsd(g.usd)),
+    ),
+  );
+}
+
+function placeName(target: Target, ctx: PanelContext): string {
+  switch (target.kind) {
+    case 'building': {
+      const p = ctx.guild.protocols.get(target.protocolId);
+      return p ? `${p.name} (${BUILDING_NAMES[p.building]} · ${CATEGORY_LABEL[p.category]})` : target.protocolId;
+    }
+    case 'home':
+      return `${ctx.guild.heroes.find((h) => h.address === target.address)?.name ?? shortAddr(target.address)}'s home`;
+    case 'gate':
+      return 'the Town Gate (someone outside the guild)';
+  }
+}
+
+export function questPanel(j: Journey, ctx: PanelContext): HTMLElement {
+  const hero = ctx.guild.heroes.find((h) => h.address === j.hero);
+  const status = j.status === 'failed' ? chip('Failed', '#ff8a8a') : j.status === 'pending' ? chip('Pending', '#ffd166') : chip('Confirmed', '#9dff8a');
+  const replay = el('button', { class: 'btn' }, '▶ Replay this quest');
+  replay.onclick = () => ctx.onReplay(j);
+  const explorer = EXPLORERS[j.chainId];
+  const link = explorer && /^0x[0-9a-fA-F]{64}$/.test(j.hash) ? el('a', { href: `${explorer}${j.hash}`, target: '_blank', rel: 'noopener noreferrer' }, 'View on the explorer ↗') : null;
+  const heroLink = el('a', { href: '#' }, hero?.name ?? shortAddr(j.hero));
+  heroLink.onclick = (e) => {
+    e.preventDefault();
+    ctx.onSelectHero(j.hero);
+  };
+
+  const steps: HTMLElement[] = [];
+  if (j.initiated) {
+    if (j.feeUsd !== null && j.feeUsd > 0) {
+      steps.push(
+        el(
+          'li',
+          {},
+          el('strong', {}, 'Chronicle Tower: pay the toll'),
+          el('div', { class: 'muted' }, 'Every transaction pays a gas fee to the network.'),
+          el('div', { class: 'goods out' }, el('span', {}, `− ${j.feeNative !== null ? `${formatQty(j.feeNative)} ETH` : 'gas'}`), el('span', {}, exactUsd(j.feeUsd))),
+        ),
+      );
+    }
+    for (const step of j.steps) {
+      steps.push(
+        el(
+          'li',
+          {},
+          el('strong', {}, `${verbText(step.verb)} at ${placeName(step.target, ctx)}`),
+          ...goodsList(step.give, '−'),
+          ...goodsList(step.get, '+'),
+          step.give.length + step.get.length === 0 ? el('div', { class: 'muted' }, 'Nothing changed hands.') : null,
+        ),
+      );
+    }
+    steps.push(el('li', {}, el('strong', {}, 'Home again')));
+  } else {
+    const first = j.steps[0];
+    steps.push(el('li', {}, el('strong', {}, `From ${first ? placeName(first.target, ctx) : 'outside'}`)));
+    steps.push(
+      el('li', {}, el('strong', {}, `${verbText(j.verb)}: arrives at ${hero?.name ?? 'the hero'}'s home`), ...goodsList(j.steps.flatMap((s) => s.give), '−'), ...goodsList(j.steps.flatMap((s) => s.get), '+')),
+    );
+  }
+
+  return el(
+    'div',
+    { class: 'panel-body' },
+    el('h2', {}, `Quest: ${verbText(j.verb)}`),
+    el('div', { class: 'stat-row' }, el('span', {}, new Date(j.time).toLocaleString('en-GB')), status),
+    el('p', {}, el('strong', {}, j.label)),
+    el('p', { class: 'muted' }, VERB_EXPLAIN[j.verb] ?? ''),
+    el('div', { class: 'stat-row' }, el('span', {}, 'Hero'), heroLink),
+    j.counterparty !== null ? el('div', { class: 'stat-row' }, el('span', {}, 'Other party'), el('span', { class: 'mono' }, ctx.guild.heroes.find((h) => h.address === j.counterparty)?.name ?? shortAddr(j.counterparty))) : null,
+    j.method !== null ? el('div', { class: 'stat-row' }, el('span', {}, 'Contract method'), el('span', { class: 'mono' }, j.method)) : null,
+    j.block !== null ? el('div', { class: 'stat-row' }, el('span', {}, 'Page of the Chronicle (block)'), el('span', { class: 'mono' }, `#${j.block.toLocaleString('en-US')}`)) : null,
+    el('div', { class: 'form-row' }, replay, link),
+    el('h3', {}, j.steps.length > 1 ? `Expedition: ${j.steps.length} stops` : 'The journey'),
+    el('ol', { class: 'quest-steps' }, ...steps),
+  );
 }

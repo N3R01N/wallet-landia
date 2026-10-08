@@ -212,7 +212,11 @@ Same scope for both: **the Town view only.**
    - Load wallets live from Zerion; cache in IndexedDB (history forever, valuations ~2 min).
    - Add or follow any address or ENS name.
    - RPC-gated live updates: poll Zerion only when a wallet's nonce or balance changes.
-3. **Phase 3, drill-down:** Quest Replay (L4), a step-by-step view of one transaction (Expeditions); visiting followed towns as a separate mode.
+3. ~~**Phase 3, drill-down:**~~ done 2026-10-08.
+   - **Quest Replay (L4):** any transaction row (quest log, character sheet, building interior) opens a storyboard. It shows the toll, each stop with goods given and received at exact values, a one-line explanation of the action for newcomers, the method, block and an explorer link.
+   - The route is drawn in town as a marching line with numbered stops (all three views).
+   - "▶ Replay this quest" plays it alone while the timeline holds.
+   - Visiting followed towns shipped with live data.
 4. **3D polish (Phase 4):**
    - Characters: bigger, ground shadows, a facing fix when orbiting.
    - Day/night: lit windows, lamps.

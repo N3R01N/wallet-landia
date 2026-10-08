@@ -557,3 +557,34 @@ select {
 .small {
   font-size: 11px;
 }
+
+.quest-steps {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 13px;
+}
+
+.quest-steps li {
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--parchment-dark);
+}
+
+.quest-steps li::marker {
+  font-weight: bold;
+  color: var(--wood);
+}
+
+.goods {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.goods.out {
+  color: #9a3a2a;
+}
+
+.goods.in {
+  color: #2f6a2a;
+}

@@ -25,6 +25,8 @@ export interface WorldView {
   hitTest(sx: number, sy: number): HitTarget | null;
   pan(dx: number, dy: number): void;
   zoomAt(sx: number, sy: number, factor: number): void;
+  /** Centre the camera on a tile position. */
+  focus(x: number, y: number): void;
   /** Orbit the camera; a no-op where the projection is fixed. */
   rotate(dx: number, dy: number): void;
 }

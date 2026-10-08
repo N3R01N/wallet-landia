@@ -147,6 +147,11 @@ export interface Journey {
   time: number;
   status: 'confirmed' | 'failed' | 'pending';
   feeUsd: number | null;
+  /** Fee in the chain's native coin (ETH on mainnet). */
+  feeNative: number | null;
+  block: number | null;
+  /** Decoded contract method, when Zerion knows it (e.g. "Multicall"). */
+  method: string | null;
   /** Did this hero sign it (and so pay the toll at the Chronicle Tower)? */
   initiated: boolean;
   verb: Verb;

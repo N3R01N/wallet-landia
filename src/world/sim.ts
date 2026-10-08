@@ -81,6 +81,13 @@ export interface Effect {
   drama: number;
 }
 
+/** A journey's path, for drawing: the full walk plus numbered stops. */
+export interface Route {
+  key: string;
+  points: Pt[];
+  stops: { at: Pt; n: number; label: string }[];
+}
+
 export interface LogEntry {
   journey: Journey;
   at: number;
@@ -113,6 +120,11 @@ export class Sim {
   shake = 0;
   /** Busy buildings glow briefly. */
   readonly lastVisit = new Map<string, number>();
+
+  /** The route on display (Quest Replay), if any. */
+  route: Route | null = null;
+  /** A journey replaying on its own; the timeline holds while it plays. */
+  #solo: { journey: Journey; agent: Agent | null } | null = null;
 
   #next = 0;
   #rng = makeRng(42);
@@ -157,6 +169,7 @@ export class Sim {
 
   /** Jump the cursor. Everyone goes home; nothing before the cursor replays. */
   seek(t: number): void {
+    this.#solo = null;
     this.t = Math.max(0, Math.min(this.duration, t));
     this.#next = this.scheduled.findIndex((s) => s.at >= this.t);
     if (this.#next === -1) this.#next = this.scheduled.length;
@@ -175,6 +188,55 @@ export class Sim {
     this.effects = [];
     this.log = this.scheduled.slice(0, this.#next).map((s) => ({ journey: s.journey, at: s.at })).slice(-40);
     this.gloom = 0;
+  }
+
+  get soloing(): boolean {
+    return this.#solo !== null;
+  }
+
+  /** Replay one journey on its own: the hero goes home first, then sets out. */
+  solo(j: Journey): void {
+    const hero = this.#heroAgents.get(j.hero);
+    if (hero !== undefined) {
+      const home = this.plan.homes.get(j.hero);
+      if (home) Object.assign(hero, { x: home.door.x, y: home.door.y + 0.6 });
+      hero.tasks = [];
+      hero.path = [];
+      hero.acting = null;
+      hero.trail = [];
+    }
+    const before = new Set(this.agents);
+    this.#dispatch(j);
+    // Whoever carries it out: the hero, or a courier for things that arrive.
+    const actor = j.initiated ? (hero ?? null) : (this.agents.find((a) => !before.has(a)) ?? null);
+    this.#solo = { journey: j, agent: actor };
+  }
+
+  /** The path a journey takes through town, with its stops numbered. */
+  routeFor(j: Journey): Route {
+    const home = this.plan.homes.get(j.hero);
+    const start: Pt = home ? { x: home.door.x, y: home.door.y + 0.6 } : this.plan.gate.door;
+    const legs: { to: Pt; label: string }[] = [];
+    if (j.initiated) {
+      if (j.feeUsd !== null && j.feeUsd > 0) legs.push({ to: this.plan.tower.door, label: 'Toll' });
+      for (const step of j.steps) legs.push({ to: this.#targetPoint(step.target, j.hero), label: step.verb });
+      legs.push({ to: start, label: 'Home' });
+    } else {
+      // Something arrived: the route runs from where it came from to the home.
+      const first = j.steps[0];
+      const from = first === undefined || first.target.kind === 'home' ? this.plan.gate.door : this.#targetPoint(first.target, j.hero);
+      const points = [from, ...findPath(this.plan, from, start).slice(1)];
+      return { key: j.key, points, stops: [{ at: from, n: 1, label: 'From' }, { at: start, n: 2, label: 'Home' }] };
+    }
+    const points: Pt[] = [start];
+    const stops: Route['stops'] = [];
+    let cur = start;
+    legs.forEach((leg, i) => {
+      points.push(...findPath(this.plan, cur, leg.to).slice(1, -1), leg.to);
+      stops.push({ at: leg.to, n: i + 1, label: leg.label });
+      cur = leg.to;
+    });
+    return { key: j.key, points, stops };
   }
 
   /** Jump to the end of the replay: from here on, only live events play. */
@@ -200,7 +262,13 @@ export class Sim {
     const dt = Math.min(0.1, dtReal) * (this.playing ? this.speed : 0);
     if (this.playing) this.t = Math.min(this.t + dt, this.duration + 1e9);
 
-    while (this.#next < this.scheduled.length && (this.scheduled[this.#next]?.at ?? Infinity) <= this.t) {
+    if (this.#solo !== null) {
+      // The timeline holds still while a single quest replays.
+      if (this.playing) this.t -= dt;
+      const a = this.#solo.agent;
+      if (a === null || (a.tasks.length === 0 && a.path.length === 0 && a.acting === null) || a.gone) this.#solo = null;
+    }
+    while (this.#solo === null && this.#next < this.scheduled.length && (this.scheduled[this.#next]?.at ?? Infinity) <= this.t) {
       const s = this.scheduled[this.#next];
       this.#next++;
       if (s !== undefined) this.#dispatch(s.journey);

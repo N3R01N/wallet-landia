@@ -6,7 +6,7 @@
 
 import { TIER_COLORS, approxUsd } from '../domain/tiers.js';
 import { DISTRICT_NAMES, type District } from '../world/layout.js';
-import type { Sim } from '../world/sim.js';
+import type { Route, Sim } from '../world/sim.js';
 
 export type Project = (x: number, y: number, z?: number) => [number, number] | null;
 
@@ -142,4 +142,63 @@ export function weather(c: CanvasRenderingContext2D, sim: Sim, w: number, h: num
     }
     c.stroke();
   }
+}
+
+const STOP_TEXT: Record<string, string> = { Toll: 'toll', Home: 'home', From: 'from' };
+
+/** A Quest Replay route: a marching dashed line with numbered stops. */
+export function route(c: CanvasRenderingContext2D, r: Route, project: Project, elapsed: number): void {
+  const pts = r.points.map((p) => project(p.x, p.y, 0.05));
+  c.save();
+  c.lineJoin = 'round';
+  c.lineCap = 'round';
+  const path = (): void => {
+    c.beginPath();
+    let started = false;
+    for (const p of pts) {
+      if (p === null) {
+        started = false;
+        continue;
+      }
+      if (!started) c.moveTo(p[0], p[1]);
+      else c.lineTo(p[0], p[1]);
+      started = true;
+    }
+  };
+  path();
+  c.strokeStyle = 'rgba(43,29,20,0.55)';
+  c.lineWidth = 7;
+  c.stroke();
+  path();
+  c.strokeStyle = '#ffd166';
+  c.lineWidth = 3;
+  c.setLineDash([10, 8]);
+  c.lineDashOffset = -elapsed * 30;
+  c.stroke();
+  c.setLineDash([]);
+  for (const stop of r.stops) {
+    const p = project(stop.at.x, stop.at.y, 0.05);
+    if (p === null) continue;
+    c.fillStyle = '#2b1d14';
+    c.beginPath();
+    c.arc(p[0], p[1], 11, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = stop.label === 'Toll' ? '#ffb347' : stop.label === 'Home' || stop.label === 'From' ? '#9ad1ff' : '#ffd166';
+    c.beginPath();
+    c.arc(p[0], p[1], 9, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = '#2b1d14';
+    c.font = 'bold 11px system-ui, sans-serif';
+    c.textAlign = 'center';
+    c.fillText(String(stop.n), p[0], p[1] + 4);
+    const text = STOP_TEXT[stop.label] ?? stop.label;
+    c.font = '600 10px system-ui, sans-serif';
+    const w = c.measureText(text).width + 8;
+    c.fillStyle = 'rgba(43,29,20,0.75)';
+    c.fillRect(p[0] + 12, p[1] - 7, w, 14);
+    c.fillStyle = '#fff6dc';
+    c.textAlign = 'left';
+    c.fillText(text, p[0] + 16, p[1] + 4);
+  }
+  c.restore();
 }

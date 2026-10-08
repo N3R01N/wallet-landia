@@ -51,3 +51,17 @@ test('the replay advances and the quest log fills', async ({ page }) => {
   await page.locator('.btn', { hasText: '8×' }).click();
   await expect(page.locator('.questlog-list .log-row').first()).toBeVisible({ timeout: 20_000 });
 });
+
+test('a quest log entry opens the Quest Replay and replays it', async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto('/');
+  await page.locator('.btn', { hasText: '8×' }).click();
+  const row = page.locator('.questlog-list .log-row').first();
+  await expect(row).toBeVisible({ timeout: 20_000 });
+  await row.click();
+  await expect(page.locator('.inspector h2')).toContainText('Quest:');
+  await expect(page.locator('.inspector .quest-steps li').first()).toBeVisible();
+  await page.locator('.inspector .btn', { hasText: 'Replay this quest' }).click();
+  await page.waitForTimeout(1500);
+  expect(errors).toEqual([]);
+});

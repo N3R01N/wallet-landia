@@ -11,7 +11,7 @@ import { brandColor, isoBuilding, ISO_H, ISO_W, topBuilding } from './buildings.
 import { caravanSprite, heroSprite, npcSprite, villagerSprite } from './characters.js';
 import { bakeIsoGround, bakeTopGround, propSprite, scatterProps, type Ground, type Prop } from './ground.js';
 import type { Sprite } from './pixel.js';
-import { districtLabels, floatingText, markers, nameTags, weather } from './overlay.js';
+import { districtLabels, floatingText, markers, nameTags, route, weather } from './overlay.js';
 import type { HitTarget, WorldView } from './view.js';
 
 export type { HitTarget } from './view.js';
@@ -120,7 +120,7 @@ export class Renderer implements WorldView {
     // fixed projections do not orbit
   }
 
-  /** Centre the camera on a tile position, gently. */
+  /** Centre the camera on a tile position. */
   focus(x: number, y: number): void {
     const [ax, ay] = this.toArt(x, y);
     this.ox = this.canvas.clientWidth / 2 - ax * this.scale;
@@ -178,6 +178,7 @@ export class Renderer implements WorldView {
     weather(c, sim, w, h, true);
     const project = (x: number, y: number): [number, number] => this.toScreen(x, y);
     if (this.scale <= 3) districtLabels(c, project);
+    if (sim.route) route(c, sim.route, project, sim.elapsed);
     markers(c, sim, this.#tops);
     floatingText(c, sim, (x, y) => {
       const p = this.toScreen(x, y);
