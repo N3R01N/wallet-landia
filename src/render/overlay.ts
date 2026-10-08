@@ -113,10 +113,20 @@ export function nameTags(c: CanvasRenderingContext2D, sim: Sim, headOf: (x: numb
   }
 }
 
+/** `?hour=22` pins the clock, for validating night views by day. */
+const HOUR_OVERRIDE = (() => {
+  try {
+    const h = new URLSearchParams(location.search).get('hour');
+    return h === null ? null : Number(h);
+  } catch {
+    return null;
+  }
+})();
+
 /** 0 at noon, 1 at midnight, with a gentle dusk. Real local time. */
 export function nightFactor(): number {
   const now = new Date();
-  const hour = now.getHours() + now.getMinutes() / 60;
+  const hour = HOUR_OVERRIDE ?? now.getHours() + now.getMinutes() / 60;
   return Math.max(0, Math.min(1, (Math.abs(hour - 13) - 5) / 3));
 }
 

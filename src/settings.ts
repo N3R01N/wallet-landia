@@ -19,6 +19,8 @@ export interface Prefs {
   followed: string[];
   /** Primary ENS names we have looked up, address → name ('' = none). */
   ens: Record<string, string>;
+  /** 3D image quality: low (no post), medium (bloom + grade), high (+ ambient occlusion). */
+  quality: 'low' | 'medium' | 'high';
 }
 
 const KEY = 'wallet-landia-v4/prefs/v1';
@@ -31,6 +33,7 @@ const DEFAULTS: Prefs = {
   owned: [],
   followed: [],
   ens: {},
+  quality: 'medium',
 };
 
 export function loadPrefs(): Prefs {

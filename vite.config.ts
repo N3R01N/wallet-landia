@@ -5,8 +5,8 @@ import { defineConfig } from 'vitest/config';
  * player pastes in (CORS was verified in v3), so there is no proxy here.
  */
 export default defineConfig({
-  // three.js is ~540 kB but only loads when the 3D view opens (dynamic import).
-  build: { target: 'es2022', chunkSizeWarningLimit: 600 },
+  // three.js + post-processing is ~650 kB but only loads when the 3D view opens.
+  build: { target: 'es2022', chunkSizeWarningLimit: 700 },
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],

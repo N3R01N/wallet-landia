@@ -217,7 +217,16 @@ Same scope for both: **the Town view only.**
    - The route is drawn in town as a marching line with numbered stops (all three views).
    - "▶ Replay this quest" plays it alone while the timeline holds.
    - Visiting followed towns shipped with live data.
-4. **3D polish (Phase 4):**
+4. ~~**3D polish (Phase 4):**~~ first pass done 2026-10-08, guided by the [Three.js awesome graphics agent skills](https://github.com/scottstts/Threejs-Awesome-Graphics-Agent-Skills) (MIT). See `docs/VISUAL_CONTRACT.md`.
+   - Image pipeline: HDR → GTAO (high) → bloom → one tone-map (Neutral) → cozy grade; quality tiers low / medium / high.
+   - Rooted wind on trees and grass; street lamps with light pools.
+   - Night emissive hierarchy; tinted billboards; lightning in a siege.
+   - Swinging bell with a terminal lock.
+   - Bigger characters with contact shadows, facing relative to the camera.
+   - Damped camera focus, plus follow during Quest Replay.
+   - Logo occlusion; pinch and twist on touch.
+   - Validation URL params and the `e2e/visual.spec.ts` captures.
+   - Original wish list for reference:
    - Characters: bigger, ground shadows, a facing fix when orbiting.
    - Day/night: lit windows, lamps.
    - Bell animation; the drama-scaled liquidation scene.
@@ -261,6 +270,7 @@ Same scope for both: **the Town view only.**
 | 8 | **All art is new, drawn in code** as pixel art (the default pack). No `iso-building-generator`. | 2026-10-08 |
 | 9 | Build **both a top-down and an isometric 2D prototype** from the same world state; choose later. | 2026-10-08 |
 | 10 | Default history window: **last 100 transactions**. | 2026-10-08 |
+| 13 | Three.js upgraded to 0.186. 3D polish follows the awesome-graphics skills where they fit a stylized diorama (pipeline, bloom, grading, shadows, wind, animation, camera, validation); realism-only systems (oceans, clouds, planets, cascaded shadows, auto-exposure) skipped. | 2026-10-08 |
 | 12 | **3D is the primary view.** Top-down and isometric stay as working fallbacks, but new visual work targets 3D first. | 2026-10-08 |
 | 11 | Add a **3D view** (Three.js, the only runtime dependency, lazy-loaded): low-poly buildings from the same style table, pixel-art characters as billboards (HD-2D). All three views implement `WorldView` over the same Sim. | 2026-10-08 |
 | 4 | Default tone **Stardew-like**, but all visuals are **swappable slots filled by asset packs**, to enable player-made (and later sold) packs. | 2026-10-08 |

@@ -34,6 +34,8 @@ export class App {
   #inkEl = el('button', { class: 'btn ink', title: 'Zerion requests left today — open the Guild panel' }, '');
   #homeBtn = el('button', { class: 'btn', hidden: '' }, '⌂ Return home');
   #budget: BudgetSnapshot | null = null;
+  #set3dQuality: ((q: Prefs['quality']) => void) | null = null;
+  #bookmark: (() => void) | null = null;
   #guildOpen = false;
   #guild!: Guild;
   #sim!: Sim;
@@ -91,6 +93,7 @@ export class App {
 
   start(): void {
     void this.#session.home();
+    if (new URLSearchParams(location.search).has('freeze')) this.#sim.playing = false;
     let last = performance.now();
     const frame = (now: number): void => {
       const dt = (now - last) / 1000;
@@ -184,9 +187,16 @@ export class App {
       if (this.#r3d === null) {
         try {
           const { Renderer3D } = await import('../render/three/renderer3d.js');
-          const r = new Renderer3D(this.#sim);
+          const r = new Renderer3D(this.#sim, this.#prefs.quality);
           r.classOf = (a) => this.#classOf(a);
           this.#r3d = r;
+          this.#set3dQuality = (q) => r.setQuality(q);
+          // Visual-validation hooks: ?debug=nopost|ao|nograde, ?cam=near|design|far
+          const url = new URLSearchParams(location.search);
+          const debug = url.get('debug');
+          if (debug === 'nopost' || debug === 'ao' || debug === 'nograde' || debug === 'final') r.setDebug(debug);
+          const cam = url.get('cam');
+          if (cam === 'near' || cam === 'design' || cam === 'far') this.#bookmark = () => r.bookmark(cam);
         } catch (error) {
           console.error('3D view unavailable', error);
           return;
@@ -205,7 +215,10 @@ export class App {
       savePrefs(this.#prefs);
     }
     for (const [k, b] of this.#viewBtns) b.classList.toggle('on', k === v);
-    requestAnimationFrame(() => this.#renderer.fit());
+    requestAnimationFrame(() => {
+      this.#renderer.fit();
+      if (v === '3d') this.#bookmark?.();
+    });
   }
 
   #setSpeed(s: number): void {
@@ -250,6 +263,17 @@ export class App {
       }),
     );
 
+    const qualitySel = el('select', { 'aria-label': '3D quality', title: '3D image quality' });
+    for (const [value, label] of [['low', 'Quality: low'], ['medium', 'Quality: medium'], ['high', 'Quality: high']] as const) {
+      const opt = el('option', { value }, label);
+      if (this.#prefs.quality === value) opt.selected = true;
+      qualitySel.append(opt);
+    }
+    qualitySel.onchange = () => {
+      this.#prefs.quality = qualitySel.value as Prefs['quality'];
+      savePrefs(this.#prefs);
+      this.#set3dQuality?.(this.#prefs.quality);
+    };
     const guildBtn = el('button', { class: 'btn' }, '⚙ Guild');
     guildBtn.onclick = () => (this.#guildOpen ? this.#closeInspector() : this.#openGuild());
     this.#inkEl.onclick = () => this.#openGuild();
@@ -260,6 +284,7 @@ export class App {
       el('div', { class: 'brand' }, el('strong', {}, 'Wallet-landia'), this.#sourceEl),
       views,
       windowSel,
+      qualitySel,
       this.#homeBtn,
       this.#statusEl,
       el('div', { class: 'spacer' }),
@@ -316,8 +341,40 @@ export class App {
     const onStage = (e: Event): boolean => e.target instanceof Node && stage.contains(e.target);
     // Left-drag pans; right-drag or shift-drag orbits (3D only).
     let drag: { x: number; y: number; moved: boolean; orbit: boolean } | null = null;
+    // Touch: two fingers pinch to zoom and twist to orbit.
+    const touches = new Map<number, { x: number; y: number }>();
+    let pinch: { dist: number; angle: number } | null = null;
+    const twoFinger = (): { dist: number; angle: number; cx: number; cy: number } | null => {
+      const [a, b] = [...touches.values()];
+      if (!a || !b) return null;
+      return { dist: Math.hypot(b.x - a.x, b.y - a.y), angle: Math.atan2(b.y - a.y, b.x - a.x), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
+    };
     stage.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size >= 2) {
+        drag = null;
+        const t = twoFinger();
+        pinch = t ? { dist: t.dist, angle: t.angle } : null;
+        return;
+      }
       drag = { x: e.clientX, y: e.clientY, moved: false, orbit: e.button === 2 || e.shiftKey };
+    });
+    const release = (e: PointerEvent): void => {
+      touches.delete(e.pointerId);
+      if (touches.size < 2) pinch = null;
+    };
+    window.addEventListener('pointercancel', release);
+    window.addEventListener('pointermove', (e) => {
+      if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch !== null) {
+        const t = twoFinger();
+        if (t) {
+          const r = stage.getBoundingClientRect();
+          this.#renderer.zoomAt(t.cx - r.left, t.cy - r.top, t.dist / Math.max(1, pinch.dist));
+          this.#renderer.rotate((t.angle - pinch.angle) * 160, 0);
+          pinch = { dist: t.dist, angle: t.angle };
+        }
+      }
     });
     stage.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('pointermove', (e) => {
@@ -337,6 +394,7 @@ export class App {
     window.addEventListener('pointerup', (e) => {
       if (drag !== null && !drag.moved && !drag.orbit && onStage(e)) this.#click(e);
       drag = null;
+      release(e);
     });
     stage.addEventListener(
       'wheel',
@@ -446,6 +504,7 @@ export class App {
   #replay(j: Journey): void {
     this.#sim.route = this.#sim.routeFor(j);
     this.#sim.solo(j);
+    this.#renderer.follow?.(j.initiated ? j.hero : null);
     if (!this.#sim.playing) this.#togglePlay();
   }
 
@@ -466,6 +525,7 @@ export class App {
   #closeInspector(): void {
     this.#guildOpen = false;
     this.#sim.route = null;
+    this.#renderer.follow?.(null);
     this.#inspector.hidden = true;
     this.#renderer.selected = null;
   }

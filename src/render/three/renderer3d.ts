@@ -17,10 +17,15 @@ import { caravanSprite, heroSprite, npcSprite, villagerSprite } from '../charact
 import { bakeTopGround, scatterProps, type Prop } from '../ground.js';
 import { districtLabels, floatingText, markers, nameTags, nightFactor, route, weather, type Project } from '../overlay.js';
 import { P, sprite, type Sprite } from '../pixel.js';
+import { ImagePipeline, type DebugView, type Quality } from './pipeline.js';
+import { buildGrass, buildLamps, placeLamps, type LampSet } from './scenery.js';
+import { applyWind, wind } from './wind.js';
 import type { HitTarget, WorldView } from '../view.js';
 
 /** Art pixels per tile, so sprites keep their 2D proportions. */
 const ART_PER_TILE = 16;
+/** People read better a little larger than the buildings' scale. */
+const HERO_SCALE = 1.35;
 /** 2D wall/roof heights are in art px; this turns them into tiles. */
 const HEIGHT_SCALE = 1 / 12;
 
@@ -70,8 +75,29 @@ export class Renderer3D implements WorldView {
   #yaw = -0.55;
   #pitch = 0.85;
   #distance = 62;
+  #goal = { target: new THREE.Vector3(MAP_W / 2, 0, MAP_H / 2), distance: 62 };
+  #follow: string | null = null;
 
-  constructor(sim: Sim) {
+  #pipeline: ImagePipeline;
+  #lastSize = '';
+  #lastFrame = performance.now();
+  #lamps: LampSet | null = null;
+  /** The Chronicle bell: a pivot that swings on every block. */
+  #bell: THREE.Object3D | null = null;
+  #bellSwing = { t: 99, amp: 0 };
+  #rungRings = new WeakSet<Effect>();
+  /** Last screen-facing per agent, so idle sprites keep their side. */
+  #facing = new Map<string, boolean>();
+  /** Signs a building stands in front of (logo hidden); refreshed every few frames. */
+  #hiddenSigns = new Set<string>();
+  #frame = 0;
+  #flash = 0;
+  #shadowGeo = new THREE.CircleGeometry(0.32, 16);
+  #shadowMatrix = new THREE.Matrix4();
+  #spriteTint = new THREE.Color('#ffffff');
+  #agentShadows = new THREE.InstancedMesh(this.#shadowGeo, new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.28, depthWrite: false }), 400);
+
+  constructor(sim: Sim, quality: Quality = 'medium') {
     this.#sim = sim;
     this.element = document.createElement('div');
     this.element.className = 'stage3d';
@@ -83,8 +109,15 @@ export class Renderer3D implements WorldView {
 
     this.#gl = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true });
     this.#gl.shadowMap.enabled = true;
-    this.#gl.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.#gl.shadowMap.type = THREE.PCFShadowMap; // soft PCF is the default filter since r18x
     this.#gl.outputColorSpace = THREE.SRGBColorSpace;
+    this.#pipeline = new ImagePipeline(this.#gl, this.#scene, this.#camera, quality);
+    this.#pipeline.aoExclusions = () => {
+      const out: THREE.Object3D[] = [this.#agentShadows];
+      for (const p of this.#sprites.values()) out.push(p.body, p.caravan);
+      if (this.#lamps) out.push(this.#lamps.pools);
+      return out;
+    };
 
     this.#scene.background = this.#sky;
     this.#scene.fog = new THREE.Fog(this.#sky, 110, 230);
@@ -92,7 +125,9 @@ export class Renderer3D implements WorldView {
     this.#sun.position.set(MAP_W / 2 - 22, 42, MAP_H / 2 + 26);
     this.#sun.target.position.set(MAP_W / 2, 0, MAP_H / 2);
     this.#sun.castShadow = true;
-    this.#sun.shadow.mapSize.set(2048, 2048);
+    // The town is a bounded receiver region, so one shadow map is the right
+    // tool (shadow-systems skill). The light is fixed, so there is no texel
+    // crawl to snap away; bias is sized to the world-space texel instead.
     const sc = this.#sun.shadow.camera;
     sc.left = -38;
     sc.right = 38;
@@ -100,7 +135,7 @@ export class Renderer3D implements WorldView {
     sc.bottom = -34;
     sc.near = 1;
     sc.far = 120;
-    this.#sun.shadow.bias = -0.0008;
+    this.#applyShadowTier();
 
     this.#ring = new THREE.Mesh(
       new THREE.RingGeometry(0.9, 1.05, 40),
@@ -110,6 +145,9 @@ export class Renderer3D implements WorldView {
     this.#ring.visible = false;
     this.#scene.add(this.#ring);
 
+    this.#shadowGeo.rotateX(-Math.PI / 2);
+    this.#scene.add(this.#agentShadows);
+
     this.#build();
   }
 
@@ -118,27 +156,73 @@ export class Renderer3D implements WorldView {
     this.#build();
   }
 
+  setQuality(q: Quality): void {
+    this.#pipeline.setQuality(q);
+    this.#applyShadowTier();
+    this.#lastSize = '';
+  }
+
+  /** Validation views: final, no post, AO only, no grade. */
+  setDebug(view: DebugView): void {
+    this.#pipeline.debug = view;
+  }
+
+  #applyShadowTier(): void {
+    const size = this.#pipeline.quality === 'low' ? 1024 : 2048;
+    this.#sun.shadow.mapSize.set(size, size);
+    this.#sun.shadow.map?.dispose();
+    this.#sun.shadow.map = null;
+    const texel = 76 / size; // world units per shadow texel
+    this.#sun.shadow.normalBias = texel * 1.1;
+    this.#sun.shadow.bias = -0.0004;
+  }
+
   // --- camera ----------------------------------------------------------------
+  // One damping stage toward a goal (camera-direction skill): input moves both
+  // goal and current at once (it must feel immediate); focus and follow move
+  // only the goal and the camera glides there, frame-rate independent.
 
   fit(): void {
-    this.#target.set(MAP_W / 2, 0, MAP_H / 2 + 1);
+    const aspect = Math.max(0.5, this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight));
+    this.#follow = null;
+    this.#goal.target.set(MAP_W / 2, 0, MAP_H / 2 + 1);
+    this.#goal.distance = Math.min(110, 52 / Math.min(1, aspect / 1.4));
     this.#yaw = -0.55;
     this.#pitch = 0.85;
-    const aspect = Math.max(0.5, this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight));
-    this.#distance = Math.min(110, 52 / Math.min(1, aspect / 1.4));
+    this.#target.copy(this.#goal.target);
+    this.#distance = this.#goal.distance;
+  }
+
+  /** Fixed views for visual validation. */
+  bookmark(name: 'near' | 'design' | 'far'): void {
+    this.fit();
+    if (name === 'near') {
+      this.#goal.target.set(20, 0, 20);
+      this.#goal.distance = 16;
+      this.#pitch = 0.62;
+    } else if (name === 'far') {
+      this.#goal.distance = 110;
+      this.#pitch = 1.1;
+    }
+    this.#target.copy(this.#goal.target);
+    this.#distance = this.#goal.distance;
   }
 
   pan(dx: number, dy: number): void {
+    this.#follow = null;
     const f = this.#distance * 0.0016;
     const right = new THREE.Vector3(Math.cos(this.#yaw), 0, -Math.sin(this.#yaw));
     const forward = new THREE.Vector3(-Math.sin(this.#yaw), 0, -Math.cos(this.#yaw));
-    this.#target.addScaledVector(right, -dx * f).addScaledVector(forward, dy * f);
-    this.#target.x = Math.max(-5, Math.min(MAP_W + 5, this.#target.x));
-    this.#target.z = Math.max(-5, Math.min(MAP_H + 5, this.#target.z));
+    for (const t of [this.#target, this.#goal.target]) {
+      t.addScaledVector(right, -dx * f).addScaledVector(forward, dy * f);
+      t.x = Math.max(-5, Math.min(MAP_W + 5, t.x));
+      t.z = Math.max(-5, Math.min(MAP_H + 5, t.z));
+    }
   }
 
   zoomAt(_sx: number, _sy: number, factor: number): void {
     this.#distance = Math.max(10, Math.min(130, this.#distance / factor));
+    this.#goal.distance = this.#distance;
   }
 
   rotate(dx: number, dy: number): void {
@@ -146,13 +230,26 @@ export class Renderer3D implements WorldView {
     this.#pitch = Math.max(0.3, Math.min(1.45, this.#pitch + dy * 0.004));
   }
 
-  /** Look at a tile position, coming a little closer if far away. */
+  /** Glide to a tile position, coming a little closer if far away. */
   focus(x: number, y: number): void {
-    this.#target.set(x, 0, y);
-    this.#distance = Math.min(this.#distance, 40);
+    this.#goal.target.set(x, 0, y);
+    this.#goal.distance = Math.min(this.#goal.distance, 34);
   }
 
-  #placeCamera(): void {
+  /** Keep a hero in view (Quest Replay); null to stop. Panning also stops it. */
+  follow(address: string | null): void {
+    this.#follow = address;
+    if (address !== null) this.#goal.distance = Math.min(this.#goal.distance, 30);
+  }
+
+  #placeCamera(dt: number): void {
+    if (this.#follow !== null) {
+      const a = this.#sim.heroAgent(this.#follow);
+      if (a) this.#goal.target.set(a.x, 0, a.y);
+    }
+    const k = 1 - Math.exp(-4 * Math.max(0, dt));
+    this.#target.lerp(this.#goal.target, k);
+    this.#distance += (this.#goal.distance - this.#distance) * k;
     const c = Math.cos(this.#pitch);
     this.#camera.position.set(
       this.#target.x + Math.sin(this.#yaw) * c * this.#distance,
@@ -215,12 +312,16 @@ export class Renderer3D implements WorldView {
     water.position.set(42.5, 0.04, 32.5);
     this.#world.add(ground, slab, water);
 
+    this.#bell = null;
     for (const b of plan.buildings) {
       const info = this.#buildBuilding(b);
       this.#world.add(info.group);
       this.#buildings.push(info);
     }
     this.#buildProps(scatterProps(plan));
+    this.#world.add(buildGrass(plan));
+    this.#lamps = buildLamps(placeLamps(plan));
+    this.#world.add(this.#lamps.group);
   }
 
   #buildBuilding(b: Placed): BuildingInfo {
@@ -403,10 +504,20 @@ export class Renderer3D implements WorldView {
           add(new THREE.BoxGeometry(0.5, 0.08, 0.28), this.#mat(col), sx, 0.4, front + 0.45);
         }
         break;
-      case 'bell':
-        add(new THREE.CylinderGeometry(0.18, 0.3, 0.38, 8), this.#mat(P.gold, { emissive: P.goldDark, emissiveIntensity: 0.3 }), 0, H - 0.35, front + 0.05);
+      case 'bell': {
+        // A pivot at the top of the bell, so it can swing on every block.
+        const pivot = new THREE.Group();
+        pivot.position.set(0, H - 0.18, front + 0.12);
+        const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.3, 0.4, 10), this.#mat(P.gold, { emissive: P.goldDark, emissiveIntensity: 0.25 }));
+        bell.position.y = -0.22;
+        bell.castShadow = true;
+        pivot.add(bell);
+        g.add(pivot);
+        this.#bell = pivot;
+        add(new THREE.BoxGeometry(0.9, 0.08, 0.3), this.#mat(P.stoneDark), 0, H - 0.12, front + 0.1);
         add(new THREE.CylinderGeometry(0.32, 0.32, 0.04, 20), this.#mat(P.white), 0, H - 1.1, front + 0.02, false).rotation.x = Math.PI / 2;
         break;
+      }
       case 'fog':
         add(new THREE.CylinderGeometry(W * 0.9, W * 0.9, 0.3, 16), this.#mat('#e8e0ff', { transparent: true, opacity: 0.25 }), 0, 0.15, 0, false);
         break;
@@ -478,12 +589,16 @@ export class Renderer3D implements WorldView {
           break;
       }
     }
-    for (const part of Object.values(parts)) {
+    // Foliage sways in the wind; trunks and rocks stay put.
+    const sways: Record<string, number> = { crown: 1.6, crown2: 1.6, pine: 1.8, pineTop: 1.8, bush: 0.6 };
+    for (const [key, part] of Object.entries(parts)) {
       if (part.list.length === 0) continue;
       const mesh = new THREE.InstancedMesh(part.geo, part.mat, part.list.length);
       part.list.forEach((m, i) => mesh.setMatrixAt(i, m));
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      const ref = sways[key];
+      if (ref !== undefined) applyWind(mesh, ref);
       this.#world.add(mesh);
     }
   }
@@ -510,22 +625,23 @@ export class Renderer3D implements WorldView {
     const tex = pair[flip ? 1 : 0];
     let mat = this.#spriteMats.get(tex);
     if (mat === undefined) {
-      mat = new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5, transparent: false });
+      mat = new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5, transparent: false, color: this.#spriteTint.clone() });
       this.#spriteMats.set(tex, mat);
     }
     return mat;
   }
 
-  #placeSprite(obj: THREE.Sprite, s: Sprite, x: number, y: number, lift: number, flip: boolean): void {
+  #placeSprite(obj: THREE.Sprite, s: Sprite, x: number, y: number, lift: number, flip: boolean, scale = 1): void {
     obj.material = this.#texture(s.canvas, flip);
-    const w = s.canvas.width / ART_PER_TILE;
-    const h = s.canvas.height / ART_PER_TILE;
+    const w = (s.canvas.width / ART_PER_TILE) * scale;
+    const h = (s.canvas.height / ART_PER_TILE) * scale;
     obj.scale.set(w, h, 1);
     obj.center.set(flip ? 1 - s.ax / s.canvas.width : s.ax / s.canvas.width, 1 - s.ay / s.canvas.height);
     obj.position.set(x, lift, y);
   }
 
   #syncAgents(): void {
+    this.#agentShadows.count = 0;
     const seen = new Set<string>();
     for (const a of this.#sim.agents) {
       seen.add(a.id);
@@ -539,8 +655,10 @@ export class Renderer3D implements WorldView {
       }
       this.#drawAgent(a, pair.body, pair.caravan);
     }
+    this.#agentShadows.instanceMatrix.needsUpdate = true;
     for (const [id, pair] of this.#sprites) {
       if (seen.has(id)) continue;
+      this.#facing.delete(id);
       pair.body.removeFromParent();
       pair.caravan.removeFromParent();
       this.#sprites.delete(id);
@@ -550,65 +668,126 @@ export class Renderer3D implements WorldView {
   #drawAgent(a: Agent, body: THREE.Sprite, caravan: THREE.Sprite): void {
     const moving = a.path.length > 0;
     const frame = moving ? Math.floor(a.phase) : 0;
-    const flip = a.facing < 0;
+    // Face the way the agent moves *on screen*: orbiting the camera must not
+    // make people walk backwards.
+    const next = a.path[0];
+    let flip = this.#facing.get(a.id) ?? a.facing < 0;
+    if (next !== undefined) {
+      const dx = next.x - a.x;
+      const dz = next.y - a.y;
+      const screenRight = dx * Math.cos(this.#yaw) - dz * Math.sin(this.#yaw);
+      if (Math.abs(screenRight) > 0.001) flip = screenRight < 0;
+      this.#facing.set(a.id, flip);
+    }
     const lift = (a.flying && (moving || a.kind === 'raven') ? 0.7 + Math.sin(a.phase) * 0.1 : 0) + (moving ? 0 : Math.abs(Math.sin(a.phase * 2)) * 0.02);
     let s: Sprite;
     if (a.kind === 'hero' && a.hero) {
       const h = hashString(a.hero.address);
-      s = heroSprite({ address: a.hero.address, cls: this.classOf(a.hero.address), tier: a.hero.tier, crest: crestColors(a.hero.address)[0], skin: h % 4, hair: (h >> 3) % 6 }, frame);
+      s = heroSprite({ address: a.hero.address, cls: this.classOf(a.hero.address), tier: a.hero.tier, crest: crestColors(a.hero.address)[0], skin: h % 4, hair: (h >> 3) % 6 }, frame, false);
     } else if (a.kind === 'villager') {
       s = villagerSprite(hashString(a.id), frame, true);
     } else {
       s = npcSprite(a.kind === 'raven' ? 'raven' : a.kind === 'herald' ? 'herald' : 'bailiff', frame);
     }
-    this.#placeSprite(body, s, a.x, a.y, lift, flip);
+    const scale = a.kind === 'hero' ? HERO_SCALE : a.kind === 'villager' ? 1.1 : 1.2;
+    this.#placeSprite(body, s, a.x, a.y, lift, flip, scale);
+    this.#shadow(a.x, a.y, a.kind === 'hero' ? (a.hero && a.hero.tier >= 5 ? 1.7 : 1.15) : a.kind === 'raven' ? 0.5 : 0.8, lift);
 
     const back = a.trail[a.flying ? 6 : 9];
-    const cs = a.kind === 'hero' && a.carrying !== null && a.carrying > 0 ? caravanSprite(a.carrying, frame) : null;
+    const cs = a.kind === 'hero' && a.carrying !== null && a.carrying > 0 ? caravanSprite(a.carrying, frame, false) : null;
     caravan.visible = back !== undefined && cs !== null;
-    if (back && cs) this.#placeSprite(caravan, cs, back.x, back.y, lift * 0.6, flip);
+    if (back && cs) {
+      this.#placeSprite(caravan, cs, back.x, back.y, lift * 0.6, flip, HERO_SCALE);
+      this.#shadow(back.x, back.y, a.carrying !== null && a.carrying >= 4 ? 1.6 : 0.9, lift * 0.6);
+    }
+  }
+
+  /** A soft contact shadow on the ground, smaller as the thing lifts off. */
+  #shadow(x: number, y: number, size: number, lift: number): void {
+    const i = this.#agentShadows.count;
+    if (i >= this.#agentShadows.instanceMatrix.count) return;
+    const s = size / (1 + lift * 0.8);
+    this.#shadowMatrix.makeScale(s, 1, s * 0.75).setPosition(x, 0.03, y);
+    this.#agentShadows.setMatrixAt(i, this.#shadowMatrix);
+    this.#agentShadows.count = i + 1;
   }
 
   // --- frame -----------------------------------------------------------------
 
   draw(): void {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - this.#lastFrame) / 1000);
+    this.#lastFrame = now;
     const dpr = window.devicePixelRatio || 1;
     const w = this.canvas.clientWidth;
     const h = this.canvas.clientHeight;
     if (w === 0 || h === 0) return;
-    const gl = this.#gl.domElement;
-    if (gl.width !== Math.round(w * dpr) || gl.height !== Math.round(h * dpr)) {
-      this.#gl.setPixelRatio(dpr);
-      this.#gl.setSize(w, h, false);
+    const size = `${w}x${h}@${dpr}`;
+    if (size !== this.#lastSize) {
+      this.#lastSize = size;
+      this.#pipeline.setSize(w, h, dpr);
       this.#camera.aspect = w / h;
       this.#camera.updateProjectionMatrix();
-    }
-    if (this.canvas.width !== Math.round(w * dpr) || this.canvas.height !== Math.round(h * dpr)) {
       this.canvas.width = Math.round(w * dpr);
       this.canvas.height = Math.round(h * dpr);
     }
 
-    this.#lighting();
-    this.#placeCamera();
+    this.#lighting(dt);
+    this.#swingBell(dt);
+    this.#placeCamera(dt);
     this.#syncAgents();
     this.#highlight();
-    this.#gl.render(this.#scene, this.#camera);
+    if (this.#frame++ % 10 === 0) this.#occludeSigns();
+    this.#pipeline.render();
     this.#overlay(dpr, w, h);
   }
 
-  #lighting(): void {
+  /**
+   * The bell swings as a damped oscillation each time a block lands, and locks
+   * exactly at rest once the envelope is spent (procedural-animation skill:
+   * time-based, with a terminal lock rather than endless tiny residuals).
+   */
+  #swingBell(dt: number): void {
+    for (const e of this.#sim.effects) {
+      if (e.kind !== 'ring' || this.#rungRings.has(e)) continue;
+      this.#rungRings.add(e);
+      this.#bellSwing = { t: 0, amp: 0.55 };
+    }
+    const b = this.#bell;
+    if (b === null) return;
+    const st = this.#bellSwing;
+    st.t += dt;
+    const envelope = Math.exp(-st.t / 1.1);
+    b.rotation.x = envelope < 0.01 ? 0 : st.amp * envelope * Math.sin((st.t * Math.PI * 2) / 1.05);
+  }
+
+  #lighting(dt: number): void {
     const sim = this.#sim;
     const night = nightFactor();
     const gloom = sim.gloom;
     const day = new THREE.Color('#9fd3f0');
     const dusk = new THREE.Color('#1c2450');
-    this.#sky.copy(day).lerp(dusk, night).lerp(new THREE.Color('#3a3e48'), gloom * 0.8);
-    this.#sun.intensity = 2.2 * (1 - night * 0.8) * (1 - gloom * 0.6);
+    // A siege brings lightning: brief flashes while the storm is at its height.
+    if (gloom > 0.6 && Math.random() < dt * 0.6) this.#flash = 1;
+    this.#flash = Math.max(0, this.#flash - dt * 5);
+    this.#sky.copy(day).lerp(dusk, night).lerp(new THREE.Color('#3a3e48'), gloom * 0.8).lerp(new THREE.Color('#e8ecff'), this.#flash * 0.6);
+    this.#sun.intensity = 2.2 * (1 - night * 0.8) * (1 - gloom * 0.6) + this.#flash * 2;
     this.#sun.color.set(night > 0.5 ? '#9fb0ff' : '#fff1d6');
-    this.#hemi.intensity = 1.1 * (1 - night * 0.55) * (1 - gloom * 0.4);
-    this.#windowMat.emissiveIntensity = night * 1.4;
+    this.#hemi.intensity = 1.1 * (1 - night * 0.55) * (1 - gloom * 0.4) + this.#flash;
+    // Emissive hierarchy (bloom skill): fire > lamp bulbs > windows > lit walls.
+    // Only the first three exceed the HDR bloom threshold, and only at night.
+    this.#windowMat.emissiveIntensity = night * 1.7;
+    this.#fireMat.emissiveIntensity = 1.4 + night * 2.2;
+    // Billboards are unlit; tint them so people do not glow at midnight.
+    this.#spriteTint.setRGB(1, 1, 1).lerp(new THREE.Color('#7f88b8'), night * 0.85).lerp(new THREE.Color('#9a9aa6'), gloom * 0.5);
+    for (const m of this.#spriteMats.values()) m.color.copy(this.#spriteTint);
+    this.#lamps?.setNight(night);
+    this.#pipeline.setNight(Math.max(night, gloom * 0.5));
     this.#waterMat.opacity = 0.8 + Math.sin(sim.elapsed * 1.3) * 0.06;
-    // a little shake for the big moments
+    // Wind: a breeze, rising with the storm.
+    wind.uTime.value = sim.elapsed;
+    wind.uStrength.value = 0.3 + gloom * 0.7;
+    // a little shake for the big moments, separate from the camera's path
     if (sim.shake > 0) this.#target.x += (Math.random() - 0.5) * sim.shake * 0.08;
   }
 
@@ -658,6 +837,31 @@ export class Renderer3D implements WorldView {
     if (this.#distance < 55) nameTags(c, sim, (x, y, flying) => this.#project(x, y, flying ? 3.3 : 2.6));
   }
 
+  /**
+   * Logos are drawn on the 2D overlay (their hosts send no CORS headers), so
+   * the depth buffer cannot hide them. A ray from the camera to each sign,
+   * every few frames, tells which ones another building stands in front of.
+   */
+  #occludeSigns(): void {
+    this.#hiddenSigns.clear();
+    const origin = this.#camera.position;
+    const groups = this.#buildings.map((b) => b.group);
+    for (const b of this.#buildings) {
+      const s = b.sign;
+      if (s === undefined) continue;
+      const to = new THREE.Vector3(s.x, s.y, s.z);
+      const dir = to.clone().sub(origin);
+      const dist = dir.length();
+      this.#raycaster.set(origin, dir.normalize());
+      this.#raycaster.far = dist - 0.15;
+      const hit = this.#raycaster.intersectObjects(groups, true)[0];
+      if (hit && (hit.object.userData.target as HitTarget | undefined)?.kind === 'building' && (hit.object.userData.target as { placed: Placed }).placed.id !== b.placed.id) {
+        this.#hiddenSigns.add(b.placed.id);
+      }
+    }
+    this.#raycaster.far = Infinity;
+  }
+
   /** Protocol logos over the sign boards, when the sign faces the camera. */
   #signLogos(c: CanvasRenderingContext2D): void {
     if (this.#distance > 75) return;
@@ -666,6 +870,7 @@ export class Renderer3D implements WorldView {
       const s = b.sign;
       if (s === undefined) continue;
       if (this.#camera.position.z - s.z < 0.5) continue; // seen from behind
+      if (this.#hiddenSigns.has(b.placed.id)) continue; // another building is in the way
       let img = this.#logos.get(s.url);
       if (img === undefined) {
         img = new Image();

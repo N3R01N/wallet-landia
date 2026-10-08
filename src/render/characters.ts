@@ -147,7 +147,8 @@ export interface HeroLook {
   hair: number;
 }
 
-export function heroSprite(h: HeroLook, frame: number): Sprite {
+/** `groundShadow: false` when the view casts real shadows (3D). */
+export function heroSprite(h: HeroLook, frame: number, groundShadow = true): Sprite {
   const look: Look = {
     tunic: CLASS_TUNIC[h.cls],
     legs: '#4a3a2e',
@@ -155,17 +156,19 @@ export function heroSprite(h: HeroLook, frame: number): Sprite {
     hair: P.hair[h.hair % P.hair.length] ?? P.hair[0],
   };
   const f = frame % 2;
-  const key = `hero:${h.cls}:${h.tier}:${h.crest}:${h.skin}:${h.hair}:${f}`;
+  const key = `hero:${h.cls}:${h.tier}:${h.crest}:${h.skin}:${h.hair}:${f}:${groundShadow}`;
   const W = 44;
   const H = 40;
   const fx = 22;
   const fy = 38;
   return sprite(key, W, H, fx, fy, (c) => {
     // a soft ground shadow
-    c.fillStyle = P.shadow;
-    c.beginPath();
-    c.ellipse(fx, fy, h.tier >= 5 ? 9 : 6, 2, 0, 0, Math.PI * 2);
-    c.fill();
+    if (groundShadow) {
+      c.fillStyle = P.shadow;
+      c.beginPath();
+      c.ellipse(fx, fy, h.tier >= 5 ? 9 : 6, 2, 0, 0, Math.PI * 2);
+      c.fill();
+    }
     switch (h.tier) {
       case 0: // barefoot, walking stick
         person(c, fx, fy, { ...look, tunic: shade(look.tunic, -0.3), legs: look.skin }, f, h.cls, h.crest);
@@ -273,14 +276,16 @@ export function npcSprite(kind: 'raven' | 'herald' | 'bailiff', frame: number): 
 }
 
 /** What follows a hero, sized by the value tier of the journey. */
-export function caravanSprite(tier: Tier, frame: number): Sprite | null {
+export function caravanSprite(tier: Tier, frame: number, groundShadow = true): Sprite | null {
   if (tier === 0) return null;
   const f = frame % 2;
-  return sprite(`caravan:${tier}:${f}`, 36, 26, 18, 24, (c) => {
-    c.fillStyle = P.shadow;
-    c.beginPath();
-    c.ellipse(18, 24, tier >= 4 ? 10 : 5, 2, 0, 0, Math.PI * 2);
-    c.fill();
+  return sprite(`caravan:${tier}:${f}:${groundShadow}`, 36, 26, 18, 24, (c) => {
+    if (groundShadow) {
+      c.fillStyle = P.shadow;
+      c.beginPath();
+      c.ellipse(18, 24, tier >= 4 ? 10 : 5, 2, 0, 0, Math.PI * 2);
+      c.fill();
+    }
     switch (tier) {
       case 1: // a floating coin pouch
         px(c, 15, 16 - f, 6, 5, '#9a6a3a');

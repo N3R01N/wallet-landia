@@ -18,7 +18,7 @@
     "@eslint/js": "^9.16.0",
     "@playwright/test": "^1.62.1",
     "@types/node": "^24.0.0",
-    "@types/three": "^0.170.0",
+    "@types/three": "^0.186.0",
     "eslint": "^9.16.0",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.0",
@@ -27,6 +27,6 @@
     "vitest": "^5.0.3"
   },
   "dependencies": {
-    "three": "^0.170.0"
+    "three": "^0.186.1"
   }
 }

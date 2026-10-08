@@ -27,6 +27,8 @@ export interface WorldView {
   zoomAt(sx: number, sy: number, factor: number): void;
   /** Centre the camera on a tile position. */
   focus(x: number, y: number): void;
+  /** Keep a hero in view (3D Quest Replay); optional. */
+  follow?(address: string | null): void;
   /** Orbit the camera; a no-op where the projection is fixed. */
   rotate(dx: number, dy: number): void;
 }
