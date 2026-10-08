@@ -103,3 +103,27 @@ test('a variant bundle (highland extends medieval) loads and uses its own sky', 
   expect(skinned).toBeGreaterThan(12 * 4);
   expect(errors).toEqual([]);
 });
+
+/** Phase 6: the modern and sci-fi bundles build their own buildings and ride vehicles. */
+for (const [id, vehicle] of [['modern', 'vehicle-motorbike'], ['scifi', 'vehicle-hoverbikeHeavy']] as const) {
+  test(`the ${id} theme builds its buildings and rides vehicles`, async ({ page }) => {
+    test.setTimeout(180_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => {
+      if (m.type() === 'error' && !/CORS|ERR_|Failed to load resource/.test(m.text())) errors.push(m.text());
+    });
+    await page.goto(`/sandbox.html?theme=${id}&quality=low&hour=12&tier=4&cam=characters`);
+    await page.waitForFunction(() => (window as unknown as { sandbox?: { ready: boolean } }).sandbox?.ready === true, null, { timeout: 120_000 });
+    const names = await page.evaluate(() => {
+      const seen = new Set<string>();
+      (window as unknown as { sandbox: { scene: { traverse(f: (o: { name: string }) => void): void } } }).sandbox.scene.traverse((o) => seen.add(o.name));
+      return [...seen];
+    });
+    expect(names).toContain(vehicle);
+    expect(names).toEqual(expect.arrayContaining(['terrain', 'props', 'glass']));
+    const shot = await page.locator('.world').screenshot({ timeout: 90_000 });
+    expect(shot.length).toBeGreaterThan(30_000);
+    expect(errors).toEqual([]);
+  });
+}

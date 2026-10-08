@@ -12,7 +12,7 @@ import type { HeroClass } from '../../domain/model.js';
 import type { Tier } from '../../domain/tiers.js';
 import type { BuildingSpec, BuiltBuilding } from './buildingFactory.js';
 import { BuildingFactory } from './buildingFactory.js';
-import { MedievalBuilder } from './grammar/medieval.js';
+import { GrammarBuilder } from './grammar/builder.js';
 import { MaterialLibrary, type MatKey } from './grammar/materials.js';
 import { loadThemeBundles, type ThemeBundle } from '../../assets/themeBundles.js';
 import type { LoadedPack } from '../../assets/registry.js';
@@ -71,7 +71,7 @@ export interface Theme {
   fireMaterial: THREE.MeshStandardMaterial;
   material(color: string): THREE.Material;
   /** A textured ground surface (its UVs are in metres); flat colours otherwise. */
-  groundMaterial?(which: keyof GroundStyle): THREE.Material;
+  groundMaterial?(which: keyof GroundStyle | 'plaza'): THREE.Material;
   /** Terrain, vegetation, props and lamps around a site; the flat-colour meadow otherwise. */
   surroundings?(site: Site): Surroundings;
 }
@@ -103,9 +103,9 @@ export function bundleTheme(b: ThemeBundle): Theme {
   const spec = b.spec;
   const factory = new BuildingFactory();
   const lib = new MaterialLibrary(spec.materials);
-  const builder = new MedievalBuilder(lib, factory, spec.buildings);
+  const builder = new GrammarBuilder(lib, factory, spec.buildings);
   let veg: Vegetation | undefined;
-  const ground: Record<keyof GroundStyle, MatKey> = { grass: 'grass', road: 'cobbles', path: 'dirt', ...spec.ground };
+  const ground: Record<'grass' | 'road' | 'plaza' | 'path', MatKey> = { grass: 'grass', road: 'cobbles', path: 'dirt', plaza: spec.ground?.road ?? 'cobbles', ...spec.ground };
   const base = baseline();
   const theme: Theme = {
     ...base,
@@ -126,7 +126,8 @@ export function bundleTheme(b: ThemeBundle): Theme {
   if (characters) {
     theme.prepare = async () => {
       const { loadKit, riggedProvider } = await import('./rigged.js');
-      theme.characters = riggedProvider(await loadKit(characters), `Rigged characters from the ${b.name} bundle`);
+      const { buildVehicle } = await import('./grammar/vehicles.js');
+      theme.characters = riggedProvider(await loadKit(characters, (kind, tint) => buildVehicle(kind, lib, tint)), `Rigged characters from the ${b.name} bundle`);
       delete theme.prepare; // once
     };
   }

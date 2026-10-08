@@ -1,0 +1,151 @@
+{
+  "format": "wallet-landia-pack/2",
+  "id": "scifi",
+  "name": "Sci-fi",
+  "author": "wallet-landia; textures by ambientCG",
+  "version": "0.1.0",
+  "license": "CC0-1.0",
+  "description": "A colony on a dusty world: panelled modules, domed habs and glowing seams, a spaceport and an arcology for the richest; hover bikes, a skiff and a starship as mounts.",
+  "slots": {},
+  "theme": {
+    "extends": "medieval",
+    "sky": "sunset",
+    "notes": [
+      "People still wear the medieval kit: sci-fi outfits on the same universal skeleton are needed (the base body alone is underwear)",
+      "Vehicles are simple models built in code"
+    ],
+    "materials": {
+      "plaster": {
+        "color": "materials/plaster/color.webp",
+        "normal": "materials/plaster/normal.webp",
+        "roughness": "materials/plaster/roughness.webp",
+        "size": 2
+      },
+      "stone": {
+        "color": "materials/stone/color.webp",
+        "normal": "materials/stone/normal.webp",
+        "roughness": "materials/stone/roughness.webp",
+        "size": 2
+      },
+      "stoneDark": {
+        "color": "materials/stoneDark/color.webp",
+        "normal": "materials/stoneDark/normal.webp",
+        "roughness": "materials/stoneDark/roughness.webp",
+        "size": 2
+      },
+      "timber": {
+        "color": "materials/timber/color.webp",
+        "normal": "materials/timber/normal.webp",
+        "roughness": "materials/timber/roughness.webp",
+        "size": 1.5,
+        "tint": "#a8b4c0"
+      },
+      "planks": {
+        "color": "materials/planks/color.webp",
+        "normal": "materials/planks/normal.webp",
+        "roughness": "materials/planks/roughness.webp",
+        "size": 1.2
+      },
+      "roofTiles": {
+        "color": "materials/roofTiles/color.webp",
+        "normal": "materials/roofTiles/normal.webp",
+        "roughness": "materials/roofTiles/roughness.webp",
+        "size": 1.5
+      },
+      "roofSlate": {
+        "color": "materials/roofSlate/color.webp",
+        "normal": "materials/roofSlate/normal.webp",
+        "roughness": "materials/roofSlate/roughness.webp",
+        "size": 1.5
+      },
+      "cobbles": {
+        "color": "materials/cobbles/color.webp",
+        "normal": "materials/cobbles/normal.webp",
+        "roughness": "materials/cobbles/roughness.webp",
+        "size": 2
+      },
+      "grass": {
+        "color": "materials/grass/color.webp",
+        "normal": "materials/grass/normal.webp",
+        "roughness": "materials/grass/roughness.webp",
+        "size": 4,
+        "tint": "#f0c8a8"
+      },
+      "dirt": {
+        "color": "materials/dirt/color.webp",
+        "normal": "materials/dirt/normal.webp",
+        "roughness": "materials/dirt/roughness.webp",
+        "size": 3
+      },
+      "rock": {
+        "color": "materials/rock/color.webp",
+        "normal": "materials/rock/normal.webp",
+        "roughness": "materials/rock/roughness.webp",
+        "size": 3,
+        "tint": "#d8a090"
+      },
+      "forestFloor": {
+        "color": "materials/forestFloor/color.webp",
+        "normal": "materials/forestFloor/normal.webp",
+        "roughness": "materials/forestFloor/roughness.webp",
+        "size": 3
+      },
+      "fire": {
+        "tint": "#40e0ff"
+      },
+      "glass": {
+        "tint": "#1c3444"
+      }
+    },
+    "ground": {
+      "road": "cobbles",
+      "plaza": "planks",
+      "path": "dirt"
+    },
+    "buildings": {
+      "style": "scifi",
+      "washes": [
+        "#e8ecf0",
+        "#dfe6ea",
+        "#f0f0ea"
+      ],
+      "brandRoofs": 0.8
+    },
+    "surroundings": {
+      "style": "scifi",
+      "relief": 1.4,
+      "woods": 0.25,
+      "trees": {
+        "oak": 0,
+        "birch": 0.2,
+        "fir": 1
+      },
+      "grass": {
+        "hue": 0.07,
+        "sat": 0.35,
+        "light": 0.3
+      },
+      "flowers": 0,
+      "lamps": "beacon"
+    },
+    "characters": {
+      "mounts": {
+        "t2": {
+          "vehicle": "hoverboard"
+        },
+        "t3": {
+          "vehicle": "hoverbike"
+        },
+        "t4": {
+          "vehicle": "hoverbikeHeavy"
+        },
+        "t5": {
+          "vehicle": "skiff"
+        },
+        "t6": {
+          "vehicle": "starship"
+        }
+      }
+    }
+  }
+}

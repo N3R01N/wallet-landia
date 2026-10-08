@@ -126,6 +126,75 @@ export class PropWriter {
     }
   }
 
+  // --- urban (modern) -----------------------------------------------------------
+
+  bench(x: number, z: number, rot = 0): void {
+    const [px, py, pz] = this.#at(x, z);
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    this.w.box([px, py + 0.45, pz], [1.6, 0.06, 0.45], 'planks', { rotY: rot });
+    this.w.box([px - s * 0.2, py + 0.75, pz - c * 0.2], [1.6, 0.35, 0.05], 'planks', { rotY: rot });
+    for (const k of [-0.7, 0.7]) this.w.box([px + c * k, py + 0.22, pz - s * k], [0.06, 0.44, 0.45], 'iron', { rotY: rot });
+  }
+
+  bin(x: number, z: number): void {
+    const [px, py, pz] = this.#at(x, z);
+    this.w.cylinder(px, pz, py, 0.25, 0.9, 10, { key: 'iron', tint: '#3a6a4a' }, { top: 'iron' });
+  }
+
+  bollard(x: number, z: number): void {
+    const [px, py, pz] = this.#at(x, z);
+    this.w.cylinder(px, pz, py, 0.1, 0.8, 8, 'stoneDark', { top: 'stoneDark' });
+  }
+
+  fountain(x: number, z: number): void {
+    const [px, py, pz] = this.#at(x, z);
+    this.w.cylinder(px, pz, py, 1.5, 0.5, 18, 'stoneDark', { top: 'stoneDark' });
+    this.w.cylinder(px, pz, py + 0.45, 1.35, 0.06, 18, 'glass', { top: 'glass' });
+    this.w.cylinder(px, pz, py + 0.5, 0.25, 1.4, 10, 'stone', { top: 'stone' });
+    this.w.cylinder(px, pz, py + 1.9, 0.6, 0.12, 12, 'stoneDark', { top: 'glass' });
+  }
+
+  // --- colony (sci-fi) -----------------------------------------------------------
+
+  canister(x: number, z: number): void {
+    const [px, py, pz] = this.#at(x, z);
+    this.w.cylinder(px, pz, py, 0.28, 0.9, 10, 'plaster', { top: 'stoneDark' });
+    this.w.cylinder(px, pz, py + 0.55, 0.29, 0.06, 10, 'fire');
+  }
+
+  tank(x: number, z: number): void {
+    const [px, py, pz] = this.#at(x, z);
+    for (const [dx, dz] of [[-0.8, -0.8], [0.8, -0.8], [0.8, 0.8], [-0.8, 0.8]] as const) this.w.box([px + dx, py + 0.7, pz + dz], [0.14, 1.4, 0.14], 'timber');
+    this.w.cylinder(px, pz, py + 1.4, 1.2, 1.6, 16, 'plaster');
+    this.w.dome(px, pz, py + 3.0, 1.2, 0.6, 16, 3, 'plaster');
+    this.w.cylinder(px, pz, py + 2.0, 1.22, 0.08, 16, 'fire');
+  }
+
+  solarPanel(x: number, z: number): void {
+    const [px, py, pz] = this.#at(x, z);
+    this.w.box([px, py + 0.45, pz], [0.1, 0.9, 0.1], 'iron');
+    this.w.box([px, py + 1.0, pz], [2.0, 0.05, 1.1], 'glass', { rotX: -0.5 });
+    this.w.box([px, py + 0.97, pz], [2.08, 0.04, 1.18], 'timber', { rotX: -0.5 });
+  }
+
+  /** A raised pipeline along tile points (the colony's answer to a field wall). */
+  pipeline(points: [number, number][]): void {
+    for (let k = 0; k < points.length - 1; k++) {
+      const [x0, z0] = points[k]!;
+      const [x1, z1] = points[k + 1]!;
+      const a = this.#at(x0, z0, 0.8);
+      const b = this.#at(x1, z1, 0.8);
+      this.w.beam(a, b, 0.5, 0.5, 'stone');
+      const n = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[2] - a[2]) / 3));
+      for (let i = 0; i <= n; i++) {
+        const t = i / n;
+        const p = this.#at(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t);
+        this.w.box([p[0], p[1] + 0.35, p[2]], [0.15, 0.7, 0.6], 'timber');
+      }
+    }
+  }
+
   build(lib: MaterialLibrary): THREE.Group {
     const g = this.w.build(lib);
     g.scale.setScalar(1 / M);
@@ -157,6 +226,29 @@ export function buildRocks(spots: { x: number; y: number; z: number; s: number }
   mesh.receiveShadow = true;
   mesh.name = 'rocks';
   return mesh;
+}
+
+/** Colony beacons: slim metal posts with a glowing cap (the theme's fire colour). */
+export function buildBeacons(lamps: Lamp[], lib: MaterialLibrary, ground: (x: number, z: number) => number = () => 0): LampSet {
+  const set = buildLanterns(lamps, lib, ground);
+  // reuse the lantern rig, swap the shapes: no arm, a ring light on top
+  const [post, arm, cap, bulb] = set.group.children as THREE.InstancedMesh[];
+  arm!.visible = false;
+  post!.material = lib.get('timber');
+  cap!.visible = false;
+  const glow = new THREE.MeshStandardMaterial({ color: '#c8f8ff', emissive: new THREE.Color(lib.fire.color), emissiveIntensity: 0.6 });
+  bulb!.material = glow;
+  bulb!.geometry = new THREE.CylinderGeometry(0.09, 0.09, 0.16, 10);
+  const m4 = new THREE.Matrix4();
+  lamps.forEach((l, i) => bulb!.setMatrixAt(i, m4.makeTranslation(l.x, ground(l.x, l.y) + 1.66, l.y)));
+  return {
+    group: set.group,
+    pools: set.pools,
+    setNight(night: number): void {
+      set.setNight(night);
+      glow.emissiveIntensity = 0.6 + night * 3;
+    },
+  };
 }
 
 /** Timber lantern posts: an iron arm and a glazed lantern that glows at night. */

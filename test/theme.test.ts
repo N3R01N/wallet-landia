@@ -18,6 +18,43 @@ describe('theme bundles (pack format 2)', () => {
     for (const f of files) expect(existsSync(`${dir('medieval')}/${f}`), f).toBe(true);
   });
 
+  it('every bundled theme validates and its files are there', () => {
+    const ids = JSON.parse(readFileSync(resolve(__dirname, '../public/themes/index.json'), 'utf8')) as string[];
+    expect(ids).toEqual(expect.arrayContaining(['medieval', 'highland', 'modern', 'scifi']));
+    for (const id of ids) {
+      const { manifest, problems } = validatePack(read(id));
+      expect(problems, id).toEqual([]);
+      for (const f of referencedFiles(manifest!)) expect(existsSync(`${dir(id)}/${f}`), `${id}: ${f}`).toBe(true);
+    }
+  });
+
+  it('modern and sci-fi build on medieval: their own styles, vehicles as mounts, the parent\'s people', () => {
+    const ids = ['medieval', 'modern', 'scifi'];
+    const raws = ids.map((id) => rawBundle(validatePack(read(id)).manifest!, (p) => `/themes/${id}/${p}`, 'bundled')!);
+    const [, modern, scifi] = linkBundles(raws);
+    for (const b of [modern!, scifi!]) {
+      expect(b.problems).toEqual([]);
+      expect(b.spec.characters?.bodies.male).toBe('/themes/medieval/base/Superhero_Male_FullBody.glb');
+      expect(b.spec.characters?.outfits.default).toBeDefined();
+    }
+    expect(modern!.spec.buildings?.style).toBe('modern');
+    expect(modern!.spec.characters?.mounts.t4?.vehicle).toBe('motorbike');
+    expect(modern!.spec.materials.asphalt?.color).toBe('/themes/modern/materials/asphalt/color.webp');
+    expect(modern!.spec.materials.grass?.color).toBe('/themes/medieval/materials/grass/color.webp');
+    expect(scifi!.spec.surroundings?.lamps).toBe('beacon');
+    expect(scifi!.spec.characters?.mounts.t6?.vehicle).toBe('starship');
+  });
+
+  it('a character patch needs parent characters', () => {
+    const problems: string[] = [];
+    const spec = validateTheme({ extends: 'nowhere', materials: {}, characters: { mounts: { t3: { vehicle: 'hoverbike' } } } }, problems)!;
+    expect(spec.characters).toBeUndefined();
+    expect(spec.charactersPatch?.mounts?.t3?.vehicle).toBe('hoverbike');
+    const [b] = linkBundles([rawBundle(validatePack({ format: 'wallet-landia-pack/2', id: 'lone', name: 'L', author: 'a', version: '1', theme: { materials: {} } }).manifest!, (p) => p, 'imported')!].map((r) => ({ ...r, resolved: { ...spec, extends: undefined as unknown as string } })));
+    expect(b!.problems.join(' ')).toContain('no parent characters');
+    expect(validateTheme({ materials: {}, characters: { mounts: { t3: { vehicle: 'tank' } } } }, []).characters).toBeUndefined();
+  });
+
   it('the bundle index lists folders that exist', () => {
     const ids = JSON.parse(readFileSync(resolve(__dirname, '../public/themes/index.json'), 'utf8')) as string[];
     for (const id of ids) expect(validatePack(read(id)).manifest?.id).toBe(id);

@@ -1,0 +1,128 @@
+{
+  "format": "wallet-landia-pack/2",
+  "id": "modern",
+  "name": "Modern",
+  "author": "wallet-landia; textures by ambientCG",
+  "version": "0.1.0",
+  "license": "CC0-1.0",
+  "description": "Brick, render and glass on asphalt streets: shopfronts, offices, a container port, a skyscraper for the richest; bikes, motorbikes, a helicopter and a jet as mounts.",
+  "slots": {},
+  "theme": {
+    "extends": "medieval",
+    "sky": "day",
+    "notes": [
+      "People still wear the medieval kit: modern outfits on the same universal skeleton are needed",
+      "Vehicles are simple models built in code"
+    ],
+    "materials": {
+      "plaster": {
+        "color": "materials/plaster/color.webp",
+        "normal": "materials/plaster/normal.webp",
+        "roughness": "materials/plaster/roughness.webp",
+        "size": 2.5
+      },
+      "stone": {
+        "color": "materials/stone/color.webp",
+        "normal": "materials/stone/normal.webp",
+        "roughness": "materials/stone/roughness.webp",
+        "size": 1.1
+      },
+      "stoneDark": {
+        "color": "materials/stoneDark/color.webp",
+        "normal": "materials/stoneDark/normal.webp",
+        "roughness": "materials/stoneDark/roughness.webp",
+        "size": 3
+      },
+      "timber": {
+        "color": "materials/timber/color.webp",
+        "normal": "materials/timber/normal.webp",
+        "roughness": "materials/timber/roughness.webp",
+        "size": 1.5,
+        "tint": "#7a8088"
+      },
+      "planks": {
+        "color": "materials/planks/color.webp",
+        "normal": "materials/planks/normal.webp",
+        "roughness": "materials/planks/roughness.webp",
+        "size": 1.6
+      },
+      "roofTiles": {
+        "color": "materials/roofTiles/color.webp",
+        "normal": "materials/roofTiles/normal.webp",
+        "roughness": "materials/roofTiles/roughness.webp",
+        "size": 2
+      },
+      "roofSlate": {
+        "color": "materials/roofSlate/color.webp",
+        "normal": "materials/roofSlate/normal.webp",
+        "roughness": "materials/roofSlate/roughness.webp",
+        "size": 2
+      },
+      "cobbles": {
+        "color": "materials/cobbles/color.webp",
+        "normal": "materials/cobbles/normal.webp",
+        "roughness": "materials/cobbles/roughness.webp",
+        "size": 1.6
+      },
+      "asphalt": {
+        "color": "materials/asphalt/color.webp",
+        "normal": "materials/asphalt/normal.webp",
+        "roughness": "materials/asphalt/roughness.webp",
+        "size": 3
+      },
+      "glass": {
+        "tint": "#2c4458"
+      },
+      "fire": {
+        "tint": "#ffb050"
+      }
+    },
+    "ground": {
+      "road": "asphalt",
+      "plaza": "cobbles",
+      "path": "dirt"
+    },
+    "buildings": {
+      "style": "modern",
+      "washes": [
+        "#efe9df",
+        "#e3ddd2",
+        "#d8d4cc",
+        "#f2e8d8",
+        "#dde4e8"
+      ],
+      "brandRoofs": 1
+    },
+    "surroundings": {
+      "style": "modern",
+      "relief": 0.7,
+      "woods": 0.6,
+      "trees": {
+        "oak": 0.5,
+        "birch": 0.35,
+        "fir": 0.15
+      },
+      "flowers": 300,
+      "lamps": "post"
+    },
+    "characters": {
+      "mounts": {
+        "t2": {
+          "vehicle": "bicycle"
+        },
+        "t3": {
+          "vehicle": "scooter"
+        },
+        "t4": {
+          "vehicle": "motorbike"
+        },
+        "t5": {
+          "vehicle": "helicopter"
+        },
+        "t6": {
+          "vehicle": "jet"
+        }
+      }
+    }
+  }
+}

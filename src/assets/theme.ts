@@ -22,6 +22,7 @@ export const MATERIAL_ROLES = [
   'roofSlate',
   'thatch',
   'cobbles',
+  'asphalt',
   'grass',
   'dirt',
   'cloth',
@@ -38,6 +39,12 @@ export type MaterialRole = (typeof MATERIAL_ROLES)[number];
 export const SKY_IDS = ['day', 'sunset', 'night', 'overcast'] as const;
 export const HERO_CLASSES = ['merchant', 'monk', 'paladin', 'bard', 'ranger', 'adventurer', 'sleeper'] as const;
 export const MOUNT_TIERS = ['t2', 't3', 't4', 't5', 't6'] as const;
+/** The building grammars and surroundings the game can build. */
+export const STYLES = ['medieval', 'modern', 'scifi'] as const;
+export type Style = (typeof STYLES)[number];
+/** Vehicles built in code (no CC0 rigged vehicles exist); tinted and textured by the theme. */
+export const VEHICLES = ['bicycle', 'scooter', 'motorbike', 'helicopter', 'jet', 'hoverboard', 'hoverbike', 'hoverbikeHeavy', 'skiff', 'starship'] as const;
+export type VehicleKind = (typeof VEHICLES)[number];
 
 export interface MaterialSpec {
   /** Texture files (relative paths in a manifest; URLs once resolved). */
@@ -60,8 +67,13 @@ export interface Pair<T = string> {
 }
 
 export interface MountSpec {
-  model: string;
-  /** Height in metres including the head. */
+  /** An animal (or creature) model… */
+  model?: string;
+  /** …or a vehicle built in code. */
+  vehicle?: VehicleKind;
+  /** How the rider sits: astride (animals, bikes) or seated (cockpits). */
+  pose?: 'straddle' | 'sit';
+  /** Height in metres including the head (models; vehicles have their own size). */
   height: number;
   tint?: string;
   /** Clip names, first found wins ("Idle" matches "Armature|Idle"). */
@@ -93,7 +105,7 @@ export interface CharacterSpec {
 }
 
 export interface BuildingStyle {
-  style: 'medieval';
+  style: Style;
   /** Plaster colour washes, picked per building. */
   washes?: string[];
   /** How strongly a protocol's brand colour tints its roof (0 = not at all). */
@@ -101,7 +113,8 @@ export interface BuildingStyle {
 }
 
 export interface SurroundingsStyle {
-  style: 'medieval';
+  /** Picks the props: rustic (medieval), urban (modern) or colony (sci-fi). */
+  style: Style;
   /** Scale on the hills around the town. */
   relief?: number;
   /** Scale on how much of the land is wooded. */
@@ -110,7 +123,7 @@ export interface SurroundingsStyle {
   trees?: { oak?: number; birch?: number; fir?: number };
   grass?: { hue: number; sat: number; light: number };
   flowers?: number;
-  lamps?: 'lantern' | 'post';
+  lamps?: 'lantern' | 'post' | 'beacon';
 }
 
 export interface ThemeSpec {
@@ -120,10 +133,12 @@ export interface ThemeSpec {
   /** What the theme still lacks, shown in the sandbox. */
   notes?: string[];
   materials: Partial<Record<MaterialRole, MaterialSpec>>;
-  ground?: Partial<Record<'grass' | 'road' | 'path', MaterialRole>>;
+  ground?: Partial<Record<'grass' | 'road' | 'plaza' | 'path', MaterialRole>>;
   buildings?: BuildingStyle;
   surroundings?: SurroundingsStyle;
   characters?: CharacterSpec;
+  /** With `extends`: only some character fields, laid over the parent's. */
+  charactersPatch?: Partial<CharacterSpec>;
 }
 
 // --- validation ------------------------------------------------------------------
@@ -191,15 +206,21 @@ function clipList(v: unknown): string[] {
 
 function mount(r: Reader, v: unknown, at: string): MountSpec | null {
   if (!isObj(v)) return null;
-  r.known(v, at, ['model', 'height', 'tint', 'clips', 'speeds', 'seat', 'wings']);
-  const model = r.path(v.model, `${at}.model`, 'animal');
-  const height = num(v.height, 0.3, 12);
-  if (!model || height === null) {
-    r.problems.push(`${at} needs a model and a height (m)`);
+  r.known(v, at, ['model', 'vehicle', 'pose', 'height', 'tint', 'clips', 'speeds', 'seat', 'wings']);
+  const vehicle = oneOf(v.vehicle, VEHICLES);
+  if (v.vehicle !== undefined && !vehicle) r.problems.push(`${at}.vehicle must be one of ${VEHICLES.join(', ')}`);
+  const model = vehicle ? null : r.path(v.model, `${at}.model`, 'animal');
+  const height = num(v.height, 0.3, 12) ?? (vehicle ? 1 : null);
+  if ((!model && !vehicle) || height === null) {
+    r.problems.push(`${at} needs a model and a height (m), or a vehicle`);
     return null;
   }
   const c = isObj(v.clips) ? v.clips : {};
-  const m: MountSpec = { model, height, clips: { idle: clipList(c.idle), walk: clipList(c.walk), run: clipList(c.run) } };
+  const m: MountSpec = { height, clips: { idle: clipList(c.idle), walk: clipList(c.walk), run: clipList(c.run) } };
+  if (model) m.model = model;
+  if (vehicle) m.vehicle = vehicle;
+  const pose = oneOf(v.pose, ['straddle', 'sit'] as const);
+  if (pose) m.pose = pose;
   const tint = hex(v.tint);
   if (tint) m.tint = tint;
   if (isObj(v.speeds)) {
@@ -222,32 +243,38 @@ function mount(r: Reader, v: unknown, at: string): MountSpec | null {
   return m;
 }
 
-function characters(r: Reader, v: unknown): CharacterSpec | null {
+/**
+ * Characters: complete, or (`partial`, for a theme that extends another) only
+ * the fields given, to lay over the parent's.
+ */
+function characters(r: Reader, v: unknown, partial: boolean): Partial<CharacterSpec> | null {
   const at = 'theme.characters';
   if (!isObj(v)) return null;
   r.known(v, at, ['skeleton', 'animations', 'clips', 'speeds', 'bodies', 'bodyParts', 'outfits', 'hair', 'eyebrows', 'mounts']);
-  if (v.skeleton !== 'ue5-universal') r.problems.push(`${at}.skeleton must be "ue5-universal" (the only rig the game animates so far)`);
+  if (v.skeleton !== undefined && v.skeleton !== 'ue5-universal') r.problems.push(`${at}.skeleton must be "ue5-universal" (the only rig the game animates so far)`);
   const animations = r.path(v.animations, `${at}.animations`, 'model');
-  const bodies = r.pair(v.bodies, `${at}.bodies`);
+  const bodies = v.bodies === undefined ? null : r.pair(v.bodies, `${at}.bodies`);
   const c = isObj(v.clips) ? v.clips : {};
   const clips = { idle: name(c.idle), walk: name(c.walk), run: name(c.run), sit: name(c.sit) };
-  if (v.skeleton !== 'ue5-universal' || !animations || !bodies || !clips.idle || !clips.walk || !clips.run || !clips.sit) {
+  const complete = v.skeleton === 'ue5-universal' && animations && bodies && clips.idle && clips.walk && clips.run && clips.sit;
+  if (!complete && !partial) {
     r.problems.push(`${at} needs skeleton, animations, bodies (male/female) and clips (idle, walk, run, sit); characters ignored`);
     return null;
   }
-  const s = isObj(v.speeds) ? v.speeds : {};
-  const spec: CharacterSpec = {
-    skeleton: 'ue5-universal',
-    animations,
-    clips: { idle: clips.idle, walk: clips.walk, run: clips.run, sit: clips.sit },
-    speeds: { walk: num(s.walk, 0.1, 10) ?? 1.25, run: num(s.run, 0.1, 20) ?? 3 },
-    bodies,
-    bodyParts: v.bodyParts === 'full' ? 'full' : 'head',
-    outfits: {},
-    hair: { male: [], female: [] },
-    mounts: {},
-  };
-  if (isObj(v.outfits)) {
+  const spec: Partial<CharacterSpec> = {};
+  if (v.skeleton === 'ue5-universal') spec.skeleton = 'ue5-universal';
+  if (animations) spec.animations = animations;
+  if (clips.idle && clips.walk && clips.run && clips.sit) spec.clips = { idle: clips.idle, walk: clips.walk, run: clips.run, sit: clips.sit };
+  if (isObj(v.speeds) || !partial) {
+    const s = isObj(v.speeds) ? v.speeds : {};
+    spec.speeds = { walk: num(s.walk, 0.1, 10) ?? 1.25, run: num(s.run, 0.1, 20) ?? 3 };
+  }
+  if (bodies) spec.bodies = bodies;
+  if (v.bodyParts !== undefined || !partial) spec.bodyParts = v.bodyParts === 'full' ? 'full' : 'head';
+  if (v.outfits !== undefined || !partial) spec.outfits = {};
+  if (v.hair !== undefined || !partial) spec.hair = { male: [], female: [] };
+  if (v.mounts !== undefined || !partial) spec.mounts = {};
+  if (isObj(v.outfits) && spec.outfits) {
     for (const [k, p] of Object.entries(v.outfits)) {
       const key = oneOf(k, [...HERO_CLASSES, 'default', 'villager'] as const);
       const pair = key ? r.pair(p, `${at}.outfits.${k}`) : null;
@@ -255,7 +282,7 @@ function characters(r: Reader, v: unknown): CharacterSpec | null {
       else r.problems.push(`${at}.outfits.${k} ignored (a class, "default" or "villager", with male and female models)`);
     }
   }
-  if (isObj(v.hair)) {
+  if (isObj(v.hair) && spec.hair) {
     for (const sex of ['male', 'female'] as const) {
       const list = Array.isArray(v.hair[sex]) ? (v.hair[sex] as unknown[]) : [];
       spec.hair[sex] = list.map((p, i) => r.path(p, `${at}.hair.${sex}[${i}]`, 'model')).filter((p): p is string => p !== null).slice(0, 12);
@@ -269,7 +296,7 @@ function characters(r: Reader, v: unknown): CharacterSpec | null {
     }
     spec.eyebrows = e;
   }
-  if (isObj(v.mounts)) {
+  if (isObj(v.mounts) && spec.mounts) {
     for (const [k, m] of Object.entries(v.mounts)) {
       const tier = oneOf(k, MOUNT_TIERS);
       const spec2 = tier ? mount(r, m, `${at}.mounts.${k}`) : null;
@@ -278,6 +305,10 @@ function characters(r: Reader, v: unknown): CharacterSpec | null {
     }
   }
   return spec;
+}
+
+function isComplete(c: Partial<CharacterSpec>): c is CharacterSpec {
+  return c.skeleton !== undefined && c.animations !== undefined && c.clips !== undefined && c.speeds !== undefined && c.bodies !== undefined && c.bodyParts !== undefined && c.outfits !== undefined && c.hair !== undefined && c.mounts !== undefined;
 }
 
 /** Validate a pack's `theme` block. Anything doubtful is dropped with a reason. */
@@ -310,7 +341,7 @@ export function validateTheme(input: unknown, problems: string[]): ThemeSpec | n
   }
   if (isObj(input.ground)) {
     const g: NonNullable<ThemeSpec['ground']> = {};
-    for (const k of ['grass', 'road', 'path'] as const) {
+    for (const k of ['grass', 'road', 'plaza', 'path'] as const) {
       const role = oneOf(input.ground[k], MATERIAL_ROLES);
       if (role) g[k] = role;
       else if (input.ground[k] !== undefined) problems.push(`theme.ground.${k} must name a material role`);
@@ -320,9 +351,10 @@ export function validateTheme(input: unknown, problems: string[]): ThemeSpec | n
   if (isObj(input.buildings)) {
     const b = input.buildings;
     r.known(b, 'theme.buildings', ['style', 'washes', 'brandRoofs']);
-    if (b.style !== 'medieval') problems.push('theme.buildings.style must be "medieval" (the only building grammar so far)');
+    const bStyle = oneOf(b.style, STYLES);
+    if (!bStyle) problems.push(`theme.buildings.style must be one of ${STYLES.join(', ')}`);
     else {
-      const style: BuildingStyle = { style: 'medieval' };
+      const style: BuildingStyle = { style: bStyle };
       if (Array.isArray(b.washes)) {
         const washes = b.washes.map(hex).filter((x): x is string => x !== null).slice(0, 12);
         if (washes.length > 0) style.washes = washes;
@@ -335,9 +367,10 @@ export function validateTheme(input: unknown, problems: string[]): ThemeSpec | n
   if (isObj(input.surroundings)) {
     const s = input.surroundings;
     r.known(s, 'theme.surroundings', ['style', 'relief', 'woods', 'trees', 'grass', 'flowers', 'lamps']);
-    if (s.style !== 'medieval') problems.push('theme.surroundings.style must be "medieval" (the only one so far)');
+    const sStyle = oneOf(s.style, STYLES);
+    if (!sStyle) problems.push(`theme.surroundings.style must be one of ${STYLES.join(', ')}`);
     else {
-      const style: SurroundingsStyle = { style: 'medieval' };
+      const style: SurroundingsStyle = { style: sStyle };
       const relief = num(s.relief, 0, 3);
       if (relief !== null) style.relief = relief;
       const woods = num(s.woods, 0, 2);
@@ -358,14 +391,15 @@ export function validateTheme(input: unknown, problems: string[]): ThemeSpec | n
       }
       const flowers = num(s.flowers, 0, 3000);
       if (flowers !== null) style.flowers = Math.round(flowers);
-      const lamps = oneOf(s.lamps, ['lantern', 'post'] as const);
+      const lamps = oneOf(s.lamps, ['lantern', 'post', 'beacon'] as const);
       if (lamps) style.lamps = lamps;
       spec.surroundings = style;
     }
   }
   if (input.characters !== undefined) {
-    const c = characters(r, input.characters);
-    if (c) spec.characters = c;
+    const c = characters(r, input.characters, spec.extends !== undefined);
+    if (c && isComplete(c)) spec.characters = c;
+    else if (c) spec.charactersPatch = c;
   }
   return spec;
 }
@@ -375,14 +409,15 @@ export function validateTheme(input: unknown, problems: string[]): ThemeSpec | n
 /** Every path in a spec, with a function to rewrite it (for listing and resolving). */
 function eachPath(spec: ThemeSpec, f: (p: string) => string): void {
   for (const m of Object.values(spec.materials)) for (const k of ['color', 'normal', 'roughness'] as const) if (m[k]) m[k] = f(m[k]);
-  const c = spec.characters;
-  if (!c) return;
-  c.animations = f(c.animations);
-  c.bodies = { male: f(c.bodies.male), female: f(c.bodies.female) };
-  for (const [k, p] of Object.entries(c.outfits)) c.outfits[k as keyof CharacterSpec['outfits']] = { male: f(p.male), female: f(p.female) };
-  c.hair = { male: c.hair.male.map(f), female: c.hair.female.map(f) };
-  if (c.eyebrows) for (const sex of ['male', 'female'] as const) if (c.eyebrows[sex]) c.eyebrows[sex] = f(c.eyebrows[sex]);
-  for (const m of Object.values(c.mounts)) m.model = f(m.model);
+  for (const c of [spec.characters, spec.charactersPatch]) {
+    if (!c) continue;
+    if (c.animations) c.animations = f(c.animations);
+    if (c.bodies) c.bodies = { male: f(c.bodies.male), female: f(c.bodies.female) };
+    for (const [k, p] of Object.entries(c.outfits ?? {})) c.outfits![k as keyof CharacterSpec['outfits']] = { male: f(p.male), female: f(p.female) };
+    if (c.hair) c.hair = { male: c.hair.male.map(f), female: c.hair.female.map(f) };
+    if (c.eyebrows) for (const sex of ['male', 'female'] as const) if (c.eyebrows[sex]) c.eyebrows[sex] = f(c.eyebrows[sex]);
+    for (const m of Object.values(c.mounts ?? {})) if (m.model) m.model = f(m.model);
+  }
 }
 
 export function themeFiles(spec: ThemeSpec): string[] {
@@ -397,7 +432,7 @@ export function themeFiles(spec: ThemeSpec): string[] {
 /** The spec with every relative path turned into a URL by the pack's resolver. */
 export function resolveTheme(spec: ThemeSpec, url: (path: string) => string): ThemeSpec {
   const copy = structuredClone(spec);
-  for (const m of Object.values(copy.characters?.mounts ?? {})) m.format = /\.fbx$/i.test(m.model) ? 'fbx' : 'gltf';
+  for (const c of [copy.characters, copy.charactersPatch]) for (const m of Object.values(c?.mounts ?? {})) if (m.model) m.format = /\.fbx$/i.test(m.model) ? 'fbx' : 'gltf';
   eachPath(copy, url);
   return copy;
 }
@@ -417,6 +452,16 @@ export function mergeTheme(parent: ThemeSpec, child: ThemeSpec): ThemeSpec {
   if (child.buildings) out.buildings = { ...out.buildings, ...child.buildings };
   if (child.surroundings) out.surroundings = { ...out.surroundings, ...child.surroundings };
   if (child.characters) out.characters = structuredClone(child.characters);
+  else if (child.charactersPatch && out.characters) {
+    // a variant changes some character fields; mounts per tier
+    const patch = structuredClone(child.charactersPatch);
+    out.characters = {
+      ...out.characters,
+      ...patch,
+      outfits: patch.outfits ?? out.characters.outfits, // a new wardrobe replaces the old one ({} = none)
+      mounts: { ...out.characters.mounts, ...patch.mounts },
+    };
+  }
   return out;
 }
 

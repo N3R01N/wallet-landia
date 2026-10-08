@@ -48,6 +48,11 @@ export function linkBundles(raws: Raw[]): ThemeBundle[] {
   return raws.map((r) => {
     const spec = flat(r, [r.manifest.id]);
     spec.materials = resolveUses(spec.materials);
+    if (spec.charactersPatch) {
+      // merged into the parent's characters by now; without a parent it has nothing to patch
+      if (!spec.characters) r.problems.push('theme.characters is incomplete and there are no parent characters to complete it (ignored)');
+      delete spec.charactersPatch;
+    }
     const b: ThemeBundle = { id: r.manifest.id, name: r.manifest.name, author: r.manifest.author, version: r.manifest.version, source: r.source, spec, problems: r.problems };
     if (r.manifest.description) b.description = r.manifest.description;
     if (r.manifest.license) b.license = r.manifest.license;

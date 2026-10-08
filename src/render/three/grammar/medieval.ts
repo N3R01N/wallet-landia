@@ -6,26 +6,22 @@
  *
  * Everything is built in metres around the origin (+z faces the street) and
  * written by one MeshWriter, so a building is one mesh per material. The
- * result is scaled to tiles and matches BuildingFactory's BuiltBuilding.
+ * Mason (the parts) is shared by the other styles (modern.ts, scifi.ts);
+ * builder.ts turns a recipe's result into a placed building.
  */
 
 import * as THREE from 'three';
-import type { BuildingSpec, BuiltBuilding } from '../buildingFactory.js';
-import type { BuildingFactory } from '../buildingFactory.js';
-import { styleFor } from '../../buildings.js';
-import { hashString, makeRng } from '../../../util/rng.js';
-import type { BuildingStyle } from '../../../assets/theme.js';
-import type { MaterialLibrary } from './materials.js';
+import { makeRng } from '../../../util/rng.js';
 import { MeshWriter, type Mat, type V3 } from './meshWriter.js';
 
 export const METRES_PER_TILE = 1.8;
 
-type FaceId = 'front' | 'right' | 'back' | 'left';
-const FACES: FaceId[] = ['front', 'right', 'back', 'left'];
-const FACE_ROT: Record<FaceId, number> = { front: 0, right: Math.PI / 2, back: Math.PI, left: -Math.PI / 2 };
+export type FaceId = 'front' | 'right' | 'back' | 'left';
+export const FACES: FaceId[] = ['front', 'right', 'back', 'left'];
+export const FACE_ROT: Record<FaceId, number> = { front: 0, right: Math.PI / 2, back: Math.PI, left: -Math.PI / 2 };
 
 /** A rectangle on the ground, centred at (cx, cz). */
-interface Rect {
+export interface Rect {
   cx: number;
   cz: number;
   w: number;
@@ -33,7 +29,7 @@ interface Rect {
 }
 
 /** A point on a face of a rectangle: s along the wall (from its centre), y up, o out of the wall. */
-function facePoint(r: Rect, f: FaceId, s: number, y: number, o: number): V3 {
+export function facePoint(r: Rect, f: FaceId, s: number, y: number, o: number): V3 {
   switch (f) {
     case 'front':
       return [r.cx + s, y, r.cz + r.d / 2 + o];
@@ -45,9 +41,9 @@ function facePoint(r: Rect, f: FaceId, s: number, y: number, o: number): V3 {
       return [r.cx - r.w / 2 - o, y, r.cz + s];
   }
 }
-const faceLen = (r: Rect, f: FaceId): number => (f === 'front' || f === 'back' ? r.w : r.d);
+export const faceLen = (r: Rect, f: FaceId): number => (f === 'front' || f === 'back' ? r.w : r.d);
 
-interface StoreyOpts {
+export interface StoreyOpts {
   h: number;
   wall: Mat;
   /** Exposed timber frame over the wall. */
@@ -64,7 +60,7 @@ interface StoreyOpts {
 }
 
 /** The grammar's parts, writing into one MeshWriter. */
-class Mason {
+export class Mason {
   readonly w = new MeshWriter();
   readonly rng: () => number;
 
@@ -266,6 +262,52 @@ class Mason {
     return h + roofRise + 0.6;
   }
 
+  // --- parts for the modern and sci-fi styles ---------------------------------------
+
+  /** A flat roof slab with a parapet around it. Returns the parapet's top. */
+  flatRoof(r: Rect, y: number, mat: Mat = 'roofSlate', edge: Mat = 'stoneDark', parapet = 0.55): number {
+    this.w.box([r.cx, y + 0.1, r.cz], [r.w, 0.2, r.d], mat, { skip: ['bottom'] });
+    if (parapet > 0) {
+      const t = 0.18;
+      for (const f of FACES) {
+        const L = faceLen(r, f);
+        this.onFace(r, f, 0, y + parapet / 2, [L + t * 2, parapet], t, edge, -t);
+      }
+    }
+    return y + parapet;
+  }
+
+  /** A glass curtain wall on a face: one glazed panel and a grid of mullions. */
+  glassWall(r: Rect, f: FaceId, y0: number, h: number, cols: number, rows: number, frame: Mat = 'timber', s0?: number, s1?: number): void {
+    const L = faceLen(r, f);
+    const a = s0 ?? -L / 2;
+    const b = s1 ?? L / 2;
+    this.panel(r, f, a, b, y0, y0 + h, 0.03, 'glass');
+    for (let i = 0; i <= cols; i++) this.onFace(r, f, a + ((b - a) * i) / cols, y0 + h / 2, [0.07, h], 0.08, frame);
+    for (let j = 0; j <= rows; j++) this.onFace(r, f, (a + b) / 2, y0 + (h * j) / rows, [b - a + 0.07, 0.07], 0.09, frame);
+  }
+
+  /** A sloping canvas awning over a shopfront. */
+  awning(r: Rect, f: FaceId, s: number, y: number, w: number, depth: number, tint: string): void {
+    const a = facePoint(r, f, s - w / 2, y, 0.02);
+    const b = facePoint(r, f, s + w / 2, y, 0.02);
+    const c = facePoint(r, f, s + w / 2, y - 0.45, depth);
+    const d = facePoint(r, f, s - w / 2, y - 0.45, depth);
+    this.w.slab([d, c, b, a], 0.03, { key: 'cloth', tint }, { key: 'cloth', tint });
+  }
+
+  /** A thin band round a rectangle at height y (glowing strips use the 'fire' role). */
+  band(r: Rect, y: number, h: number, mat: Mat, out = 0.04): void {
+    for (const f of FACES) this.onFace(r, f, 0, y, [faceLen(r, f) + out * 2, h], out, mat);
+  }
+
+  /** A mast with a light on top. */
+  mast(x: number, z: number, y0: number, h: number, light: Mat = 'fire'): number {
+    this.box([x, y0 + h / 2, z], [0.08, h, 0.08], 'iron');
+    this.box([x, y0 + h + 0.08, z], [0.16, 0.16, 0.16], light);
+    return y0 + h + 0.16;
+  }
+
   pole(x: number, z: number, h: number, flag?: string): void {
     this.box([x, h / 2, z], [0.08, h, 0.08], 'timber');
     if (flag) this.box([x + 0.35, h - 0.35, z], [0.6, 0.45, 0.03], { key: 'cloth', tint: flag });
@@ -274,7 +316,7 @@ class Mason {
 
 // --- recipes -------------------------------------------------------------------
 
-interface Ctx {
+export interface Ctx {
   m: Mason;
   /** Roof tint from the protocol's brand colour (softened, scaled by the theme). */
   roof: string;
@@ -289,7 +331,7 @@ interface Ctx {
   D: number;
 }
 
-interface Made {
+export interface Made {
   top: number;
   /** Where the sign hangs, in metres. */
   sign?: V3;
@@ -300,7 +342,7 @@ interface Made {
  * A soft version of a brand colour, so tinted roof tiles still read as tiles;
  * `strength` (the theme's brandRoofs) fades it towards no tint at all.
  */
-function roofTint(hex: string, strength: number): string {
+export function roofTint(hex: string, strength: number): string {
   const c = new THREE.Color(hex);
   const hsl = { h: 0, s: 0, l: 0 };
   c.getHSL(hsl);
@@ -308,7 +350,7 @@ function roofTint(hex: string, strength: number): string {
   return `#${new THREE.Color('#ffffff').lerp(soft, strength).getHexString()}`;
 }
 
-const WASHES = ['#f4ead6', '#efe2c4', '#e9dccb', '#f2e6d0', '#e6d6b8'];
+export const WASHES = ['#f4ead6', '#efe2c4', '#e9dccb', '#f2e6d0', '#e6d6b8'];
 
 /** A half-timbered house of `n` storeys: the common townhouse/hall body. */
 function timberHouse(c: Ctx, o: { w: number; d: number; storeys: number; jetty?: number; roof: Mat; rise?: number; alongZ?: boolean; door?: boolean; stoneGround?: boolean }): Made {
@@ -665,77 +707,11 @@ function home(c: Ctx): Made {
   }
 }
 
-export class MedievalBuilder {
-  readonly lib: MaterialLibrary;
-  readonly #factory: BuildingFactory;
-  readonly #emblems = new Map<string, THREE.Material>();
-  /** Triangles in the last building built (the sandbox's perf panel). */
-  lastTriangles = 0;
+/** The medieval recipes: every building kind, and homes by value tier. */
+export const MEDIEVAL: RecipeSet = { recipes: RECIPES, home };
 
-  readonly #style: BuildingStyle;
-
-  constructor(lib: MaterialLibrary, factory: BuildingFactory, style: BuildingStyle = { style: 'medieval' }) {
-    this.lib = lib;
-    this.#factory = factory;
-    this.#style = style;
-  }
-
-  build(spec: BuildingSpec): BuiltBuilding {
-    const seed = hashString(`${spec.kind}|${spec.tier}|${spec.roof ?? ''}`);
-    const washes = this.#style.washes ?? WASHES;
-    const m = new Mason(seed);
-    const ctx: Ctx = {
-      m,
-      roof: roofTint(spec.roof ?? '#a0522d', this.#style.brandRoofs ?? 1),
-      bannerRoof: roofTint(spec.banner ?? '#b03030', this.#style.brandRoofs ?? 1),
-      banner: spec.banner ?? '#b03030',
-      tier: spec.tier,
-      wash: washes[seed % washes.length]!,
-      W: (spec.w - 0.5) * METRES_PER_TILE,
-      D: (spec.h - 0.5) * METRES_PER_TILE,
-    };
-    const recipe = spec.kind === 'home' ? home : RECIPES[spec.kind];
-    const made = recipe ? recipe(ctx) : RECIPES.names!(ctx);
-    this.lastTriangles = m.w.triangles;
-
-    const inner = m.w.build(this.lib);
-    inner.scale.setScalar(1 / METRES_PER_TILE);
-    if (made.bell) inner.add(made.bell);
-    const group = new THREE.Group();
-    group.add(inner);
-
-    const out: BuiltBuilding = { group, top: made.top / METRES_PER_TILE };
-    if (made.bell) out.bell = made.bell;
-    if (made.sign && spec.kind !== 'home' && spec.kind !== 'tower') {
-      // a hanging sign on an iron bracket, the emblem painted on both sides
-      const [sx, sy, sz] = made.sign;
-      const board = new THREE.Group();
-      board.position.set(sx / METRES_PER_TILE, sy / METRES_PER_TILE, sz / METRES_PER_TILE);
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.5), this.lib.get('iron'));
-      arm.position.set(0, 0.27, -0.2);
-      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.42, 0.42), this.lib.get('timber'));
-      plank.castShadow = true;
-      board.add(arm, plank);
-      const emblem = this.#emblem(spec);
-      for (const side of [-1, 1]) {
-        const face = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.36), emblem);
-        face.position.x = side * 0.022;
-        face.rotation.y = (side * Math.PI) / 2;
-        board.add(face);
-      }
-      group.add(board);
-      if (spec.iconUrl) out.sign = { x: board.position.x, y: board.position.y, z: board.position.z + 0.25, url: spec.iconUrl };
-    }
-    return out;
-  }
-
-  #emblem(spec: BuildingSpec): THREE.Material {
-    const st = styleFor(spec.kind, spec.tier);
-    let mat = this.#emblems.get(st.emblem);
-    if (!mat) {
-      mat = new THREE.MeshStandardMaterial({ map: this.#factory.emblemTexture(st), roughness: 0.8 });
-      this.#emblems.set(st.emblem, mat);
-    }
-    return mat;
-  }
+/** A building style: a recipe per kind (missing kinds use `names`), and homes by tier. */
+export interface RecipeSet {
+  recipes: Record<string, (c: Ctx) => Made>;
+  home(c: Ctx): Made;
 }

@@ -353,8 +353,8 @@ export class Renderer3D implements WorldView {
       const s = theme.surroundings(townSite(plan, placeLamps(plan)));
       this.#world.add(s.group);
       this.#lamps = s.lamps;
-      const surface = (w: 'road' | 'path'): THREE.Material => theme.groundMaterial?.(w) ?? this.#factory.mat(w === 'road' ? '#9a8f80' : '#8a7556');
-      for (const m of tileSurfaces(plan, { paved: surface('road'), trodden: surface('path'), water: this.#themedWater })) this.#world.add(m);
+      const surface = (w: 'road' | 'plaza' | 'path'): THREE.Material => theme.groundMaterial?.(w) ?? this.#factory.mat(w === 'path' ? '#8a7556' : '#9a8f80');
+      for (const m of tileSurfaces(plan, { paved: surface('road'), plaza: surface('plaza'), trodden: surface('path'), water: this.#themedWater })) this.#world.add(m);
       return;
     }
 

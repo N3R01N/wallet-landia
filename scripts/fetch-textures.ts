@@ -1,11 +1,13 @@
 /**
  * Download CC0 PBR materials from ambientCG and convert them for the web.
  *
- *   npm run assets:textures
+ *   npm run assets:textures              (every theme)
+ *   npm run assets:textures -- modern    (one theme)
  *
  * Each material keeps colour (≤ 1024 px), normal and roughness (≤ 512 px) as
- * WebP in public/themes/medieval/materials/<key>/. Downloads are cached in
- * assets-src/ambientcg/, so re-running is free.
+ * WebP in public/themes/<theme>/materials/<role>/. Downloads are cached in
+ * assets-src/ambientcg/, so re-running is free. The keys are material roles
+ * (src/assets/theme.ts); each theme's pack.json says how big a repeat is.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -15,10 +17,9 @@ import { readZip, unzipEntry } from './lib/zip.js';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const CACHE = join(ROOT, 'assets-src/ambientcg');
-const OUT = join(ROOT, 'public/themes/medieval/materials');
-
-/** key → ambientCG asset id. The key is what the building grammar asks for. */
-export const MATERIALS: Record<string, string> = {
+/** theme → material role → ambientCG asset id. */
+export const THEMES: Record<string, Record<string, string>> = {
+  medieval: {
   plaster: 'Plaster002',
   stone: 'Bricks100',
   stoneDark: 'Bricks089',
@@ -34,6 +35,34 @@ export const MATERIALS: Record<string, string> = {
   bark: 'Bark014',
   rock: 'Rock030',
   forestFloor: 'Ground037',
+  },
+  // brick and render facades, concrete, steel frames, timber cladding; extends medieval for nature
+  modern: {
+    plaster: 'Plaster001',
+    stone: 'Bricks097',
+    stoneDark: 'Concrete034',
+    timber: 'Metal032',
+    planks: 'WoodSiding008',
+    roofTiles: 'RoofingTiles014A',
+    roofSlate: 'CorrugatedSteel005',
+    cobbles: 'PavingStones128',
+    asphalt: 'Asphalt033',
+  },
+  // panelled metal habitat on a dusty world; extends medieval for the people
+  scifi: {
+    plaster: 'Metal049A',
+    stone: 'MetalPlates001',
+    stoneDark: 'MetalPlates004',
+    timber: 'Metal027',
+    planks: 'DiamondPlate008A',
+    roofTiles: 'MetalPlates017A',
+    roofSlate: 'MetalPlates015A',
+    cobbles: 'Tiles141',
+    grass: 'Ground054',
+    dirt: 'Ground080',
+    rock: 'Rock061',
+    forestFloor: 'Ground093C',
+  },
 };
 
 async function download(id: string): Promise<Buffer> {
@@ -47,10 +76,11 @@ async function download(id: string): Promise<Buffer> {
   return buf;
 }
 
-async function main(): Promise<void> {
+async function fetchTheme(theme: string, materials: Record<string, string>): Promise<void> {
+  const OUT = join(ROOT, `public/themes/${theme}/materials`);
   let total = 0;
   const credits: string[] = [];
-  for (const [key, id] of Object.entries(MATERIALS)) {
+  for (const [key, id] of Object.entries(materials)) {
     const zip = readZip(await download(id));
     const pick = (suffix: RegExp): Buffer | null => {
       const e = [...zip.entries.values()].find((x) => suffix.test(x.name));
@@ -78,7 +108,12 @@ async function main(): Promise<void> {
     join(OUT, 'CREDITS.md'),
     `# Materials\n\nPBR materials from [ambientCG](https://ambientcg.com), released under **CC0 1.0**. Colour ≤ 1024 px, normal and roughness ≤ 512 px, WebP.\n\n| Key | Source |\n|---|---|\n${credits.join('\n')}\n`,
   );
-  console.log(`\ntotal ${(total / 1024 / 1024).toFixed(2)} MB → ${OUT}`);
+  console.log(`total ${(total / 1024 / 1024).toFixed(2)} MB → ${OUT}\n`);
+}
+
+async function main(): Promise<void> {
+  const wanted = process.argv.slice(2);
+  for (const [theme, materials] of Object.entries(THEMES)) if (wanted.length === 0 || wanted.includes(theme)) await fetchTheme(theme, materials);
 }
 
 main().catch((e: unknown) => {

@@ -75,7 +75,7 @@ Imported packs stay in your browser (IndexedDB). Bundled packs are listed in `pu
 
 A pack can also carry a whole look in a `theme` block: sky, materials, ground, buildings, surroundings, characters and mounts. Players pick one in **🎨 Looks → World theme** to redraw the 3D town; the look sandbox lists the same themes. Bundled themes come from `public/themes/index.json`; imported packs that have a theme block appear too.
 
-The reference bundle is [`public/themes/medieval/pack.json`](../public/themes/medieval/pack.json). [`public/themes/highland/pack.json`](../public/themes/highland/pack.json) shows a variant made with `extends` and no files of its own. The validator is [`src/assets/theme.ts`](../src/assets/theme.ts).
+The reference bundle is [`public/themes/medieval/pack.json`](../public/themes/medieval/pack.json). [`highland`](../public/themes/highland/pack.json) is a variant with no files of its own; [`modern`](../public/themes/modern/pack.json) and [`scifi`](../public/themes/scifi/pack.json) extend medieval with their own textures, building style, props and vehicle mounts. The validator is [`src/assets/theme.ts`](../src/assets/theme.ts).
 
 ```jsonc
 "theme": {
@@ -88,7 +88,7 @@ The reference bundle is [`public/themes/medieval/pack.json`](../public/themes/me
     "thatch":  { "tint": "#a89880" },                    // with extends: retint the parent's
     "iron":    { "tint": "#3a3a40", "metalness": 0.7, "roughnessValue": 0.5 }
   },
-  "ground": { "grass": "grass", "road": "cobbles", "path": "dirt" },
+  "ground": { "grass": "grass", "road": "cobbles", "plaza": "cobbles", "path": "dirt" },
   "buildings": { "style": "medieval", "washes": ["#f4ead6"], "brandRoofs": 1 },
   "surroundings": { "style": "medieval", "relief": 1, "woods": 1, "trees": { "oak": 0.57, "birch": 0.18, "fir": 0.25 },
                     "grass": { "hue": 0.24, "sat": 0.45, "light": 0.17 }, "flowers": 700, "lamps": "lantern" },
@@ -97,16 +97,28 @@ The reference bundle is [`public/themes/medieval/pack.json`](../public/themes/me
 ```
 
 ### Materials
-Roles: `plaster stone stoneDark timber planks roofTiles roofSlate thatch cobbles grass dirt cloth bark rock forestFloor glass fire iron gold`. The building grammar, terrain and props ask for surfaces by role, so a theme restyles everything by giving each role a material.
+Roles: `plaster stone stoneDark timber planks roofTiles roofSlate thatch cobbles asphalt grass dirt cloth bark rock forestFloor glass fire iron gold`. The building grammar, terrain and props ask for surfaces by role, so a theme restyles everything by giving each role a material.
 - `color`, `normal` (OpenGL convention, green up), `roughness`: image files. Any can be left out.
 - `size`: metres covered by one repeat of the textures. Geometry carries UVs in metres, so a brick is the same size everywhere.
 - `tint` multiplies the colour (and is the whole colour of an untextured role). `use` takes another role's textures and size.
 - A role the theme leaves out falls back to a plain colour, so nothing goes missing.
 
 ### Buildings and surroundings
-`style` picks the code that builds them: only `"medieval"` exists so far (Phase 6 adds more). The other fields tune it:
+`style` picks the code that builds them: `"medieval"`, `"modern"` or `"scifi"`. Each style reads the roles its own way:
+
+| Role | medieval | modern | scifi |
+|---|---|---|---|
+| `stone` | masonry | facing brick | hull panels |
+| `plaster` | lime render | render | white composite |
+| `stoneDark` | plinths, quoins | concrete | dark plating |
+| `timber` | beams, frames | steel frames | metal frames |
+| `planks` | doors, cladding | timber cladding | deck plate |
+| `roofTiles` / `roofSlate` | tiles / slate | pitched roofs / flat roofs and sheds | roof panels |
+| `fire` | fires | chimney glow | glowing seams (tint it) |
+
+The surroundings style picks the props (rustic: barrels, woodpiles, a well, a paddock; urban: bins, benches, bollards, a fountain, a park; colony: canisters, a water tank, a solar farm, a pipeline) and the default lamps. The other fields tune it:
 - `washes`: plaster colours picked per building. `brandRoofs`: 0..1, how strongly a protocol's brand colour tints its roof.
-- `relief`: hill height (0 = flat). `woods`: how much land is wooded. `trees`: the species mix (firs also take over higher up). `grass`: blade colour (HSL, 0..1). `flowers`: how many clumps. `lamps`: `lantern` or `post`.
+- `relief`: hill height (0 = flat). `woods`: how much land is wooded. `trees`: the species mix (firs also take over higher up). `grass`: blade colour (HSL, 0..1). `flowers`: how many clumps. `lamps`: `lantern`, `post` or `beacon`.
 
 ### Characters
 Every part shares one skeleton, so no retargeting is needed. The only rig so far is `"ue5-universal"`: Unreal-5 bone names (`pelvis`, `thigh_l`, `Head`…) and bind pose, as in the Quaternius Universal kits.
@@ -131,11 +143,12 @@ Every part shares one skeleton, so no retargeting is needed. The only rig so far
   }
 }
 ```
+- Instead of a `model`, a mount can be a `vehicle` built in code: `bicycle scooter motorbike helicopter jet hoverboard hoverbike hoverbikeHeavy skiff starship`. Vehicles have their own size and seat; `tint` paints them (default: the hero's crest colour); `pose` (`straddle` or `sit`) overrides how the rider sits.
 - Mount models may be `.glb`, `.gltf` or `.fbx` (many creature kits ship only FBX). Clip names match whole names, also after a `|` (`"Idle"` matches `Armature|Idle`). The first listed clip that exists wins.
 - The rider is seated with the `sit` clip, the legs turned into a straddle, and the pelvis put on the mount's back between the `seat` bones.
 
 ### Inheritance
-With `extends`, every block overrides field by field: a material entry with just a `tint` keeps the parent's textures. `characters` is replaced as a whole when present. Files are resolved against the pack that names them, so a variant reuses its parent's files without copying them.
+With `extends`, every block overrides field by field: a material entry with just a `tint` keeps the parent's textures. `characters` may give only some fields (say, just `mounts`): mounts override per tier, `outfits` replaces the whole wardrobe, the rest field by field. A complete `characters` block replaces the parent's. Files are resolved against the pack that names them, so a variant reuses its parent's files without copying them.
 
 ### Limits
 The same rules as slots: relative paths inside the pack only, images and models only, at most 300 files and 25 MB per imported pack. Unknown fields, roles and tiers are dropped with a reason, never guessed.

@@ -66,13 +66,13 @@ export function townSite(plan: TownPlan, lamps: Lamp[]): Site {
   };
 }
 
-/** One mesh per surface: paved (road, plaza), trodden (path, sand) and water. UVs in metres. */
-export function tileSurfaces(plan: TownPlan, materials: { paved: THREE.Material; trodden: THREE.Material; water: THREE.Material }): THREE.Mesh[] {
-  const parts = { paved: [] as number[], trodden: [] as number[], water: [] as number[] };
+/** One mesh per surface: road, plaza, trodden (path, sand) and water. UVs in metres. */
+export function tileSurfaces(plan: TownPlan, materials: { paved: THREE.Material; plaza: THREE.Material; trodden: THREE.Material; water: THREE.Material }): THREE.Mesh[] {
+  const parts = { paved: [] as number[], plaza: [] as number[], trodden: [] as number[], water: [] as number[] };
   for (let y = 0; y < MAP_H; y++) {
     for (let x = 0; x < MAP_W; x++) {
       const k = tileAt(plan, x, y);
-      const list = PAVED.has(k) ? parts.paved : TRODDEN.has(k) ? parts.trodden : k === 'water' ? parts.water : null;
+      const list = k === 'plaza' ? parts.plaza : PAVED.has(k) ? parts.paved : TRODDEN.has(k) ? parts.trodden : k === 'water' ? parts.water : null;
       if (list) list.push(x, y);
     }
   }
@@ -82,7 +82,7 @@ export function tileSurfaces(plan: TownPlan, materials: { paved: THREE.Material;
     const pos: number[] = [];
     const uv: number[] = [];
     const idx: number[] = [];
-    const lift = name === 'water' ? 0.03 : name === 'paved' ? 0.012 : 0.008;
+    const lift = name === 'water' ? 0.03 : name === 'paved' || name === 'plaza' ? 0.012 : 0.008;
     for (let i = 0; i < cells.length; i += 2) {
       const x = cells[i]!;
       const z = cells[i + 1]!;

@@ -24,6 +24,7 @@ const FALLBACK: Record<MatKey, string> = {
   roofSlate: '#4a4e58',
   thatch: '#c8a860',
   cobbles: '#8a8478',
+  asphalt: '#3e3e40',
   grass: '#5a8a3a',
   dirt: '#7a6248',
   cloth: '#c8b8a0',

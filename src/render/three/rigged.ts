@@ -18,7 +18,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import type { CharacterSpec, MountSpec } from '../../assets/theme.js';
+import type { CharacterSpec, MountSpec, VehicleKind } from '../../assets/theme.js';
+import type { Vehicle } from './grammar/vehicles.js';
 import type { AnimState, CharacterLook, CharacterProvider, SandboxCharacter } from './themes.js';
 
 /** World scale: one tile is this many metres, so a person is about one tile tall. */
@@ -31,8 +32,12 @@ interface Animal {
   clips: THREE.AnimationClip[];
 }
 
+/** Builds a theme's vehicle mounts (with its materials). */
+export type VehicleFactory = (kind: VehicleKind, tint?: string) => Vehicle;
+
 interface Kit {
   spec: CharacterSpec;
+  vehicles: VehicleFactory | null;
   clips: Map<string, THREE.AnimationClip>;
   bodies: { male: THREE.Group; female: THREE.Group };
   /** Outfits, hair and eyebrows by URL. */
@@ -44,7 +49,7 @@ interface Kit {
 // --- loading -----------------------------------------------------------------
 
 /** Load every file a theme's characters use (`spec` holds URLs: a resolved theme). */
-export async function loadKit(spec: CharacterSpec): Promise<Kit> {
+export async function loadKit(spec: CharacterSpec, vehicles: VehicleFactory | null = null): Promise<Kit> {
   const gltf = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   const load = (url: string): Promise<THREE.Group> => gltf.loadAsync(url).then((g) => g.scene);
   const anim = await gltf.loadAsync(spec.animations);
@@ -58,20 +63,21 @@ export async function loadKit(spec: CharacterSpec): Promise<Kit> {
   const parts = new Map(await Promise.all([...partUrls].map(async (u) => [u, await load(u)] as const)));
   const animals = new Map<string, Animal>();
   for (const m of Object.values(spec.mounts)) {
-    if (animals.has(m.model)) continue;
+    if (!m.model || animals.has(m.model)) continue;
     try {
+      const url = m.model;
       const animal =
         m.format === 'fbx'
-          ? await new FBXLoader().loadAsync(m.model).then((f) => ({ scene: f, clips: f.animations }))
-          : await gltf.loadAsync(m.model).then((g) => ({ scene: g.scene, clips: g.animations }));
+          ? await new FBXLoader().loadAsync(url).then((f) => ({ scene: f, clips: f.animations }))
+          : await gltf.loadAsync(url).then((g) => ({ scene: g.scene, clips: g.animations }));
       prepareMaterials(animal.scene, true);
-      animals.set(m.model, animal);
+      animals.set(url, animal);
     } catch (error) {
       console.warn('mount unavailable', m.model, error);
     }
   }
   for (const scene of [male, female, ...parts.values()]) prepareMaterials(scene);
-  return { spec, clips: new Map(anim.animations.map((c) => [c.name, c])), bodies: { male, female }, parts, animals };
+  return { spec, vehicles, clips: new Map(anim.animations.map((c) => [c.name, c])), bodies: { male, female }, parts, animals };
 }
 
 /** Shadows on, and Phong/Lambert materials (FBX) swapped for PBR so the sky lights them consistently. */
@@ -193,7 +199,9 @@ function backTop(root: THREE.Object3D, seat: MountSpec['seat']): THREE.Vector3 {
 
 interface Mount {
   root: THREE.Object3D;
-  mixer: THREE.AnimationMixer;
+  mixer: THREE.AnimationMixer | null;
+  /** Vehicles: wheels, rotors and hover. */
+  vehicle?: Vehicle;
   idle?: THREE.AnimationAction;
   walk?: THREE.AnimationAction;
   run?: THREE.AnimationAction;
@@ -214,6 +222,10 @@ class RiggedCharacter implements SandboxCharacter {
   #state: AnimState = 'idle';
   #yaw = 0;
   #mount: Mount | null = null;
+  /** Astride (animals, bikes) or seated as on a chair (cockpits). */
+  #straddling = false;
+  /** The rider's seated height (hover craft bob around it). */
+  #seatY = 0;
   readonly #bones = new Map<string, THREE.Bone>();
   /** Riding axes in the rider's frame, measured from the sitting pose. */
   #ride: { fwd: THREE.Vector3; across: THREE.Vector3; left: number } | null = null;
@@ -252,8 +264,10 @@ class RiggedCharacter implements SandboxCharacter {
     this.#speeds = spec.speeds;
 
     const mount = look.kind === 'hero' ? spec.mounts[`t${look.tier}` as keyof CharacterSpec['mounts']] : undefined;
-    const animal = mount ? kit.animals.get(mount.model) : undefined;
+    const animal = mount?.model ? kit.animals.get(mount.model) : undefined;
     if (mount && animal) this.#mountUp(animal, mount);
+    else if (mount?.vehicle && kit.vehicles) this.#vehicleUp(kit.vehicles(mount.vehicle, mount.tint ?? look.crest));
+    this.#straddling = this.#mount !== null && (mount?.pose ?? (this.#mount.vehicle ? this.#mount.vehicle.pose : 'straddle')) === 'straddle';
     if (skeleton) for (const b of skeleton.bones) this.#bones.set(b.name, b);
     this.#play(this.#mount ? 'sit' : 'idle', 0);
     this.#mixer.update(Math.random() * 2); // desynchronise the crowd
@@ -323,6 +337,13 @@ class RiggedCharacter implements SandboxCharacter {
     this.object.add(root);
   }
 
+  /** A vehicle mount: seat from the vehicle, no clips; wheels, rotors and hover animate in update(). */
+  #vehicleUp(v: Vehicle): void {
+    v.root.position.y = 0;
+    this.object.add(v.root);
+    this.#mount = { root: v.root, mixer: null, vehicle: v, wings: [], saddle: v.seat.clone(), speeds: { walk: 1.6, run: 5 } };
+  }
+
   /** Put the rider's pelvis on the horse's back (measured, not guessed). */
   #seat(): void {
     const m = this.#mount;
@@ -333,6 +354,7 @@ class RiggedCharacter implements SandboxCharacter {
     const p = this.object.worldToLocal(pelvis.getWorldPosition(new THREE.Vector3()));
     // the pelvis bone sits mid-hip; the seat is a little below it
     this.#rider.position.set(-p.x, m.saddle.y - p.y + 0.12 / METRES_PER_TILE, m.saddle.z - p.z);
+    this.#seatY = this.#rider.position.y;
   }
 
   /**
@@ -417,17 +439,30 @@ class RiggedCharacter implements SandboxCharacter {
       this.object.rotation.y = this.#yaw;
     }
     this.#mixer.update(dt);
-    if (this.#mount) {
+    if (this.#mount && this.#straddling) {
       this.object.updateMatrixWorld(true);
       this.#straddle();
     }
-    this.#mount?.mixer.update(dt);
+    this.#mount?.mixer?.update(dt);
+    const v = this.#mount?.vehicle;
+    if (v) {
+      for (const sp of v.spinners) {
+        const turn = sp.radius ? (metres / sp.radius) * dt : (sp.rate ?? 0) * dt * (moving ? 1 : 0.4);
+        sp.obj.rotation[sp.axis] += turn;
+      }
+      if (v.hover > 0) {
+        // float at the seat's hover height (in the seat already) and bob
+        const bob = Math.sin(this.#t * 2.1) * 0.03;
+        v.root.position.y = v.hover / METRES_PER_TILE + bob;
+        this.#rider.position.y = this.#seatY + bob;
+      }
+    }
     for (const w of this.#mount?.wings ?? []) w.rotation.z = (w.userData.side as number) * (0.25 + Math.sin(this.#t * (moving ? 7 : 2)) * (moving ? 0.5 : 0.12));
   }
 
   dispose(): void {
     this.#mixer.stopAllAction();
-    this.#mount?.mixer.stopAllAction();
+    this.#mount?.mixer?.stopAllAction();
     this.object.removeFromParent();
   }
 }

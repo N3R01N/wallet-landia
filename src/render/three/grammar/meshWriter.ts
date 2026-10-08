@@ -165,6 +165,16 @@ export class MeshWriter {
     }
   }
 
+  /** A dome (half-ellipsoid) of radius r and height h on y0; faceted, like a geodesic. */
+  dome(cx: number, cz: number, y0: number, r: number, h: number, segs: number, rings: number, mat: Mat): void {
+    const P = (i: number, j: number): V3 => {
+      const th = (i / rings) * (Math.PI / 2);
+      const ph = (j / segs) * Math.PI * 2;
+      return [cx + Math.cos(ph) * r * Math.cos(th), y0 + h * Math.sin(th), cz + Math.sin(ph) * r * Math.cos(th)];
+    };
+    for (let i = 0; i < rings; i++) for (let j = 0; j < segs; j++) this.quad(P(i, j + 1), P(i, j), P(i + 1, j), P(i + 1, j + 1), mat);
+  }
+
   /** One mesh per material. */
   build(lib: MaterialLibrary): THREE.Group {
     const g = new THREE.Group();

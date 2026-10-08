@@ -12,7 +12,7 @@ import { makeRng } from '../../../util/rng.js';
 import type { SurroundingsStyle } from '../../../assets/theme.js';
 import { buildGrassWhere, buildLamps, type Lamp, type LampSet } from '../scenery.js';
 import type { MaterialLibrary } from './materials.js';
-import { buildLanterns, buildRocks, PropWriter } from './props.js';
+import { buildBeacons, buildLanterns, buildRocks, PropWriter } from './props.js';
 import { makeNoise, outside, Terrain, type Box2 } from './terrain.js';
 import type { PlantSpot, Vegetation } from './vegetation.js';
 
@@ -145,7 +145,8 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
   }
   group.add(veg.flowers(flowers, site.seed + 5));
 
-  // --- props -----------------------------------------------------------------------
+  // --- props: rustic (medieval), urban (modern) or colony (sci-fi) ----------------------
+  const kit = style.style;
   const props = new PropWriter(h, site.seed);
   for (const b of site.buildings) {
     if (b.kind === 'gate' || b.kind === 'herald' || b.kind === 'tent') continue;
@@ -154,7 +155,19 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
     const z = b.z + b.d / 2 - 0.45;
     const r = rng();
     if (!free(x, z, 0.3) || !free(x, b.z - 0.2, 0.3)) continue; // a road or a neighbour there
-    if (b.kind === 'home' || r < 0.25) props.woodpile(x, b.z - 0.2, Math.PI / 2);
+    if (kit === 'modern') {
+      if (r < 0.45) props.bin(x, z);
+      else if (r < 0.75) props.bench(x, b.z, Math.PI / 2);
+      else {
+        props.bollard(x, z);
+        props.bollard(x, z - 0.6);
+      }
+    } else if (kit === 'scifi') {
+      if (r < 0.5) {
+        props.canister(x, z);
+        if (rng() < 0.6) props.canister(x, z - 0.6);
+      } else props.crate(x, z, 0.7, rng());
+    } else if (b.kind === 'home' || r < 0.25) props.woodpile(x, b.z - 0.2, Math.PI / 2);
     else if (r < 0.6) {
       props.barrel(x, z);
       if (rng() < 0.7) props.barrel(x + side * 0.05, z - 0.4);
@@ -163,25 +176,39 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
       if (rng() < 0.6) props.crate(x, z, 0.45, rng(), 1.35);
     }
   }
-  // a well where the town has room, near the middle
+  // the town's water: a well, a fountain or a water tank, where there is room near the middle
   for (let k = 0; k < 200; k++) {
     const x = centre.x + (rng() - 0.5) * (flat.x1 - flat.x0) * 0.8;
     const z = centre.z + (rng() - 0.5) * (flat.z1 - flat.z0) * 0.8;
     const shaded = (site.plants ?? []).some((p) => Math.hypot(p.x - x, p.z - z) < 2.2);
     if (free(x, z, 1.4) && site.wear(x, z) < 0.2 && !shaded) {
-      props.well(x, z);
-      props.barrel(x + 0.9, z + 0.4);
+      if (kit === 'modern') props.fountain(x, z);
+      else if (kit === 'scifi') props.tank(x, z);
+      else {
+        props.well(x, z);
+        props.barrel(x + 0.9, z + 0.4);
+      }
       break;
     }
   }
-  // a paddock with hay in the meadow, a dry-stone wall along the fields, a signpost
+  // outside town: a paddock (rustic), a fenced park (urban) or a solar farm (colony), and field walls
   const mz = flat.z1 + 3;
   const px0 = centre.x - 24;
-  props.fence([[px0 + 6, mz], [px0, mz], [px0, mz + 8], [px0 + 13, mz + 8], [px0 + 13, mz], [px0 + 9, mz]]);
-  for (let k = 0; k < 5; k++) props.hay(px0 + 2 + rng() * 9, mz + 1.5 + rng() * 5, rng() * 3);
-  props.woodpile(px0 + 11.5, mz + 6.5, 0.3);
-  props.stoneWall([[centre.x + 8, mz + 1], [centre.x + 18, mz + 3], [centre.x + 30, mz + 2.2], [centre.x + 40, mz + 5]]);
-  props.stoneWall([[centre.x + 18, mz + 3], [centre.x + 20, mz + 14]]);
+  if (kit === 'scifi') {
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) props.solarPanel(px0 + 1.5 + i * 3, mz + 1.5 + j * 2.4);
+    props.pipeline([[centre.x + 8, mz + 1], [centre.x + 18, mz + 3], [centre.x + 30, mz + 2.2], [centre.x + 40, mz + 5]]);
+  } else {
+    props.fence([[px0 + 6, mz], [px0, mz], [px0, mz + 8], [px0 + 13, mz + 8], [px0 + 13, mz], [px0 + 9, mz]]);
+    if (kit === 'modern') {
+      for (let k = 0; k < 4; k++) props.bench(px0 + 2 + k * 3, mz + 4, 0);
+      props.fountain(px0 + 6.5, mz + 6.5);
+    } else {
+      for (let k = 0; k < 5; k++) props.hay(px0 + 2 + rng() * 9, mz + 1.5 + rng() * 5, rng() * 3);
+      props.woodpile(px0 + 11.5, mz + 6.5, 0.3);
+    }
+    props.stoneWall([[centre.x + 8, mz + 1], [centre.x + 18, mz + 3], [centre.x + 30, mz + 2.2], [centre.x + 40, mz + 5]]);
+    props.stoneWall([[centre.x + 18, mz + 3], [centre.x + 20, mz + 14]]);
+  }
   for (let k = 0; k < 100; k++) {
     const x = flat.x1 - 2 - rng() * 6;
     const z = flat.z1 - rng() * 4;
@@ -192,7 +219,8 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
   }
   group.add(props.build(lib));
 
-  const lamps = style.lamps === 'post' ? buildLamps(site.lamps) : buildLanterns(site.lamps, lib, h);
+  const lampStyle = style.lamps ?? (kit === 'modern' ? 'post' : kit === 'scifi' ? 'beacon' : 'lantern');
+  const lamps = lampStyle === 'post' ? buildLamps(site.lamps) : lampStyle === 'beacon' ? buildBeacons(site.lamps, lib, h) : buildLanterns(site.lamps, lib, h);
   group.add(lamps.group);
   return { group, lamps, heightAt: h };
 }

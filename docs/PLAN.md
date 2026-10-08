@@ -281,7 +281,13 @@ Same scope for both: **the Town view only.**
      - Buildings come from the theme's grammar, with signs, logos and the Chronicle bell intact. Woods, meadow, props and lanterns surround the town; an HDRI sky lights it by the hour (the theme's daytime sky by day).
      - Heroes and villagers are rigged people with their tier's mounts once the files load (the sprites stand in until then). Speed and heading come from how each agent moves; invisible proxies keep heroes clickable.
      - Open: ravens, heralds, bailiffs and caravans are still sprites; the 2D views keep the pixel art (baked sprites from the 3D look later); no LOD or crowd limits yet; town walkers move at about 6 m/s, so people mostly jog.
-   - Phase 6: sci-fi / modern bundles.
+   - ~~Phase 6, sci-fi and modern bundles~~ first pass done.
+     - `public/themes/modern` and `public/themes/scifi` extend medieval: 9 and 12 CC0 ambientCG materials (0.95 MB and 1.15 MB), their own building grammar (`grammar/modern.ts`, `grammar/scifi.ts`; `builder.ts` picks the style), props (urban, colony), lamps (post, beacon) and skies (day, a sunset-lit dusty world).
+     - Modern: shopfronts with brand-coloured awnings, offices, a glass bank tower, a concrete church, a container port with a gantry crane, a works with a sawtooth roof, a clock-and-mast Chronicle Tower; homes from a cardboard shelter to a glass skyscraper with a helipad.
+     - Sci-fi: panelled modules with glowing seams, domed habs and tubes, a vault, a spire, a spaceport, a comms mast for the bell; homes from a sleeping capsule to an arcology spire.
+     - Vehicle mounts built in code (`grammar/vehicles.ts`): bicycle, scooter, motorbike, helicopter, jet; hover scooter, hoverbike, heavy hoverbike, skiff, starship. Riders straddle bikes and sit in cockpits; wheels and rotors spin, hover craft bob.
+     - Format: `asphalt` role, `plaza` ground, styles `modern`/`scifi`, `beacon` lamps, vehicle mounts, partial `characters` with `extends`.
+     - Open: modern and sci-fi people still wear the medieval outfits (no CC0 outfits for these on the universal skeleton yet; the base body alone is underwear); vehicles are simple primitives; no smoke or exhaust effects.
 
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.
