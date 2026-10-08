@@ -252,7 +252,11 @@ Same scope for both: **the Town view only.**
      - Every control is also a URL parameter.
      - HDRI image-based lighting from four CC0 Poly Haven skies (`public/env`).
      - `BuildingFactory`, `buildPropMeshes` and `buildGrassWhere` extracted for reuse.
-   - Phase 2: theme bundle format (pack v2). Phase 3: rigged CC0 characters + animation state machine + mounts. Phase 4: building grammar v2 + PBR. Phase 5: terrain and surroundings. Phase 6: medieval / sci-fi / modern bundles. Phase 7: into the town.
+   - ~~Phase 3a, rigged characters~~ first pass done (medieval theme in the sandbox).
+     - `npm run assets:quaternius` turns the CC0 downloads in `assets-src/quaternius` into `public/themes/medieval` (6.3 MB): WebP textures ≤ 1024 px, a 16-clip animation subset, meshopt compression, simplified meshes (~5–25k triangles a person), repaired texture references.
+     - Runtime: base body (head cut out by bone weights) + outfit + hair on one skeleton; idle/walk/run cross-fades with speed-matched playback; turning towards travel; horse mounts per tier with the rider seated.
+     - Open: real griffin/dragon (wings are placeholders); class gear; more outfits (free kit: Peasant and Ranger); LOD/impostors for crowds; FBX→GLB for the horse.
+   - Phase 2: theme bundle format (pack v2). Phase 4: building grammar v2 + PBR. Phase 5: terrain and surroundings. Phase 6: medieval / sci-fi / modern bundles. Phase 7: into the town.
    - Known: ~450 draw calls in the sandbox (buildings are many small meshes); merge per building in Phase 4.
 
 ### Ideas for what comes next

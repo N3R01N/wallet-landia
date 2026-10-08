@@ -9,3 +9,6 @@ dist/
 # Real captures stay local: they link your addresses to each other.
 # The synthetic demo in fixtures/demo/ is committed.
 /fixtures/*.json
+
+# Raw third-party downloads (zips); only processed assets are committed.
+/assets-src/

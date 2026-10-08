@@ -34,3 +34,27 @@ test('the look sandbox renders and its controls work', async ({ page }) => {
   expect(shot.length).toBeGreaterThan(30_000);
   expect(errors).toEqual([]);
 });
+
+test('the medieval theme loads rigged characters and mounts', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error' && !/CORS|ERR_|Failed to load resource/.test(m.text())) errors.push(m.text());
+  });
+  await page.goto('/sandbox.html?theme=medieval&quality=low&anim=walk&tier=3&cam=closeup');
+  await page.waitForFunction(() => (window as unknown as { sandbox?: { ready: boolean } }).sandbox?.ready === true, null, { timeout: 90_000 });
+  const counts = await page.evaluate(() => {
+    const s = (window as unknown as { sandbox: { scene: { traverse(f: (o: { isSkinnedMesh?: boolean; isSprite?: boolean }) => void): void } } }).sandbox;
+    let skinned = 0;
+    let sprites = 0;
+    s.scene.traverse((o) => {
+      if (o.isSkinnedMesh) skinned++;
+      if (o.isSprite) sprites++;
+    });
+    return { skinned, sprites };
+  });
+  expect(counts.sprites).toBe(0); // no pixel billboards in this theme
+  expect(counts.skinned).toBeGreaterThan(12 * 4); // body/outfit/hair parts for 12 people, plus horses
+  await expect(page.locator('.note')).toContainText('Rigged CC0 characters');
+  expect(errors).toEqual([]);
+});

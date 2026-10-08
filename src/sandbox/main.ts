@@ -146,6 +146,8 @@ class Sandbox {
     this.scene.fog = new THREE.Fog(this.fallbackSky, 90, 220);
 
     this.#build();
+    this.ready = this.theme.prepare === undefined;
+    if (this.theme.prepare) void this.setTheme(this.theme.id);
     this.cameraTo(param<Cam>('cam', ['overview', 'characters', 'buildings', 'closeup'], 'overview'));
     this.#applySky();
   }
@@ -227,17 +229,34 @@ class Sandbox {
       el('strong', {}, t.name),
       el('div', {}, t.description),
       el('div', { class: 'muted' }, `Characters: ${t.characters.label}`),
-      ...(t.status === 'planned' ? [el('div', { class: 'warn' }, 'Planned — shown with the current art until its assets arrive. Needs:'), el('ul', {}, ...(t.needs ?? []).map((n) => el('li', {}, n)))] : []),
+      ...(t.status !== 'ready'
+        ? [el('div', { class: 'warn' }, t.status === 'planned' ? 'Planned — shown with the current art until its assets arrive. Needs:' : 'Partly done. Still needs:'), el('ul', {}, ...(t.needs ?? []).map((n) => el('li', {}, n)))]
+        : []),
     );
   }
 
   // --- controls ----------------------------------------------------------------
 
-  setTheme(id: string): void {
-    this.theme = THEMES.find((t) => t.id === id) ?? THEMES[0]!;
+  async setTheme(id: string): Promise<void> {
+    const theme = THEMES.find((t) => t.id === id) ?? THEMES[0]!;
+    this.theme = theme;
+    if (theme.prepare) {
+      this.#noteEl.replaceChildren(el('strong', {}, theme.name), el('div', { class: 'muted' }, 'Loading assets…'));
+      try {
+        await theme.prepare();
+      } catch (error) {
+        this.#noteEl.append(el('div', { class: 'warn' }, `Could not load: ${error instanceof Error ? error.message : String(error)}`));
+        return;
+      }
+      if (this.theme !== theme) return; // switched away meanwhile
+    }
     this.#build();
     this.#applySky();
+    this.ready = true;
   }
+
+  /** True once the current theme's assets are loaded and the stage is built (tests wait on it). */
+  ready = false;
 
   setAnim(a: AnimState): void {
     this.anim = a;
@@ -393,7 +412,7 @@ class Sandbox {
       'aside',
       { class: 'panel' },
       el('h1', {}, 'Look sandbox'),
-      select('Theme', this.theme.id, THEMES.map((t) => [t.id, t.name] as [string, string]), (v) => this.setTheme(v)),
+      select('Theme', this.theme.id, THEMES.map((t) => [t.id, t.name] as [string, string]), (v) => void this.setTheme(v)),
       this.#noteEl,
       el('h2', {}, 'Characters'),
       select<AnimState>('Animation', this.anim, [['idle', 'Idle'], ['walk', 'Walk'], ['run', 'Run']], (v) => this.setAnim(v)),

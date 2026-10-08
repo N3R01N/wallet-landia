@@ -50,7 +50,10 @@ export interface Theme {
   id: string;
   name: string;
   description: string;
-  status: 'ready' | 'planned';
+  /** ready: complete · partial: some parts real, the rest shown with the current art · planned: not started. */
+  status: 'ready' | 'partial' | 'planned';
+  /** Load the theme's assets before first use. */
+  prepare?(): Promise<void>;
   /** What a planned theme still needs. */
   needs?: string[];
   defaultSky: SkyId;
@@ -85,13 +88,31 @@ function planned(id: string, name: string, description: string, needs: string[])
   return { ...t, id, name, description, status: 'planned', needs };
 }
 
+function medieval(): Theme {
+  const theme: Theme = {
+    ...baseline(),
+    id: 'medieval',
+    name: 'Medieval (characters ready)',
+    description: 'Rigged CC0 people (Quaternius) in fantasy outfits on horses; buildings and ground still the current art.',
+    status: 'partial',
+    needs: [
+      'Building grammar v2 with PBR stone/timber/plaster (Phase 4)',
+      'Terrain, props and vegetation per theme (Phase 5)',
+      'Real griffin and dragon mounts (wings are placeholders); class gear (shield, staff, lute, bow)',
+      'More outfits: the free kit has only Peasant and Ranger',
+    ],
+    async prepare() {
+      const { loadMedievalKit, riggedProvider } = await import('./rigged.js');
+      theme.characters = riggedProvider(await loadMedievalKit());
+      delete theme.prepare; // once
+    },
+  };
+  return theme;
+}
+
 export const THEMES: Theme[] = [
   baseline(),
-  planned('medieval', 'Medieval (planned)', 'Timber and stone town, fantasy outfits, horses.', [
-    'Quaternius Universal Base Characters + Universal Animation Library + Modular Outfits (Fantasy)',
-    'Quaternius LowPoly Animated Animals (horse, donkey)',
-    'Building grammar v2 with PBR stone/timber/plaster (ambientCG)',
-  ]),
+  medieval(),
   planned('scifi', 'Sci-fi (planned)', 'Panelled hab modules, neon, drones.', [
     'Sci-fi outfits on the same universal skeleton (or KayKit alternative)',
     'Quaternius Modular Sci-Fi MegaKit or panel grammar + metal/emissive PBR',
