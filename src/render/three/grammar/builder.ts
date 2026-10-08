@@ -58,6 +58,7 @@ export class GrammarBuilder {
 
     const out: BuiltBuilding = { group, top: made.top / METRES_PER_TILE };
     if (made.bell) out.bell = made.bell;
+    if (m.smoke.length > 0) out.smoke = m.smoke.map((e) => ({ x: e.at[0] / METRES_PER_TILE, y: e.at[1] / METRES_PER_TILE, z: e.at[2] / METRES_PER_TILE, color: e.color }));
     if (made.sign && spec.kind !== 'home' && spec.kind !== 'tower') {
       // a hanging sign on a bracket, the emblem painted on both sides
       const [sx, sy, sz] = made.sign;

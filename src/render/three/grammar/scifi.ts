@@ -218,6 +218,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     for (const x of [-r.w * 0.25, r.w * 0.25]) {
       m.w.cylinder(x, r.cz - 0.4, top, 0.3, 3.2, 10, 'stone');
       m.w.cylinder(x, r.cz - 0.4, top + 3.2, 0.36, 0.25, 10, 'fire', { top: 'fire' });
+      m.smoke.push({ at: [x, top + 3.6, r.cz - 0.4], color: '#e8f4f8' });
     }
     m.box([0, 0.5, r.cz + r.d / 2 + 0.7], [1.2, 1.0, 0.9], 'stoneDark');
     m.box([0, 1.02, r.cz + r.d / 2 + 0.7], [0.9, 0.04, 0.6], 'fire');

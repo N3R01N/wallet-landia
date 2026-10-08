@@ -25,6 +25,8 @@ import { ImagePipeline, type DebugView, type Quality } from './pipeline.js';
 import { buildGrass, buildLamps, buildPropMeshes, placeLamps, type LampSet } from './scenery.js';
 import { EnvironmentController, skyForHour } from './environment.js';
 import { bundleTheme, type CharacterProvider, type SandboxCharacter, type Theme } from './themes.js';
+import type { Companion } from './grammar/companions.js';
+import { Smoke, type Emitter } from './smoke.js';
 import { tileSurfaces, townSite } from './townSite.js';
 import type { ThemeBundle } from '../../assets/themeBundles.js';
 import { currentHour } from '../overlay.js';
@@ -52,6 +54,33 @@ interface Person {
   shadow: boolean;
 }
 
+/**
+ * Ripples on still water: a few moving sine waves tilt the normal, so the sky
+ * reflection (the theme's HDRI) shimmers. Shares the wind's clock.
+ */
+function rippling(mat: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uWaterTime = wind.uTime;
+    shader.vertexShader = shader.vertexShader
+      .replace('void main() {', 'varying vec3 vWaterPos;\nvoid main() {')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWaterPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader.replace('void main() {', 'varying vec3 vWaterPos;\nuniform float uWaterTime;\nvoid main() {').replace(
+      '#include <normal_fragment_maps>',
+      `#include <normal_fragment_maps>
+{
+  vec2 p = vWaterPos.xz;
+  float t = uWaterTime;
+  float dx = cos(p.x * 1.7 + t * 1.3) * 0.5 + cos((p.x + p.y) * 2.9 - t * 1.9) * 0.3 + cos(p.x * 5.3 + p.y * 2.1 + t * 2.7) * 0.15;
+  float dz = cos(p.y * 1.9 - t * 1.1) * 0.5 + cos((p.y - p.x) * 3.1 + t * 1.7) * 0.3 + cos(p.y * 4.7 - p.x * 1.3 - t * 2.3) * 0.15;
+  vec3 wn = normalize(vec3(dx * 0.09, 1.0, dz * 0.09));
+  normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
+}`,
+    );
+  };
+  mat.customProgramCacheKey = () => 'water-ripples';
+  return mat;
+}
+
 /** Above this many tiles per second a rigged person runs. */
 const RUN_FROM = 1.7;
 /**
@@ -68,6 +97,8 @@ interface BuildingInfo {
   top: number;
   /** Where the sign hangs (world tiles; y is up) and whose logo goes on it. */
   sign?: { x: number; y: number; z: number; url: string };
+  /** Chimney and stack tops (world tiles). */
+  smoke?: Emitter[];
 }
 
 export class Renderer3D implements WorldView {
@@ -131,11 +162,16 @@ export class Renderer3D implements WorldView {
   /** Rigged people, once the theme's characters have loaded. */
   #people: CharacterProvider | null = null;
   #persons = new Map<string, Person>();
+  /** Themed towns: 3D couriers and caravans in place of their sprites. */
+  #couriers = new Map<string, { c: Companion; x: number; y: number; yaw: number }>();
+  #caravans = new Map<string, { c: Companion; tier: number; x: number; y: number }>();
   #proxyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.8, 8).translate(0, 0.9, 0);
   #proxyMat = new THREE.MeshBasicMaterial({ visible: false });
   #env: EnvironmentController | null = null;
+  /** Smoke and steam from the town's chimneys and stacks. */
+  #smoke: Smoke | null = null;
   /** Deep, glossy water that mirrors the sky (themed towns are lit by an HDRI). */
-  #themedWater = new THREE.MeshStandardMaterial({ color: '#27506a', roughness: 0.05, metalness: 0.15, transparent: true, opacity: 0.9 });
+  #themedWater = rippling(new THREE.MeshStandardMaterial({ color: '#27506a', roughness: 0.05, metalness: 0.15, transparent: true, opacity: 0.9 }));
 
   constructor(sim: Sim, quality: Quality = 'medium') {
     this.#sim = sim;
@@ -156,6 +192,7 @@ export class Renderer3D implements WorldView {
     this.#pipeline = new ImagePipeline(this.#gl, this.#scene, this.#camera, quality);
     this.#pipeline.aoExclusions = () => {
       const out: THREE.Object3D[] = [this.#agentShadows];
+      if (this.#smoke) out.push(this.#smoke.points);
       for (const p of this.#sprites.values()) out.push(p.body, p.caravan);
       if (this.#lamps) out.push(this.#lamps.pools);
       return out;
@@ -235,6 +272,10 @@ export class Renderer3D implements WorldView {
   #clearPersons(): void {
     for (const p of this.#persons.values()) p.char.dispose();
     this.#persons.clear();
+    for (const c of this.#couriers.values()) c.c.object.removeFromParent();
+    this.#couriers.clear();
+    for (const c of this.#caravans.values()) c.c.object.removeFromParent();
+    this.#caravans.clear();
   }
 
   setQuality(q: Quality): void {
@@ -360,6 +401,12 @@ export class Renderer3D implements WorldView {
       this.#buildings.push(info);
     }
     this.#mergeBuildings();
+    const emitters = this.#buildings.flatMap((b) => b.smoke ?? []);
+    this.#smoke = emitters.length > 0 ? new Smoke(emitters) : null;
+    if (this.#smoke) {
+      this.#world.add(this.#smoke.points);
+      this.#lastSize = ''; // size the puffs to the viewport
+    }
 
     const theme = this.#theme;
     if (theme?.surroundings) {
@@ -478,6 +525,7 @@ export class Renderer3D implements WorldView {
     });
     if (built.bell) this.#bell = built.bell;
     const info: BuildingInfo = { placed: b, group: g, top: built.top };
+    if (built.smoke) info.smoke = built.smoke.map((e) => ({ ...e, x: g.position.x + e.x, y: g.position.y + e.y, z: g.position.z + e.z }));
     if (built.sign) info.sign = { ...built.sign, x: g.position.x + built.sign.x, z: g.position.z + built.sign.z };
     return info;
   }
@@ -531,7 +579,7 @@ export class Renderer3D implements WorldView {
     const ranks = new Map<string, { dist: number; rank: number }>();
     if (this.#people) {
       const near = this.#sim.agents
-        .filter((a) => a.kind === 'hero' || a.kind === 'villager')
+        .filter((a) => a.kind !== 'raven')
         .map((a) => [a.id, Math.hypot(a.x - cam.x, a.alt - cam.y, a.y - cam.z)] as const)
         .sort((x, y) => x[1] - y[1]);
       near.forEach(([id, d], i) => ranks.set(id, { dist: i < RIG.max ? d : Infinity, rank: i }));
@@ -548,10 +596,18 @@ export class Renderer3D implements WorldView {
       }
       this.#drawAgent(a, pair.body, pair.caravan);
       // themed towns: a rigged person stands in for the hero's or villager's sprite
-      const person = this.#people && (a.kind === 'hero' || a.kind === 'villager') ? this.#person(a) : null;
+      const person = this.#people && a.kind !== 'raven' ? this.#person(a) : null;
       const rigged = person !== null && this.#lod(person, ranks.get(a.id) ?? { dist: Infinity, rank: Infinity });
       pair.body.visible = !rigged;
       if (person) this.#movePerson(person, a, dt);
+      const companions = this.#theme?.companions;
+      if (companions && this.#people) {
+        if (a.kind === 'raven') {
+          this.#moveCourier(a, dt, companions.courier);
+          pair.body.visible = false;
+        }
+        if (this.#moveCaravan(a, dt, companions.caravan)) pair.caravan.visible = false;
+      }
     }
     this.#agentShadows.instanceMatrix.needsUpdate = true;
     for (const [id, pair] of this.#sprites) {
@@ -566,6 +622,16 @@ export class Renderer3D implements WorldView {
       p.char.dispose();
       this.#persons.delete(id);
     }
+    for (const [id, c] of this.#couriers) {
+      if (seen.has(id)) continue;
+      c.c.object.removeFromParent();
+      this.#couriers.delete(id);
+    }
+    for (const [id, c] of this.#caravans) {
+      if (seen.has(id)) continue;
+      c.c.object.removeFromParent();
+      this.#caravans.delete(id);
+    }
   }
 
   #person(a: Agent): Person | null {
@@ -574,10 +640,12 @@ export class Renderer3D implements WorldView {
     let p = this.#persons.get(a.id);
     if (p === undefined) {
       const hero = a.kind === 'hero' ? a.hero : undefined;
+      // heralds and bailiffs dress like a bard and a paladin, on foot
+      const npc = a.kind === 'herald' ? 'bard' : a.kind === 'bailiff' ? 'paladin' : null;
       const char = people.create({
         id: a.id,
-        kind: hero ? 'hero' : 'villager',
-        cls: hero ? this.classOf(hero.address) : 'adventurer',
+        kind: hero || npc ? 'hero' : 'villager',
+        cls: hero ? this.classOf(hero.address) : (npc ?? 'adventurer'),
         tier: hero?.tier ?? 0,
         crest: hero ? crestColors(hero.address)[0] : '#888888',
         seed: hashString(hero?.address ?? a.id),
@@ -596,6 +664,51 @@ export class Renderer3D implements WorldView {
       this.#persons.set(a.id, p);
     }
     return p;
+  }
+
+  /** The courier (raven or drone) flying with its agent. */
+  #moveCourier(a: Agent, dt: number, make: () => Companion): void {
+    let c = this.#couriers.get(a.id);
+    if (!c) {
+      c = { c: make(), x: a.x, y: a.y, yaw: 0 };
+      this.#scene.add(c.c.object);
+      this.#couriers.set(a.id, c);
+    }
+    const dx = a.x - c.x;
+    const dz = a.y - c.y;
+    const speed = dt > 0 ? Math.hypot(dx, dz) / dt : 0;
+    if (Math.hypot(dx, dz) > 1e-4) c.yaw = Math.atan2(dx, dz);
+    c.x = a.x;
+    c.y = a.y;
+    c.c.object.position.set(a.x, a.alt + 0.4 + Math.sin(a.phase) * 0.08, a.y);
+    c.c.object.rotation.y = c.yaw;
+    c.c.update(dt, speed);
+  }
+
+  /** A hero's caravan, following its trail. Returns whether one is shown. */
+  #moveCaravan(a: Agent, dt: number, make: (tier: Tier, crest: string) => Companion): boolean {
+    const back = a.trail[a.flying ? 6 : 9];
+    const tier = a.kind === 'hero' && a.carrying !== null && a.carrying > 0 ? a.carrying : 0;
+    let c = this.#caravans.get(a.id);
+    if (!back || tier === 0) {
+      if (c) c.c.object.visible = false;
+      return false;
+    }
+    if (!c || c.tier !== tier) {
+      c?.c.object.removeFromParent();
+      c = { c: make(tier as Tier, a.hero ? crestColors(a.hero.address)[0] : '#a0522d'), tier, x: back.x, y: back.y };
+      this.#scene.add(c.c.object);
+      this.#caravans.set(a.id, c);
+    }
+    const speed = dt > 0 ? Math.hypot(back.x - c.x, back.y - c.y) / dt : 0;
+    c.x = back.x;
+    c.y = back.y;
+    c.c.object.visible = true;
+    c.c.object.position.set(back.x, a.alt * 0.6, back.y);
+    // face the leader
+    if (Math.hypot(a.x - back.x, a.y - back.y) > 0.05) c.c.object.rotation.y = Math.atan2(a.x - back.x, a.y - back.y);
+    c.c.update(dt, speed);
+    return true;
   }
 
   /** Rigged or sprite, shadows or not, for this frame. `dist` is Infinity past the cap; `rank` 0 is the nearest. */
@@ -700,6 +813,7 @@ export class Renderer3D implements WorldView {
       this.#pipeline.setSize(w, h, dpr);
       this.#camera.aspect = w / h;
       this.#camera.updateProjectionMatrix();
+      this.#smoke?.setViewport(h * dpr, this.#camera.fov);
       this.canvas.width = Math.round(w * dpr);
       this.canvas.height = Math.round(h * dpr);
     }
@@ -764,6 +878,7 @@ export class Renderer3D implements WorldView {
     this.#spriteTint.setRGB(1, 1, 1).lerp(new THREE.Color('#7f88b8'), night * 0.85).lerp(new THREE.Color('#9a9aa6'), gloom * 0.5);
     for (const m of this.#spriteMats.values()) m.color.copy(this.#spriteTint);
     this.#lamps?.setNight(night);
+    this.#smoke?.setNight(night);
     this.#pipeline.setNight(Math.max(night, gloom * 0.5));
     this.#waterMat.opacity = 0.8 + Math.sin(sim.elapsed * 1.3) * 0.06;
     // Wind: a breeze, rising with the storm.

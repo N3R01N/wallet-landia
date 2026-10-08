@@ -18,6 +18,7 @@ import { loadThemeBundles, type ThemeBundle } from '../../assets/themeBundles.js
 import type { LoadedPack } from '../../assets/registry.js';
 import { medievalSurroundings, type Site, type Surroundings } from './grammar/surroundings.js';
 import { Vegetation } from './grammar/vegetation.js';
+import { buildCaravan, buildCourier, type Companion } from './grammar/companions.js';
 import type { SkyId } from './environment.js';
 import { spriteCharacters } from './spriteCharacters.js';
 
@@ -72,6 +73,11 @@ export interface Theme {
   material(color: string): THREE.Material;
   /** A textured ground surface (its UVs are in metres); flat colours otherwise. */
   groundMaterial?(which: keyof GroundStyle | 'plaza'): THREE.Material;
+  /** The courier and the caravans in 3D, in the theme's style (else sprites). */
+  companions?: {
+    courier(): Companion;
+    caravan(tier: Tier, crest: string): Companion;
+  };
   /** Terrain, vegetation, props and lamps around a site; the flat-colour meadow otherwise. */
   surroundings?(site: Site): Surroundings;
 }
@@ -107,6 +113,7 @@ export function bundleTheme(b: ThemeBundle): Theme {
   let veg: Vegetation | undefined;
   const ground: Record<'grass' | 'road' | 'plaza' | 'path', MatKey> = { grass: 'grass', road: 'cobbles', path: 'dirt', plaza: spec.ground?.road ?? 'cobbles', ...spec.ground };
   const base = baseline();
+  const style = spec.surroundings?.style ?? spec.buildings?.style ?? 'medieval';
   const theme: Theme = {
     ...base,
     id: b.id,
@@ -120,6 +127,10 @@ export function bundleTheme(b: ThemeBundle): Theme {
     material: (c) => factory.mat(c),
     groundMaterial: (which) => lib.get(ground[which]),
     surroundings: (site) => medievalSurroundings(site, lib, (veg ??= new Vegetation(lib)), spec.surroundings),
+    companions: {
+      courier: () => buildCourier(style, lib),
+      caravan: (tier, crest) => buildCaravan(style, tier, lib, crest),
+    },
   };
   if (spec.notes) theme.needs = spec.notes;
   const characters = spec.characters;

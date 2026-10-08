@@ -38,6 +38,8 @@ export interface BuiltBuilding {
   sign?: { x: number; y: number; z: number; url: string };
   /** The Chronicle bell's pivot, so the renderer can swing it. */
   bell?: THREE.Object3D;
+  /** Chimneys and stacks: where smoke rises (local to the group, tiles) and its colour. */
+  smoke?: { x: number; y: number; z: number; color: string }[];
 }
 
 export class BuildingFactory {

@@ -27,8 +27,8 @@ export interface Vehicle {
   spinners: { obj: THREE.Object3D; axis: 'x' | 'y' | 'z'; radius?: number; rate?: number }[];
 }
 
-const paints = new Map<string, THREE.MeshStandardMaterial>();
-function paint(color: string, metal = 0.35, rough = 0.32): THREE.MeshStandardMaterial {
+export const paints = new Map<string, THREE.MeshStandardMaterial>();
+export function paint(color: string, metal = 0.35, rough = 0.32): THREE.MeshStandardMaterial {
   const key = `${color}|${metal}|${rough}`;
   let m = paints.get(key);
   if (!m) {
@@ -37,7 +37,7 @@ function paint(color: string, metal = 0.35, rough = 0.32): THREE.MeshStandardMat
   }
   return m;
 }
-const glow = (color: string): THREE.MeshStandardMaterial => {
+export const glow = (color: string): THREE.MeshStandardMaterial => {
   const key = `glow|${color}`;
   let m = paints.get(key);
   if (!m) {
@@ -47,7 +47,7 @@ const glow = (color: string): THREE.MeshStandardMaterial => {
   return m;
 };
 
-class Kit {
+export class Kit {
   readonly g = new THREE.Group();
   constructor(readonly lib: MaterialLibrary) {}
 

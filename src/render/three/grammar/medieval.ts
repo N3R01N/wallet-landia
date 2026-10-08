@@ -62,6 +62,8 @@ export interface StoreyOpts {
 /** The grammar's parts, writing into one MeshWriter. */
 export class Mason {
   readonly w = new MeshWriter();
+  /** Where smoke (or steam) rises, in metres; colour as a hex. */
+  readonly smoke: { at: V3; color: string }[] = [];
   readonly rng: () => number;
 
   constructor(seed: number) {
@@ -240,6 +242,7 @@ export class Mason {
     this.box([x, y0 + h + 0.06, z], [0.7, 0.12, 0.7], 'stoneDark');
     // the flue: soot by day, a glow at night when the forge burns
     this.box([x, y0 + h + 0.125, z], [0.34, 0.02, 0.34], fire ? 'fire' : 'iron');
+    this.smoke.push({ at: [x, y0 + h + 0.3, z], color: fire ? '#6a6460' : '#9a948c' });
   }
 
   /** A round tower: walls, slit windows, a cone roof. Returns the roof top. */

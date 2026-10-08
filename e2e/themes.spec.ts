@@ -44,6 +44,18 @@ test('a rigged hero in a themed town answers hover and click', async ({ page }) 
   // a performance budget for a themed town (merged buildings, people LOD, far woods without shadows)
   const stats = await page.evaluate(() => (window as unknown as { town3d: { stats(): { calls: number; triangles: number } } }).town3d.stats());
   expect(stats.calls).toBeLessThan(800);
+  // smoke over the chimneys; no pixel-art people left near the camera (rigged or 3D instead)
+  const look = await page.evaluate(() => {
+    let smoke = false;
+    let sprites = 0;
+    (window as unknown as { town3d: { debugScene(): { traverse(f: (o: { name: string; visible: boolean; isSprite?: boolean; userData: { agent?: string } }) => void): void } } }).town3d.debugScene().traverse((o) => {
+      if (o.name === 'smoke') smoke = true;
+      if (o.isSprite && o.visible && o.userData.agent) sprites++;
+    });
+    return { smoke, sprites };
+  });
+  expect(look.smoke).toBe(true);
+  expect(look.sprites).toBeLessThanOrEqual(2);
   expect(stats.triangles).toBeLessThan(1_200_000);
   await page.keyboard.press('Space');
   await expect(page.locator('.btn[title^="Play / pause"]')).toHaveText('▶');

@@ -204,6 +204,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     }
     m.w.cylinder(r.w / 2 - 0.5, r.cz + 0.6, 0, 0.42, 12, 14, 'stone');
     m.w.cylinder(r.w / 2 - 0.5, r.cz + 0.6, 11.6, 0.5, 0.4, 14, 'stoneDark', { top: 'fire' });
+    m.smoke.push({ at: [r.w / 2 - 0.5, 12.2, r.cz + 0.6], color: '#5a5654' });
     return { top: 12, sign: [r.w / 2 + 0.1, 3.0, r.cz + r.d / 2 + 0.4] };
   },
   /** A food truck with its hatch open. */
