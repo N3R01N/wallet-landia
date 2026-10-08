@@ -70,5 +70,13 @@ test('the medieval theme loads rigged characters and mounts', async ({ page }) =
     null,
     { timeout: 60_000 },
   );
+  // surroundings: terrain, woods, props
+  const names = await page.evaluate(() => {
+    const s = (window as unknown as { sandbox: { scene: { traverse(f: (o: { name: string }) => void): void } } }).sandbox;
+    const seen = new Set<string>();
+    s.scene.traverse((o) => seen.add(o.name));
+    return [...seen];
+  });
+  expect(names).toEqual(expect.arrayContaining(['terrain', 'foliage-oak', 'foliage-fir', 'bark', 'props', 'rocks', 'flowers']));
   expect(errors).toEqual([]);
 });

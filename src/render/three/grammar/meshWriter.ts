@@ -101,6 +101,32 @@ export class MeshWriter {
     if (!skip.has('bottom')) this.quad(t(-hx, -hy, -hz), t(hx, -hy, -hz), t(hx, -hy, hz), t(-hx, -hy, hz), mat);
   }
 
+  /** A square-section beam from a to b (rails, logs, braces), its top kept up. */
+  beam(a: V3, b: V3, width: number, height: number, mat: Mat): void {
+    const A = new THREE.Vector3(...a);
+    const B = new THREE.Vector3(...b);
+    const x = new THREE.Vector3().subVectors(B, A);
+    const len = x.length();
+    if (len < 1e-6) return;
+    x.normalize();
+    const z = new THREE.Vector3().crossVectors(x, UP);
+    if (z.lengthSq() < 1e-6) z.set(0, 0, 1);
+    z.normalize();
+    const y = new THREE.Vector3().crossVectors(z, x).normalize();
+    const c = A.add(B).multiplyScalar(0.5);
+    const [hx, hy, hz] = [len / 2, height / 2, width / 2];
+    const t = (i: number, j: number, k: number): V3 => {
+      const v = c.clone().addScaledVector(x, i * hx).addScaledVector(y, j * hy).addScaledVector(z, k * hz);
+      return [v.x, v.y, v.z];
+    };
+    this.quad(t(-1, -1, 1), t(1, -1, 1), t(1, 1, 1), t(-1, 1, 1), mat);
+    this.quad(t(1, -1, -1), t(-1, -1, -1), t(-1, 1, -1), t(1, 1, -1), mat);
+    this.quad(t(-1, 1, 1), t(1, 1, 1), t(1, 1, -1), t(-1, 1, -1), mat);
+    this.quad(t(-1, -1, -1), t(1, -1, -1), t(1, -1, 1), t(-1, -1, 1), mat);
+    this.quad(t(1, -1, 1), t(1, -1, -1), t(1, 1, -1), t(1, 1, 1), mat);
+    this.quad(t(-1, -1, -1), t(-1, -1, 1), t(-1, 1, 1), t(-1, 1, -1), mat);
+  }
+
   /**
    * A planar polygon given thickness: top face (offset outward), the
    * underside (the soffit you see under the eaves), and the edges (fascia).

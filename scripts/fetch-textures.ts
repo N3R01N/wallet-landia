@@ -31,6 +31,9 @@ export const MATERIALS: Record<string, string> = {
   grass: 'Grass004',
   dirt: 'Ground103',
   cloth: 'Fabric061',
+  bark: 'Bark014',
+  rock: 'Rock030',
+  forestFloor: 'Ground037',
 };
 
 async function download(id: string): Promise<Buffer> {

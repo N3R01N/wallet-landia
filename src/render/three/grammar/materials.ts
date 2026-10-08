@@ -20,6 +20,9 @@ export type MatKey =
   | 'grass'
   | 'dirt'
   | 'cloth'
+  | 'bark'
+  | 'rock'
+  | 'forestFloor'
   | 'glass'
   | 'fire'
   | 'iron'
@@ -39,13 +42,16 @@ export const TEX_SIZE: Record<MatKey, number> = {
   grass: 3,
   dirt: 3,
   cloth: 1.2,
+  bark: 1.2,
+  rock: 2.5,
+  forestFloor: 3,
   glass: 1,
   fire: 1,
   iron: 1,
   gold: 1,
 };
 
-const TEXTURED = new Set<MatKey>(['plaster', 'stone', 'stoneDark', 'timber', 'planks', 'roofTiles', 'roofSlate', 'thatch', 'cobbles', 'grass', 'dirt', 'cloth']);
+const TEXTURED = new Set<MatKey>(['plaster', 'stone', 'stoneDark', 'timber', 'planks', 'roofTiles', 'roofSlate', 'thatch', 'cobbles', 'grass', 'dirt', 'cloth', 'bark', 'rock', 'forestFloor']);
 
 export class MaterialLibrary {
   readonly #base: string;
@@ -62,7 +68,7 @@ export class MaterialLibrary {
     this.fire = fire ?? new THREE.MeshStandardMaterial({ color: '#ff8a2a', emissive: new THREE.Color('#ff7a1a'), emissiveIntensity: 1.4 });
   }
 
-  #tex(key: MatKey, map: 'color' | 'normal' | 'roughness'): THREE.Texture {
+  tex(key: MatKey, map: 'color' | 'normal' | 'roughness'): THREE.Texture {
     const id = `${key}/${map}`;
     let t = this.#textures.get(id);
     if (t === undefined) {
@@ -84,9 +90,9 @@ export class MaterialLibrary {
     if (m === undefined) {
       if (TEXTURED.has(key)) {
         m = new THREE.MeshStandardMaterial({
-          map: this.#tex(key, 'color'),
-          normalMap: this.#tex(key, 'normal'),
-          roughnessMap: this.#tex(key, 'roughness'),
+          map: this.tex(key, 'color'),
+          normalMap: this.tex(key, 'normal'),
+          roughnessMap: this.tex(key, 'roughness'),
           roughness: 1,
           color: tint ? new THREE.Color(tint) : new THREE.Color('#ffffff'),
         });

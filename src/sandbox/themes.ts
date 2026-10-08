@@ -14,6 +14,8 @@ import type { BuildingSpec, BuiltBuilding } from '../render/three/buildingFactor
 import { BuildingFactory } from '../render/three/buildingFactory.js';
 import { MedievalBuilder } from '../render/three/grammar/medieval.js';
 import { MaterialLibrary, TEX_SIZE, type MatKey } from '../render/three/grammar/materials.js';
+import { medievalSurroundings, type Site, type Surroundings } from '../render/three/grammar/surroundings.js';
+import { Vegetation } from '../render/three/grammar/vegetation.js';
 import type { SkyId } from '../render/three/environment.js';
 import { spriteCharacters } from './characters.js';
 
@@ -68,6 +70,8 @@ export interface Theme {
   material(color: string): THREE.Material;
   /** A textured ground surface (material plus metres per texture repeat); flat colours otherwise. */
   groundMaterial?(which: keyof GroundStyle): { material: THREE.Material; size: number };
+  /** Terrain, vegetation, props and lamps around a site; the flat-colour meadow otherwise. */
+  surroundings?(site: Site): Surroundings;
 }
 
 function baseline(): Theme {
@@ -96,15 +100,15 @@ function medieval(): Theme {
   const factory = new BuildingFactory();
   const lib = new MaterialLibrary('/themes/medieval/materials');
   const builder = new MedievalBuilder(lib, factory);
+  let veg: Vegetation | undefined;
   const GROUND: Record<keyof GroundStyle, MatKey> = { grass: 'grass', road: 'cobbles', path: 'dirt' };
   const theme: Theme = {
     ...baseline(),
     id: 'medieval',
     name: 'Medieval',
-    description: 'Rigged CC0 people (Quaternius) in fantasy outfits on horses; grammar-built stone, timber and plaster buildings with CC0 PBR textures (ambientCG).',
+    description: 'Rigged CC0 people (Quaternius) in fantasy outfits on horses; grammar-built stone, timber and plaster buildings with CC0 PBR textures (ambientCG); hills, woods, meadow and props around them.',
     status: 'partial',
     needs: [
-      'Terrain, props and vegetation per theme (Phase 5)',
       'Real griffin and dragon mounts (wings are placeholders); class gear (shield, staff, lute, bow)',
       'More outfits: the free kit has only Peasant and Ranger',
     ],
@@ -113,6 +117,7 @@ function medieval(): Theme {
     windowMaterial: lib.glass,
     fireMaterial: lib.fire,
     groundMaterial: (which) => ({ material: lib.get(GROUND[which]), size: TEX_SIZE[GROUND[which]] }),
+    surroundings: (site) => medievalSurroundings(site, lib, (veg ??= new Vegetation(lib))),
     async prepare() {
       const { loadMedievalKit, riggedProvider } = await import('./rigged.js');
       theme.characters = riggedProvider(await loadMedievalKit());

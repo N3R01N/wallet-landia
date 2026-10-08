@@ -24,6 +24,7 @@ import { wind } from '../render/three/wind.js';
 import { nightFactor, setHour } from '../render/overlay.js';
 import type { PlacedKind } from '../world/layout.js';
 import type { Prop } from '../render/ground.js';
+import type { Site } from '../render/three/grammar/surroundings.js';
 import { THEMES, type AnimState, type CharacterLook, type SandboxCharacter, type Theme } from './themes.js';
 import { setSpriteTint } from './characters.js';
 import { el } from '../ui/dom.js';
@@ -73,6 +74,31 @@ function param<T extends string>(name: string, allowed: readonly T[], fallback: 
   const v = new URLSearchParams(location.search).get(name);
   return v !== null && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
 }
+
+/** Distance from a point to an axis-aligned box (0 inside). */
+const boxDist = (x: number, z: number, cx: number, cz: number, hw: number, hd: number): number => Math.hypot(Math.max(Math.abs(x - cx) - hw, 0), Math.max(Math.abs(z - cz) - hd, 0));
+
+/** The sandbox as a site for a theme's surroundings: rows of buildings, their streets and the track. */
+function sandboxSite(lamps: { x: number; y: number }[]): Site {
+  const roads = ROWS.map((r) => ({ cx: 0, cz: r.z + 2.6, hw: (SPACING * r.kinds.length + 4) / 2, hd: 0.7 }));
+  const buildings = ROWS.flatMap((r) => r.kinds.map((k, i) => ({ x: (i - (r.kinds.length - 1) / 2) * SPACING, z: r.z, w: 3, d: 3, kind: k.kind })));
+  const trackDist = (x: number, z: number): number => Math.max(0, Math.abs(Math.hypot((x - TRACK.cx) / TRACK.rx, (z - TRACK.cz) / TRACK.rz) - 1) - 0.08) * TRACK.rz * 1.6;
+  const roadDist = (x: number, z: number): number => Math.min(...roads.map((r) => boxDist(x, z, r.cx, r.cz, r.hw, r.hd)));
+  const buildingDist = (x: number, z: number): number => Math.min(...buildings.map((b) => boxDist(x, z, b.x, b.z, b.w / 2, b.d / 2)));
+  return {
+    flat: { x0: -27, x1: 27, z0: -23, z1: 13 },
+    taken: (x, z) => roadDist(x, z) < 0.15 || trackDist(x, z) < 0.1 || buildingDist(x, z) < 0.2,
+    wear: (x, z) => Math.max(1 - smoothstep(roadDist(x, z), 0, 0.9), 1 - smoothstep(trackDist(x, z), 0, 0.5), 0.55 * (1 - smoothstep(buildingDist(x, z), 0, 0.6))),
+    lamps,
+    buildings,
+    seed: 5,
+  };
+}
+
+const smoothstep = (x: number, e0: number, e1: number): number => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
 
 class Sandbox {
   readonly renderer: THREE.WebGLRenderer;
@@ -184,7 +210,7 @@ class Sandbox {
     };
 
     // ground, streets in front of each row, the walking track
-    flat(70, 50, 'grass', 0, -5, 0);
+    if (!t.surroundings) flat(70, 50, 'grass', 0, -5, 0);
     for (const row of ROWS) flat(SPACING * row.kinds.length + 4, 1.4, 'road', 0, row.z + 2.6);
     const track = surface(new THREE.RingGeometry(0.92, 1.08, 64).rotateX(-Math.PI / 2).scale(TRACK.rx, 1, TRACK.rz).translate(TRACK.cx, 0, TRACK.cz), 'path', t.ground.path);
     track.position.y = 0.015;
@@ -209,18 +235,13 @@ class Sandbox {
       });
     }
 
-    // scenery: a wood behind the homes, a few trees on the meadow, grass, lamps
-    const rng = makeRng(5);
-    const props: Prop[] = [];
-    for (let i = 0; i < 60; i++) props.push({ x: -30 + rng() * 60, y: -26 + rng() * 4, kind: rng() < 0.5 ? 'pine' : 'tree' });
-    for (let i = 0; i < 18; i++) props.push({ x: -30 + rng() * 60, y: 12 + rng() * 6, kind: (['tree', 'bush', 'rock', 'pine'] as const)[Math.floor(rng() * 4)]! });
-    for (const o of buildPropMeshes(props, (c) => t.material(c))) this.#stage.add(o);
-    const onRoad = (x: number, z: number): boolean => ROWS.some((r) => Math.abs(z - (r.z + 2.6)) < 0.9) || ROWS.some((r) => Math.abs(z - r.z) < 1.8 && Math.abs(x) < (SPACING * r.kinds.length) / 2);
-    const onTrack = (x: number, z: number): boolean => Math.abs(Math.hypot((x - TRACK.cx) / TRACK.rx, (z - TRACK.cz) / TRACK.rz) - 1) < 0.12;
-    this.#stage.add(buildGrassWhere({ x: -30, y: -24, w: 60, h: 44 }, (x, z) => !onRoad(x, z) && !onTrack(x, z), 4500));
     const lamps = ROWS.flatMap((r) => [-2, -1, 0, 1, 2].map((i) => ({ x: i * SPACING * 2 + SPACING / 2, y: r.z + 3.6 })));
-    this.#lamps = buildLamps(lamps);
-    this.#stage.add(this.#lamps.group);
+    if (t.surroundings) {
+      // the theme dresses the site: terrain, woods, meadow, props, its own lamps
+      const s = t.surroundings(sandboxSite(lamps));
+      this.#stage.add(s.group);
+      this.#lamps = s.lamps;
+    } else this.#meadow(t, lamps);
 
     // characters: one hero per class at the chosen tier, and some villagers
     const looks: CharacterLook[] = [
@@ -234,6 +255,20 @@ class Sandbox {
       this.#characters.push({ char, offset: (i / looks.length) * Math.PI * 2, lane: i % 2 === 0 ? 0 : 0.25 });
     });
     this.#note();
+  }
+
+  /** The baseline scenery: a wood behind the homes, a few trees on the meadow, grass, lamps. */
+  #meadow(t: Theme, lamps: { x: number; y: number }[]): void {
+    const rng = makeRng(5);
+    const props: Prop[] = [];
+    for (let i = 0; i < 60; i++) props.push({ x: -30 + rng() * 60, y: -26 + rng() * 4, kind: rng() < 0.5 ? 'pine' : 'tree' });
+    for (let i = 0; i < 18; i++) props.push({ x: -30 + rng() * 60, y: 12 + rng() * 6, kind: (['tree', 'bush', 'rock', 'pine'] as const)[Math.floor(rng() * 4)]! });
+    for (const o of buildPropMeshes(props, (c) => t.material(c))) this.#stage.add(o);
+    const onRoad = (x: number, z: number): boolean => ROWS.some((r) => Math.abs(z - (r.z + 2.6)) < 0.9) || ROWS.some((r) => Math.abs(z - r.z) < 1.8 && Math.abs(x) < (SPACING * r.kinds.length) / 2);
+    const onTrack = (x: number, z: number): boolean => Math.abs(Math.hypot((x - TRACK.cx) / TRACK.rx, (z - TRACK.cz) / TRACK.rz) - 1) < 0.12;
+    this.#stage.add(buildGrassWhere({ x: -30, y: -24, w: 60, h: 44 }, (x, z) => !onRoad(x, z) && !onTrack(x, z), 4500));
+    this.#lamps = buildLamps(lamps);
+    this.#stage.add(this.#lamps.group);
   }
 
   #note(): void {

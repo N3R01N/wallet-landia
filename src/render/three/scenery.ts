@@ -38,7 +38,7 @@ export function placeLamps(plan: TownPlan): Lamp[] {
   return lamps;
 }
 
-function radialTexture(): THREE.CanvasTexture {
+export function radialTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const g = c.getContext('2d');
@@ -113,6 +113,8 @@ export function buildGrassWhere(
   accept: (x: number, y: number) => boolean,
   count = 1800,
   darker: (x: number, y: number) => boolean = () => false,
+  heightAt: (x: number, y: number) => number = () => 0,
+  tone: { hue: number; sat: number; light: number } = { hue: 0.27, sat: 0.5, light: 0.36 },
 ): THREE.InstancedMesh {
   const blade = (angle: number): THREE.BufferGeometry => {
     const g = new THREE.BufferGeometry();
@@ -145,11 +147,11 @@ export function buildGrassWhere(
     if (!accept(x, y)) continue;
     const s = 0.7 + rng() * 0.8;
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI * 2);
-    m4.compose(new THREE.Vector3(x, 0, y), q, new THREE.Vector3(s, s * (0.8 + rng() * 0.6), s));
+    m4.compose(new THREE.Vector3(x, heightAt(x, y), y), q, new THREE.Vector3(s, s * (0.8 + rng() * 0.6), s));
     mesh.setMatrixAt(n, m4);
     // clumps: low-frequency colour variation across the lawn
     const clump = Math.sin(x * 0.35) * Math.cos(y * 0.41) * 0.5 + 0.5;
-    color.setHSL(0.27 + clump * 0.05 - (darker(x, y) ? 0.02 : 0), 0.5, 0.36 + clump * 0.12 + rng() * 0.05);
+    color.setHSL(tone.hue + clump * 0.05 - (darker(x, y) ? 0.02 : 0), tone.sat, tone.light + clump * 0.12 + rng() * 0.05);
     mesh.setColorAt(n, color);
     n++;
   }

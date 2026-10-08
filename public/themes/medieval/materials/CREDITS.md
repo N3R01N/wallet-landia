@@ -16,3 +16,6 @@ PBR materials from [ambientCG](https://ambientcg.com), released under **CC0 1.0*
 | `grass` | [Grass004](https://ambientcg.com/view?id=Grass004) |
 | `dirt` | [Ground103](https://ambientcg.com/view?id=Ground103) |
 | `cloth` | [Fabric061](https://ambientcg.com/view?id=Fabric061) |
+| `bark` | [Bark014](https://ambientcg.com/view?id=Bark014) |
+| `rock` | [Rock030](https://ambientcg.com/view?id=Rock030) |
+| `forestFloor` | [Ground037](https://ambientcg.com/view?id=Ground037) |

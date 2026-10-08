@@ -79,8 +79,10 @@ export function applyWind(mesh: THREE.InstancedMesh, refHeight: number): void {
   material.onBeforeCompile = (shader) => patch(shader, refHeight);
   material.customProgramCacheKey = () => `wind:${refHeight}`;
   mesh.material = material;
-  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  // Cut-out foliage (leaf cards) casts the shape of its leaves, not of its quads.
+  const cutout = material.alphaTest > 0 && material.map ? { map: material.map, alphaTest: material.alphaTest } : {};
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, ...cutout });
   depth.onBeforeCompile = (shader) => patch(shader, refHeight);
-  depth.customProgramCacheKey = () => `wind-depth:${refHeight}`;
+  depth.customProgramCacheKey = () => `wind-depth:${refHeight}:${cutout.map ? 'cut' : ''}`;
   mesh.customDepthMaterial = depth;
 }
