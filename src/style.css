@@ -125,6 +125,12 @@ select {
 }
 
 .legend h4 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
   margin: 0 0 2px;
   font-size: 11px;
   text-transform: uppercase;
@@ -1047,4 +1053,111 @@ select {
 
 .stash-health .chip {
   margin-right: 4px;
+}
+
+.legend .fold {
+  border: 0;
+  background: none;
+  color: var(--wood);
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.legend.collapsed .legend-item {
+  display: none;
+}
+
+.legend.collapsed h4 {
+  margin: 0;
+}
+
+/* --- the first-visit tour --------------------------------------------------- */
+
+.tour-shade {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(20, 12, 6, 0.55);
+}
+
+/* the target shows through a hole: a ring, and a huge shadow dimming the rest */
+.tour-spot {
+  position: fixed;
+  z-index: 50;
+  border: 3px solid var(--gold);
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(20, 12, 6, 0.55);
+  pointer-events: none;
+  transition: left 0.25s, top 0.25s, width 0.25s, height 0.25s;
+}
+
+.tour-card {
+  position: fixed;
+  z-index: 51;
+  width: min(360px, calc(100vw - 24px));
+  padding: 14px 16px 12px;
+  background: var(--parchment);
+  border: 3px solid var(--wood);
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--wood-dark), 6px 8px 0 rgba(0, 0, 0, 0.3);
+  font-size: 13.5px;
+  line-height: 1.45;
+  transition: left 0.25s, top 0.25s;
+}
+
+.tour-card h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.tour-card p {
+  margin: 0 0 8px;
+}
+
+.tour-card a {
+  color: var(--wood);
+  font-weight: bold;
+}
+
+.tour-count {
+  float: right;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.tour-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.tour-actions .spacer {
+  flex: 1;
+}
+
+.tour-skip {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+
+.btn.primary {
+  background: var(--gold);
+  color: var(--ink);
+  font-weight: bold;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot,
+  .tour-card {
+    transition: none;
+  }
 }

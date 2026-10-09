@@ -35,6 +35,10 @@ export interface Prefs {
   fog: boolean;
   /** The quest log folded down to its title. */
   questlogFolded: boolean;
+  /** The value scale folded down to its title. */
+  legendFolded: boolean;
+  /** The first-visit tour was finished or skipped. */
+  tourDone: boolean;
   /** Names the player gave heroes, by lowercase address. */
   names: Record<string, string>;
   /** ETH prices seen: this session's (`seen`), and the visit before it (`prev`), for "since you were last here". */
@@ -64,6 +68,8 @@ const DEFAULTS: Prefs = {
   crests: {},
   fog: false,
   questlogFolded: false,
+  legendFolded: false,
+  tourDone: false,
   names: {},
   eth: {},
   sound: false,

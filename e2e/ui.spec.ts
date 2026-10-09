@@ -74,3 +74,39 @@ test('sound is off until turned on; then the town plays its sounds, and the choi
   await page.keyboard.press('m');
   await expect(btn).toHaveText('🔇');
 });
+
+test('a first-visit tour explains the demo town and leads to the Guild panel; it can be skipped and shown again', async ({ page }) => {
+  // automated browsers never get the tour unasked: ?tour forces it, as on a first visit
+  await page.goto('/?tour&freeze');
+  const card = page.locator('.tour-card');
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await expect(card).toContainText('demo town');
+  await expect(card).toContainText('1 /');
+  // forward to the Zerion key step: it opens the Guild panel and points at the key field
+  for (let i = 0; i < 7; i++) await card.locator('.btn.primary').click();
+  await expect(card.locator('h3')).toHaveText('1. A Zerion key');
+  await expect(page.locator('.inspector h2').first()).toHaveText('⚙ Guild');
+  await expect(card.locator('a[href="https://dashboard.zerion.io"]')).toBeVisible();
+  await card.locator('.btn', { hasText: 'Back' }).click();
+  await expect(card.locator('h3')).toHaveText('Make it yours');
+  // skipping ends it, and it is remembered
+  await card.locator('.tour-skip').click();
+  await expect(card).toHaveCount(0);
+  expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('wallet-landia-v4/prefs/v1') ?? '{}') as { tourDone?: boolean }).tourDone)).toBe(true);
+  // the ? button shows it again
+  await page.locator('.btn[aria-label="Show the tour again"]').click();
+  await expect(card).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toHaveCount(0);
+});
+
+test('the value scale folds to its title, and stays folded', async ({ page }) => {
+  await page.goto('/?freeze');
+  const legend = page.locator('.legend');
+  await expect(legend.locator('.legend-item').first()).toBeVisible();
+  await legend.locator('h4').click();
+  await expect(legend).toHaveClass(/collapsed/);
+  await expect(legend.locator('.legend-item').first()).toBeHidden();
+  await page.reload();
+  await expect(page.locator('.legend')).toHaveClass(/collapsed/);
+});

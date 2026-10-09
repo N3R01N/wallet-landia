@@ -336,6 +336,14 @@ Same scope for both: **the Town view only.**
 - No free modern or sci-fi outfits exist for the universal skeleton (Quaternius' newer releases are under its own licence, QAL: fine for our app, but not to redistribute as packs). So themes can set `characters.wardrobe` (`render/three/wardrobe.ts`): the full base body painted by region from its bone weights (fabric, belt and cuffs at the region borders; glowing seams in sci-fi), colours from the seed, class and crest, accessories on bones. Modern and sci-fi use it. Crest colours are now hex (the 3D library read `hsl(… … …)` as white).
 - Deploy: `vercel.json` (Vite, `npm run build`, `dist`, the cache headers of `public/_headers`); Node ≥ 20.19 pinned in `package.json`.
 
+### Zerion through our own site (2026-10-09)
+- Zerion's CORS check only allows browsers on localhost (any other Origin gets 403, even on a plain GET), and its docs say to call it server-side. So production builds use the `proxy` transport: `/api/zerion/v1/…` on our own domain. On Vercel, `vercel.json` rewrites that to the edge function `api/zerion.ts`, which forwards only the player's key (no Origin, no cookies, nothing stored), allows only GET on `/v1/`, and passes back Zerion's answer and rate-limit headers; `vite preview` proxies the same way. Development stays `direct`. The service worker never touches `/api/`.
+- Each Zerion request is now one function call on Vercel (Hobby: 1M edge requests a month included); players still spend their own Zerion quota.
+
+### First-visit tour; folding value scale (2026-10-09)
+- A tour on the first visit (`src/ui/tour.ts`): ten cards pointing at what they explain (a demo town of demo wallets; heroes, buildings and the Chronicle Tower; the quest log; the value scale; the timeline; views and looks), then into the Guild panel for a Zerion key and a wallet. Back/Next, Skip tour (or Escape), remembered (`prefs.tourDone`); the ? button in the top bar shows it again. Automated browsers only see it with `?tour`.
+- The value scale folds to its title like the quest log (remembered).
+
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.
 - Approvals as a keyring (needs RPC/log reads), and the health factor for lending.

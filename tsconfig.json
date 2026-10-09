@@ -21,5 +21,5 @@
     "allowJs": false,
     "noEmit": true
   },
-  "include": ["src", "test", "scripts", "e2e", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "test", "scripts", "e2e", "api", "vite.config.ts", "playwright.config.ts"]
 }

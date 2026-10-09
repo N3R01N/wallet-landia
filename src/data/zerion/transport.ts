@@ -2,15 +2,14 @@
 /**
  * How requests reach api.zerion.io.
  *
- * `direct` is the goal, and it is what the app uses: a static page the browser
- * can host anywhere, calling the API itself. That depends on Zerion serving
- * CORS headers for the browser's preflight, which their docs do not state
- * either way — so it was measured in phase 0 rather than assumed. It works.
+ * `direct`: the browser calls Zerion itself. Zerion only allows that from
+ * localhost (its CORS check answers 403 to any other Origin, measured
+ * 2026-10-09), so it is for development.
  *
- * `proxy` routes through the Vite dev server instead (see vite.config.ts),
- * which sidesteps CORS entirely at the cost of needing that server to be
- * running. It is kept as the fallback for anyone who would rather the key never
- * reached the browser at all.
+ * `proxy`: through our own site, `/api/zerion/v1/…`. Deployed on Vercel that
+ * is the edge function in `api/zerion.ts` (vercel.json rewrites /api/zerion/… to it), which forwards the
+ * player's key and nothing else; `vite preview` and the dev server proxy it
+ * too (vite.config.ts). Production builds use it.
  */
 
 export type Transport = 'direct' | 'proxy';
@@ -18,9 +17,11 @@ export type Transport = 'direct' | 'proxy';
 export const DIRECT_BASE = 'https://api.zerion.io/v1';
 export const PROXY_BASE = '/api/zerion/v1';
 
-/** Chosen by `VITE_ZERION_TRANSPORT`; defaults to direct. */
+/** `VITE_ZERION_TRANSPORT` if set; else the proxy in production builds, direct in development. */
 export function configuredTransport(): Transport {
-  return import.meta.env.VITE_ZERION_TRANSPORT === 'proxy' ? 'proxy' : 'direct';
+  const set = import.meta.env.VITE_ZERION_TRANSPORT;
+  if (set === 'proxy' || set === 'direct') return set;
+  return import.meta.env.PROD ? 'proxy' : 'direct';
 }
 
 export function baseUrl(transport: Transport): string {

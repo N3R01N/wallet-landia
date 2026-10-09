@@ -6,13 +6,14 @@
  *   under their URL: served from the device, fetched once.
  * - The page, the theme and pack lists (index.json, pack.json) can change:
  *   fetched fresh when online, the stored copy only when offline.
- * - Nothing from other sites (Zerion, the Ethereum node, logos) is touched:
- *   wallet data lives in IndexedDB, not here.
+ * - Nothing from other sites (the Ethereum node, logos) and nothing under
+ *   /api/ (Zerion through our proxy) is touched: wallet data lives in
+ *   IndexedDB, not here.
  *
  * Bump VERSION to drop everything stored by an older worker.
  */
 
-const VERSION = 'wl-1';
+const VERSION = 'wl-2';
 const KEEP = `${VERSION}-keep`;
 const PAGES = `${VERSION}-pages`;
 
@@ -38,6 +39,8 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.endsWith('/sw.js')) return;
+  // Zerion through our proxy: wallet data and the player's key, never stored here
+  if (url.pathname.startsWith('/api/')) return;
   event.respondWith(immutable(url) ? fromDevice(req) : fromNetwork(req));
 });
 

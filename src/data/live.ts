@@ -76,7 +76,7 @@ export class LiveLoader {
   readonly #now: () => number;
 
   constructor(o: LiveOptions) {
-    this.client = o.client ?? new ZerionClient({ apiKey: o.apiKey, transport: 'direct', budget: o.budget });
+    this.client = o.client ?? new ZerionClient({ apiKey: o.apiKey, budget: o.budget }); // the configured transport
     this.#cache = o.cache;
     this.#now = o.now ?? Date.now;
   }
