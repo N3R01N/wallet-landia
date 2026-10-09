@@ -62,6 +62,18 @@ test('a rigged hero in a themed town answers hover and click', async ({ page }) 
   expect(look.smoke).toBe(true);
   expect(look.both).toBe(0);
   expect(stats.triangles).toBeLessThan(1_200_000);
+  // people beyond the nearest few are the theme's figures baked to sprites (smoothly filtered), not pixel art
+  const impostors = (): Promise<number> =>
+    page.evaluate(() => {
+      let n = 0;
+      (window as unknown as { town3d: { debugScene(): { traverse(f: (o: { visible: boolean; isSprite?: boolean; userData: { agent?: string }; material?: { map?: { magFilter: number } } }) => void): void } } }).town3d
+        .debugScene()
+        .traverse((o) => {
+          if (o.isSprite && o.visible && o.userData.agent && o.material?.map?.magFilter === 1006) n++; // LinearFilter
+        });
+      return n;
+    });
+  await expect.poll(impostors, { timeout: 60_000 }).toBeGreaterThan(0);
   await page.keyboard.press('Space');
   await expect(page.locator('.btn[title^="Play / pause"]')).toHaveText('▶');
   await page.waitForTimeout(1000);

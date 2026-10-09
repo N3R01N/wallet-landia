@@ -322,6 +322,9 @@ Same scope for both: **the Town view only.**
 - **Loans:** an estimated health factor per lending building (a typical 80% liquidation threshold over Zerion's collateral and debt): a ⚖ marker coloured safe → watch → danger → critical (flashing), a bailiff pacing at the door in danger and two near liquidation; the sheet explains it is an estimate.
 - **Harvests:** rewards ready to claim sized little (< $50), some (< $1k) or a lot: a "! $…" marker growing with the crop, and a heap at the door (a sack; crates and sacks; crates and a heap of gold); the sheet says whether claiming is worth the toll.
 
+### Impostors: no pixel people in a themed town (2026-10-09)
+- People beyond the nearest 20 (or 70 tiles) used to fall back to the built-in pixel sprites, so a themed town mixed two styles (worse since the tower queue). Now they are the theme's own figures baked to sprites (`impostor.ts`): each look photographed once in a small studio (own WebGL context) from four sides, standing and two walking poses, at the town camera's tilt; drawn as smoothly filtered billboards from the side the camera sees. One look is baked a frame as people come into view; the pixel sprite shows only until then.
+
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.
 - Approvals as a keyring (needs RPC/log reads), and the health factor for lending.

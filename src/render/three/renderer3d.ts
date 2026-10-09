@@ -24,12 +24,13 @@ import { P, type Sprite } from '../pixel.js';
 import { ImagePipeline, type DebugView, type Quality } from './pipeline.js';
 import { buildGrass, buildLamps, buildPropMeshes, placeLamps, type LampSet } from './scenery.js';
 import { EnvironmentController, skyForHour } from './environment.js';
-import { bundleTheme, type CharacterProvider, type SandboxCharacter, type Theme } from './themes.js';
+import { bundleTheme, type CharacterLook, type CharacterProvider, type SandboxCharacter, type Theme } from './themes.js';
 import type { Companion } from './grammar/companions.js';
 import { FogBank } from './fogBank.js';
 import { Beacon3D, harvestPile, TollBoard3D } from './towerSigns.js';
 import { heatColor, tollOf } from '../../world/chain.js';
 import { PortraitStudio } from './portrait.js';
+import { ImpostorStudio, sideSeen } from './impostor.js';
 import { Smoke, type Emitter } from './smoke.js';
 import { rippling } from './water.js';
 import { tileSurfaces, townSite } from './townSite.js';
@@ -238,6 +239,7 @@ export class Renderer3D implements WorldView {
     const theme = bundle ? bundleTheme(bundle) : null;
     this.#theme = theme;
     this.#people = null;
+    this.#studio3 = null; // a new theme, new figures
     // for tests and debugging: which theme draws the town, and whether its people are in
     this.element.dataset.theme = theme?.id ?? '';
     this.element.dataset.people = 'sprites';
@@ -565,13 +567,14 @@ export class Renderer3D implements WorldView {
 
   // --- sprites ---------------------------------------------------------------
 
-  #texture(canvas: HTMLCanvasElement, flip: boolean): THREE.SpriteMaterial {
+  /** `smooth`: a rendered picture (an impostor), filtered; pixel art stays crisp. */
+  #texture(canvas: HTMLCanvasElement, flip: boolean, smooth = false): THREE.SpriteMaterial {
     let pair = this.#textures.get(canvas);
     if (pair === undefined) {
       const mk = (f: boolean): THREE.CanvasTexture => {
         const t = new THREE.CanvasTexture(canvas);
-        t.magFilter = THREE.NearestFilter;
-        t.minFilter = THREE.NearestFilter;
+        t.magFilter = smooth ? THREE.LinearFilter : THREE.NearestFilter;
+        t.minFilter = smooth ? THREE.LinearMipmapLinearFilter : THREE.NearestFilter;
         t.colorSpace = THREE.SRGBColorSpace;
         if (f) {
           t.wrapS = THREE.RepeatWrapping;
@@ -635,6 +638,8 @@ export class Renderer3D implements WorldView {
       const rigged = person !== null && this.#lod(person, ranks.get(a.id) ?? { dist: Infinity, rank: Infinity });
       pair.body.visible = !rigged;
       if (person) this.#movePerson(person, a, dt);
+      // farther off, the theme's own figure as a sprite (the pixel sprite only until it is baked)
+      if (person && !rigged) this.#impostor(a, person, pair.body);
       const companions = this.#theme?.companions;
       if (companions && this.#people) {
         if (a.kind === 'raven') {
@@ -669,22 +674,51 @@ export class Renderer3D implements WorldView {
     }
   }
 
+  /** How an agent looks as one of the theme's people (heralds and bailiffs dress like a bard and a paladin, on foot). */
+  #lookOf(a: Agent): CharacterLook {
+    const hero = a.kind === 'hero' ? a.hero : undefined;
+    const npc = a.kind === 'herald' ? 'bard' : a.kind === 'bailiff' ? 'paladin' : null;
+    return {
+      id: a.id,
+      kind: hero || npc ? 'hero' : 'villager',
+      cls: hero ? this.classOf(hero.address) : (npc ?? 'adventurer'),
+      tier: hero?.tier ?? 0,
+      crest: hero ? crestColors(hero.address)[0] : '#888888',
+      seed: hashString(hero?.address ?? a.id),
+    };
+  }
+
+  /**
+   * A themed person beyond the nearest few: the theme's own figure, baked to
+   * a sprite from the side the camera sees. False until its look is baked.
+   */
+  #impostor(a: Agent, p: Person, body: THREE.Sprite): boolean {
+    const people = this.#people;
+    if (people === null || this.#theme === null) return false;
+    const look = this.#lookOf(a);
+    this.#studio3 ??= new ImpostorStudio();
+    const imp = this.#studio3.get(`${this.#theme.id}|${look.kind}|${look.cls}|${look.tier}|${look.crest}|${look.seed}`, () => people.create({ ...look, id: `impostor:${a.id}` }));
+    if (imp === null) return false;
+    const cam = this.#camera.position;
+    const yaw = Math.atan2(Math.cos(p.heading), Math.sin(p.heading));
+    const side = sideSeen(yaw, cam.x - a.x, cam.z - a.y);
+    const pose = p.state === 'idle' ? 0 : 1 + (Math.floor(a.phase) % 2);
+    const frame = imp.frames[side]?.[pose];
+    if (!frame) return false;
+    body.material = this.#texture(frame.canvas, false, true);
+    body.scale.set(imp.width, imp.height, 1);
+    body.center.set(0.5, imp.foot);
+    body.position.set(a.x, a.alt, a.y);
+    return true;
+  }
+
   #person(a: Agent): Person | null {
     const people = this.#people;
     if (people === null) return null;
     let p = this.#persons.get(a.id);
     if (p === undefined) {
       const hero = a.kind === 'hero' ? a.hero : undefined;
-      // heralds and bailiffs dress like a bard and a paladin, on foot
-      const npc = a.kind === 'herald' ? 'bard' : a.kind === 'bailiff' ? 'paladin' : null;
-      const char = people.create({
-        id: a.id,
-        kind: hero || npc ? 'hero' : 'villager',
-        cls: hero ? this.classOf(hero.address) : (npc ?? 'adventurer'),
-        tier: hero?.tier ?? 0,
-        crest: hero ? crestColors(hero.address)[0] : '#888888',
-        seed: hashString(hero?.address ?? a.id),
-      });
+      const char = people.create(this.#lookOf(a));
       let proxy: THREE.Mesh | null = null;
       if (hero) {
         proxy = new THREE.Mesh(this.#proxyGeo, this.#proxyMat);
@@ -838,6 +872,8 @@ export class Renderer3D implements WorldView {
   // --- frame -----------------------------------------------------------------
 
   draw(): void {
+    // one more of the theme's figures baked into a sprite, if any wait (never more than one a frame)
+    this.#studio3?.bakeNext();
     const now = performance.now();
     const dt = Math.min(0.1, (now - this.#lastFrame) / 1000);
     this.#lastFrame = now;
@@ -1132,6 +1168,8 @@ export class Renderer3D implements WorldView {
   }
 
   #studio: PortraitStudio | null = null;
+  /** Bakes the theme's people into sprites for those beyond the nearest few. */
+  #studio3: ImpostorStudio | null = null;
 
   /**
    * A portrait of a hero in the theme's own look (its rigged character), as an
