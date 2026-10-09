@@ -110,3 +110,31 @@ test('the Guild panel adds a wallet and rejects nonsense', async ({ page }) => {
   await page.locator('.inspector .btn', { hasText: 'Follow' }).click();
   await expect(page.locator('.inspector')).toContainText('Followed towns (1)');
 });
+
+test('visiting a town and coming home again is free once cached, while the wallets have not moved', async ({ page }) => {
+  const fake = await fakeNetwork(page);
+  const OTHER = '0x2222222222222222222222222222222222222222';
+  await page.addInitScript(([addr, other]) => {
+    localStorage.setItem('wallet-landia-v4/prefs/v1', JSON.stringify({ owned: [addr], followed: [other] }));
+  }, [ADDR, OTHER]);
+  await page.goto('/');
+  await expect(page.locator('.brand')).toContainText('live', { timeout: 20_000 });
+  expect(fake.zerionRequests).toHaveLength(5);
+
+  const visit = async (): Promise<void> => {
+    // the Guild panel stays open across towns; its button toggles it
+    if (!(await page.locator('.inspector h2', { hasText: '⚙ Guild' }).isVisible())) await page.locator('.btn', { hasText: '⚙ Guild' }).click();
+    await page.locator('.inspector .btn', { hasText: 'Visit' }).click();
+    await expect(page.locator('.brand')).toContainText('Visiting', { timeout: 20_000 });
+  };
+  const home = async (): Promise<void> => {
+    await page.locator('.btn', { hasText: 'Return home' }).click();
+    await expect(page.locator('.brand')).toContainText('Your guild', { timeout: 20_000 });
+  };
+  await visit();
+  expect(fake.zerionRequests).toHaveLength(10); // a first visit: the whole wallet
+  await home();
+  await visit();
+  await home();
+  expect(fake.zerionRequests).toHaveLength(10); // back and forth: all from the cache
+});

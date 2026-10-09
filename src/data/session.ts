@@ -170,12 +170,28 @@ export class Session {
     this.#show({ mode: loader ? 'live' : 'captured', raws, visiting: addr, names, label: `Visiting ${names.get(addr) ?? `${addr.slice(0, 6)}…${addr.slice(-4)}`}'s town` }, 'town');
   }
 
-  async #loadLive(loader: LiveLoader, addresses: readonly string[], gen: number): Promise<RawWallet[] | null> {
+  /** Bring the town on show up to date now, at the player's request (~5 requests a wallet). */
+  async refresh(): Promise<void> {
+    const shown = this.shown;
+    if (shown === null || shown.mode !== 'live') return;
+    const loader = await this.#liveLoader();
+    if (loader === null) return;
+    const gen = this.#generation;
+    const raws = await this.#loadLive(loader, shown.raws.map((r) => r.address), gen, true);
+    if (raws === null || gen !== this.#generation) return;
+    this.#show({ ...shown, raws: raws.map((r, i) => ({ ...r, label: shown.raws[i]?.label ?? r.label })) }, 'update');
+  }
+
+  async #loadLive(loader: LiveLoader, addresses: readonly string[], gen: number, fresh = false): Promise<RawWallet[] | null> {
     const raws: RawWallet[] = [];
+    // Free first: has each wallet moved on-chain since we cached it? Unmoved
+    // wallets come straight from the cache (see LiveLoader.load).
+    const prints = await walletFingerprints(addresses).catch(() => new Map<string, string>());
     try {
       for (const [i, a] of addresses.entries()) {
         this.#events.onStatus(`Loading wallet ${i + 1} of ${addresses.length}…`, 'busy');
-        raws.push(await loader.load(a, this.prefs.ens[a] || 'Your wallet'));
+        const print = prints.get(a);
+        raws.push(await loader.load(a, this.prefs.ens[a] || 'Your wallet', { ...(print !== undefined ? { print } : {}), fresh }));
         if (gen !== this.#generation) return null;
       }
       this.#events.onStatus('', 'info');
@@ -245,7 +261,7 @@ export class Session {
         if (i >= 0) raws[i] = { ...raw, label: raws[i]?.label ?? raw.label };
       };
       for (const a of toRefresh) {
-        const r = await loader.refreshHistory(a);
+        const r = await loader.refreshHistory(a, prints.get(a));
         if (r === null) continue;
         added += r.added;
         put(r.raw);

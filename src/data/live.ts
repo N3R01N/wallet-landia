@@ -5,7 +5,11 @@
  * - history is events: kept forever, only the newer tail is fetched (1 request);
  * - valuations (balances, positions, NFTs) are a measurement of now: refetched
  *   whole (4 requests) once they are older than VALUATION_TTL;
- * - a cold wallet costs ~5 requests, a reload within the TTL costs 0–1.
+ * - a cold wallet costs ~5 requests, a reload within the TTL costs 0–1;
+ * - with the wallet's on-chain fingerprint (nonce and ETH balance, free from
+ *   the public RPC) a revisit costs nothing while it is unchanged: the cache
+ *   is trusted for much longer, and a change fetches only the new tail and
+ *   re-measures only what that tail can have moved.
  */
 
 import { ZerionClient } from './zerion/client.js';
@@ -24,6 +28,9 @@ import type { KV } from './cache.js';
 export const VALUATION_TTL = 5 * 60_000;
 /** Reloading within this window does not even ask for the tail. */
 export const HISTORY_TTL = 2 * 60_000;
+/** When the fingerprint shows the wallet did not move: incoming tokens and prices still drift, slowly. */
+export const QUIET_HISTORY_TTL = 30 * 60_000;
+export const QUIET_VALUATION_TTL = 60 * 60_000;
 /** Reach back a little, so a pending tx that has since settled is corrected. */
 const OVERLAP_MS = 10 * 60_000;
 /** Kept per wallet; the world shows up to 100. */
@@ -33,7 +40,13 @@ interface Entry {
   raw: RawWallet;
   valuationsAt: number;
   historyAt: number;
+  /** The wallet's on-chain fingerprint when it was last brought up to date. */
+  print?: string;
 }
+
+/** Only token transfers (no protocol): re-measuring the tokens is enough. */
+const plainOnly = (fresh: readonly TransactionResource[]): boolean =>
+  fresh.every((t) => ['send', 'receive', 'approve', 'revoke'].includes(t.attributes.operation_type) && !t.relationships?.dapp);
 
 const key = (address: string): string => `wallet:${address.toLowerCase()}`;
 
@@ -68,38 +81,53 @@ export class LiveLoader {
     this.#now = o.now ?? Date.now;
   }
 
-  /** The wallet as fresh as the TTLs allow, spending as little as possible. */
-  async load(address: string, label: string, opts: { force?: boolean } = {}): Promise<RawWallet> {
+  /**
+   * The wallet as fresh as needed, spending as little as possible. `print` is
+   * its fingerprint right now (see `walletFingerprints`), when the RPC answered.
+   */
+  async load(address: string, label: string, opts: { force?: boolean; print?: string; fresh?: boolean } = {}): Promise<RawWallet> {
     const addr = address.toLowerCase();
     const now = this.#now();
     const cached = await this.#cache.get<Entry>(key(addr));
     if (cached === undefined || opts.force === true) {
       const raw = await fetchRawWallet(this.client, addr, { label });
       raw.capturedAt = now;
-      await this.#cache.put(key(addr), { raw, valuationsAt: now, historyAt: now } satisfies Entry);
+      await this.#cache.put(key(addr), { raw, valuationsAt: now, historyAt: now, ...(opts.print ? { print: opts.print } : {}) } satisfies Entry);
       return raw;
     }
-    let { raw } = cached;
-    raw = { ...raw, label };
-    if (now - cached.valuationsAt > VALUATION_TTL) raw = await this.#refreshValuations(raw);
-    if (now - cached.historyAt > HISTORY_TTL) ({ raw } = await this.#refreshTail(raw));
+    // with both fingerprints we know whether the wallet moved; without, go by age
+    const known = opts.print !== undefined && cached.print !== undefined;
+    const moved = known && opts.print !== cached.print;
+    // `fresh`: the player asked for it now (the tail and a full measure, not the whole history again)
+    const historyDue = opts.fresh === true || moved || now - cached.historyAt > (known ? QUIET_HISTORY_TTL : HISTORY_TTL);
+    let raw: RawWallet = { ...cached.raw, label };
+    let fresh: TransactionResource[] = [];
+    if (historyDue) ({ raw, fresh } = await this.#refreshTail(raw));
+    // what to re-measure: what the new transactions can have moved, else only if it is old
+    let revalue: 'full' | 'tokens' | null = null;
+    if (opts.fresh === true || now - cached.valuationsAt > (known ? QUIET_VALUATION_TTL : VALUATION_TTL)) revalue = 'full';
+    else if (fresh.length > 0) revalue = plainOnly(fresh) ? 'tokens' : 'full';
+    if (revalue === 'full') raw = await this.#refreshValuations(raw);
+    else if (revalue === 'tokens') raw = await this.#refreshTokens(raw);
     raw.capturedAt = now;
+    const print = opts.print ?? cached.print;
     await this.#cache.put(key(addr), {
       raw,
-      valuationsAt: now - cached.valuationsAt > VALUATION_TTL ? now : cached.valuationsAt,
-      historyAt: now - cached.historyAt > HISTORY_TTL ? now : cached.historyAt,
+      valuationsAt: revalue === 'full' ? now : cached.valuationsAt,
+      historyAt: historyDue ? now : cached.historyAt,
+      ...(print !== undefined ? { print } : {}),
     } satisfies Entry);
     return raw;
   }
 
   /** One request: anything new since the last transaction we know of? */
-  async refreshHistory(address: string): Promise<{ raw: RawWallet; added: number; fresh: TransactionResource[] } | null> {
+  async refreshHistory(address: string, print?: string): Promise<{ raw: RawWallet; added: number; fresh: TransactionResource[] } | null> {
     const cached = await this.#cache.get<Entry>(key(address));
     if (cached === undefined) return null;
     const { raw, added, fresh } = await this.#refreshTail(cached.raw);
     const now = this.#now();
     raw.capturedAt = now;
-    await this.#cache.put(key(address), { ...cached, raw, historyAt: now } satisfies Entry);
+    await this.#cache.put(key(address), { ...cached, raw, historyAt: now, ...(print !== undefined ? { print } : {}) } satisfies Entry);
     return { raw, added, fresh };
   }
 
@@ -131,6 +159,12 @@ export class LiveLoader {
     raw.capturedAt = now;
     await this.#cache.put(key(address), { ...cached, raw, valuationsAt: mode === 'full' ? now : cached.valuationsAt } satisfies Entry);
     return raw;
+  }
+
+  /** Portfolio and token balances (2 requests), after plain transfers. */
+  async #refreshTokens(raw: RawWallet): Promise<RawWallet> {
+    const [portfolio, simple] = await Promise.all([getPortfolio(this.client, raw.address).catch(() => raw.portfolio), getPositions(this.client, raw.address, 'only_simple')]);
+    return { ...raw, portfolio, simple };
   }
 
   async #refreshValuations(raw: RawWallet): Promise<RawWallet> {

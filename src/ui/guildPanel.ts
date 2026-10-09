@@ -21,6 +21,8 @@ export interface GuildPanelContext {
   onKeyChanged(): void;
   onVisit(address: string): void;
   onClearCache(): Promise<void>;
+  /** Fetch what changed for the town on show now (null: not a live town). */
+  onRefresh: (() => Promise<void>) | null;
   /** Re-render the panel (after a local change). */
   refresh(): void;
   /** The heroes of the town on show, to open or rename. */
@@ -197,6 +199,25 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
     clear.textContent = 'Cleared';
   };
 
+  const refresh = ctx.onRefresh
+    ? (() => {
+        const b = el('button', { class: 'btn' }, '↻ Refresh this town now');
+        b.title = 'Fetch new transactions and re-measure balances, positions and NFTs (about 5 requests per wallet)';
+        const go = ctx.onRefresh;
+        b.onclick = async () => {
+          b.disabled = true;
+          b.textContent = 'Refreshing…';
+          try {
+            await go();
+            b.textContent = 'Up to date';
+          } catch {
+            b.textContent = 'Could not refresh';
+          }
+        };
+        return b;
+      })()
+    : null;
+
   return el(
     'div',
     { class: 'panel-body' },
@@ -234,7 +255,7 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
       el('span', {}, `${b.remaining} of ${b.limit} left`),
       el('span', { class: 'muted' }, `refills ${untilReset(b.resetsAt, Date.now())}`),
     ),
-    el('p', { class: 'muted small' }, 'A new wallet costs ~5 requests; a reload within 5 minutes costs none. Live updates only ask Zerion when the chain shows a wallet changed.'),
-    clear,
+    el('p', { class: 'muted small' }, 'A new wallet costs ~5 requests. After that, towns come from this browser’s cache: the free public RPC tells us whether a wallet moved, and only then is Zerion asked for what changed. Unmoved wallets are re-checked every 30 minutes (1 request) and re-measured hourly (4).'),
+    el('div', { class: 'form-row' }, refresh, clear),
   );
 }

@@ -327,7 +327,8 @@ Same scope for both: **the Town view only.**
 - **`LiveLoader`** (`src/data/live.ts`) on the ported Zerion client and daily budget, cached in IndexedDB (`src/data/cache.ts`):
   - history kept forever, newest tail fetched (1 request);
   - valuations refetched after 5 minutes (4 requests);
-  - a cold wallet costs 5; a reload within the TTL costs 0.
+  - a cold wallet costs 5; a reload within the TTL costs 0;
+  - **fingerprint-gated revisits (2026-10-09):** before loading, the free RPC gives each wallet's nonce and ETH balance, stored with the cache entry. Unmoved: served from the cache, the tail re-checked after 30 min (1) and a full re-measure hourly (4). Moved: the tail (1) plus tokens (2) after plain transfers, or a full re-measure (4) after anything touching a protocol. Visiting a town again, or coming home, is usually free. "↻ Refresh this town now" in the Guild panel forces the tail and a full measure.
   - Pinned by `test/live.test.ts`.
 - **Live updates:**
   - On every block, one free RPC batch call reads each shown wallet's nonce and ETH balance (baseline taken at load).

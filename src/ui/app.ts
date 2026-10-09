@@ -381,6 +381,7 @@ export class App {
           void this.#session.visit(a);
         },
         onClearCache: () => this.#session.clearCache(),
+        onRefresh: this.#shown?.mode === 'live' ? () => this.#session.refresh() : null,
         refresh: () => this.#openGuild(),
         heroes: this.#guild.heroes,
         classOf: (a) => this.#classOf(a),
