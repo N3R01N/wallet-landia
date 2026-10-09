@@ -12,6 +12,9 @@ export default defineConfig({
     // Two pages: the town, and the look sandbox.
     rollupOptions: { input: { main: 'index.html', sandbox: 'sandbox.html' } },
   },
+  // Pre-bundle three.js add-ons that are only reached through the lazily loaded
+  // 3D view, so the dev server never finds one mid-session and reloads the page.
+  optimizeDeps: { include: ['three/addons/environments/RoomEnvironment.js'] },
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],

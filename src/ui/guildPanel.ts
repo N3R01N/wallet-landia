@@ -7,7 +7,10 @@ import { isEnsName, resolveName } from '../data/ens.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { untilReset } from '../data/zerion/budget.js';
 import { loadApiKey, saveApiKey, savePrefs, type Prefs } from '../settings.js';
+import { CLASS_LABEL, type Hero, type HeroClass } from '../domain/model.js';
+import { approxUsd, TIER_COLORS } from '../domain/tiers.js';
 import { el, shortAddr } from './dom.js';
+import { heroNameEditor, portrait } from './panels.js';
 
 export interface GuildPanelContext {
   prefs: Prefs;
@@ -20,6 +23,37 @@ export interface GuildPanelContext {
   onClearCache(): Promise<void>;
   /** Re-render the panel (after a local change). */
   refresh(): void;
+  /** The heroes of the town on show, to open or rename. */
+  heroes: Hero[];
+  classOf(address: string): HeroClass;
+  onSelectHero(address: string): void;
+  setName(address: string, name: string | null): void;
+  bornName(address: string): string;
+  portraitOf?: (address: string, cls: HeroClass) => string | null;
+}
+
+/** A hero of the town: portrait, name (renameable), class and worth; opens their sheet. */
+function heroCard(hero: Hero, ctx: GuildPanelContext): HTMLElement {
+  const cls = ctx.classOf(hero.address);
+  const pic = portrait(hero, cls, ctx.portraitOf);
+  pic.classList.add('mini');
+  const open = el('button', { class: 'btn small' }, 'Character sheet');
+  open.onclick = () => ctx.onSelectHero(hero.address);
+  pic.onclick = () => ctx.onSelectHero(hero.address);
+  const worth = el('span', { class: 'chip' }, approxUsd(hero.netWorth));
+  worth.style.borderColor = TIER_COLORS[hero.tier] ?? '#888';
+  return el(
+    'div',
+    { class: 'hero-card', 'data-hero': hero.address },
+    pic,
+    el(
+      'div',
+      { class: 'hero-card-body' },
+      heroNameEditor(hero, { setName: (a, n) => ctx.setName(a, n), bornName: (a) => ctx.bornName(a) }),
+      el('div', { class: 'muted small' }, `${CLASS_LABEL[cls]} · `, worth, ` · ${shortAddr(hero.address)}`),
+      open,
+    ),
+  );
 }
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
@@ -168,6 +202,9 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
     { class: 'panel-body' },
     el('h2', {}, '⚙ Guild'),
     el('p', { class: 'muted' }, 'Everything runs in your browser. Your key and wallet list are stored only here.'),
+
+    el('h3', {}, `Heroes of this town (${ctx.heroes.length})`),
+    ctx.heroes.length === 0 ? el('p', { class: 'muted' }, 'No heroes yet.') : el('div', { class: 'hero-cards' }, ...ctx.heroes.map((h) => heroCard(h, ctx))),
 
     el('h3', {}, 'Zerion key'),
     el(

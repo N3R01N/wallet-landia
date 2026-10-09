@@ -176,3 +176,33 @@ describe('fog of war', () => {
     expect(sim.fogOver(b)).toBe(0);
   });
 });
+
+describe('griffins and dragons', () => {
+  it('keep to the roads, hovering low, with the caravan rolling a steady way behind', async () => {
+    const { Sim, CARAVAN_BACK } = await import('../src/world/sim.js');
+    const base = buildGuild(demo);
+    const guild = { ...base, heroes: base.heroes.map((h, i) => (i === 0 ? { ...h, tier: 6 as const } : h)) };
+    const plan = planTown(guild);
+    const sim = new Sim(guild, plan);
+    sim.speed = 4;
+    const hero = sim.agents.find((a) => a.hero?.address === guild.heroes[0]!.address)!;
+    let travelled = 0;
+    for (let i = 0; i < 20_000 && travelled < 400; i++) {
+      sim.step(0.05);
+      if (hero.path.length === 0) continue;
+      travelled++;
+      expect(hero.flying).toBe(false);
+      expect(hero.alt).toBeCloseTo(0.5, 5);
+      const back = hero.trail[CARAVAN_BACK];
+      if (back) {
+        const near = hero.trail[0]!;
+        // a trail point every ~0.12 tiles: the caravan stays ~1.4 tiles (along the way) behind
+        let along = Math.hypot(hero.x - near.x, hero.y - near.y);
+        for (let k = 0; k < CARAVAN_BACK; k++) along += Math.hypot(hero.trail[k]!.x - hero.trail[k + 1]!.x, hero.trail[k]!.y - hero.trail[k + 1]!.y);
+        expect(along).toBeGreaterThan(1.3);
+        expect(along).toBeLessThan(1.8);
+      }
+    }
+    expect(travelled).toBeGreaterThan(50);
+  });
+});

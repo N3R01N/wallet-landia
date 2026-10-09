@@ -298,6 +298,15 @@ Same scope for both: **the Town view only.**
      - Woods: low-detail trees (one trunk, big leaf cards) without shadows beyond 10 tiles from town; fewer bark sides near; boulders cast no shadows.
      - `Renderer3D.stats()` and an e2e budget (< 800 calls, < 1.2M triangles) guard it.
 
+### Player feedback round (2026-10-09)
+- Griffins and dragons keep to the roads, hovering ~1 m up, instead of flying over the roofs; caravans roll on the ground ~1.4 tiles behind on a trail kept by distance (it used to be a few frames back, so a fast mount carried its cart underneath).
+- A loading veil (three little houses raising themselves) until the town, the 3D view or a theme is ready; it never hides a failed load.
+- Treasure and gallery slots show the token's logo or the NFT's picture big, with the category icon as a corner badge.
+- The quest log folds to its title (remembered).
+- Portraits follow the chosen theme: its rigged character photographed head and shoulders (`portrait.ts`, a small studio with its own WebGL context); the pixel portrait otherwise.
+- The Guild panel lists the town's heroes with portraits; each opens the character sheet.
+- Heroes can be renamed (✎ on the sheet or in the Guild panel); names are remembered; an empty name restores the town's.
+
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.
 - Approvals as a keyring (needs RPC/log reads), and the health factor for lending.

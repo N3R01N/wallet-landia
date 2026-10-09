@@ -63,6 +63,8 @@ export interface Agent {
   flying: boolean;
   /** Height above the ground, in tiles (flyers in the air). */
   alt: number;
+  /** Height it keeps when not flying: griffins and dragons hover low over the road. */
+  hover: number;
   /** The door this agent is waiting at, if any (see door slots). */
   slotAt: string | null;
   /** Value tier of what is being carried right now, or null when empty-handed. */
@@ -102,6 +104,10 @@ export interface LogEntry {
 
 /** Tiles per second on foot: a brisk walk (~2.2 m/s); a hero with errands piling up hurries. */
 const WALK_SPEED = 1.2;
+/** Tiles between the points of an agent's trail. */
+const TRAIL_STEP = 0.12;
+/** How far back on its hero's trail a caravan rolls (index into the trail: ~1.4 tiles). */
+export const CARAVAN_BACK = 12;
 /** Mounts by tier, as multiples of walking: a donkey's amble up to a griffin's flight. */
 const MOUNT_SPEED = [0.85, 0.95, 1.1, 1.35, 1.7, 2.4, 3] as const;
 
@@ -206,7 +212,7 @@ export class Sim {
       a.slotAt = null;
       if (a.kind !== 'hero' || a.hero === undefined) continue;
       const home = this.plan.homes.get(a.hero.address);
-      if (home) Object.assign(a, { x: home.doorAt.x, y: home.doorAt.y, alt: 0 });
+      if (home) Object.assign(a, { x: home.doorAt.x, y: home.doorAt.y, alt: a.hover });
       a.tasks = [];
       a.path = [];
       a.acting = null;
@@ -233,7 +239,7 @@ export class Sim {
     const hero = this.#heroAgents.get(j.hero);
     if (hero !== undefined) {
       const home = this.plan.homes.get(j.hero);
-      if (home) Object.assign(hero, { x: home.doorAt.x, y: home.doorAt.y, alt: 0 });
+      if (home) Object.assign(hero, { x: home.doorAt.x, y: home.doorAt.y, alt: hero.hover });
       hero.tasks = [];
       hero.path = [];
       hero.acting = null;
@@ -467,13 +473,13 @@ export class Sim {
         if (p === undefined) break;
         const dx = p.x - a.x;
         const dy = p.y - a.y;
-        const dz = (p.z ?? 0) - a.alt;
+        const dz = (p.z ?? a.hover) - a.alt;
         const d = Math.hypot(dx, dy, dz);
         if (Math.abs(dx) > 0.01) a.facing = dx > 0 ? 1 : -1;
         if (d <= budget) {
           a.x = p.x;
           a.y = p.y;
-          a.alt = p.z ?? 0;
+          a.alt = p.z ?? a.hover;
           a.path.shift();
           budget -= d;
         } else {
@@ -483,8 +489,16 @@ export class Sim {
           budget = 0;
         }
       }
-      a.trail.unshift({ x: a.x, y: a.y });
-      if (a.trail.length > 40) a.trail.pop();
+      // the trail is kept by distance (a step every TRAIL_STEP tiles), so what follows on it keeps its distance at any speed
+      // (filled in between, since at high replay speeds one step can cover tiles)
+      const last = a.trail[0];
+      if (last === undefined) a.trail.unshift({ x: a.x, y: a.y });
+      else {
+        const gap = Math.hypot(a.x - last.x, a.y - last.y);
+        const n = Math.min(40, Math.floor(gap / TRAIL_STEP));
+        for (let k = 1; k <= n; k++) a.trail.unshift({ x: last.x + ((a.x - last.x) * k * TRAIL_STEP) / gap, y: last.y + ((a.y - last.y) * k * TRAIL_STEP) / gap });
+      }
+      if (a.trail.length > 40) a.trail.length = 40;
       return;
     }
     const task = a.tasks.shift();
@@ -574,6 +588,7 @@ export class Sim {
       speed: WALK_SPEED,
       flying: false,
       alt: 0,
+      hover: 0,
       slotAt: null,
       carrying: null,
       journey: null,
@@ -591,7 +606,9 @@ export class Sim {
       const a = this.#makeAgent('hero', home.doorAt.x, home.doorAt.y);
       a.hero = hero;
       a.speed = WALK_SPEED * (MOUNT_SPEED[hero.tier] ?? 1);
-      a.flying = hero.tier >= 5; // griffins and dragons do not use roads
+      // griffins and dragons keep to the roads like everyone, hovering low (their caravans roll behind)
+      a.hover = hero.tier >= 5 ? 0.5 : 0;
+      a.alt = a.hover;
       this.agents.push(a);
       this.#heroAgents.set(hero.address, a);
     }

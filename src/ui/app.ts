@@ -76,17 +76,27 @@ export class App {
   /** Which journeys earn which medals, to announce them as the replay plays. */
   #medalJourneys = new Map<string, { hero: string; medal: Medal }[]>();
   #toasts = el('div', { class: 'toasts', 'aria-live': 'polite' });
+  /** What is still loading (reason → what to tell the player); the veil shows while any is. */
+  #loading = new Map<string, string>();
+  #veilText = el('div', { class: 'veil-text' }, '');
+  #veil = el(
+    'div',
+    { class: 'veil', role: 'status', 'aria-live': 'polite' },
+    el('div', { class: 'veil-card' }, el('div', { class: 'veil-crest' }, el('span', {}), el('span', {}), el('span', {})), this.#veilText, el('div', { class: 'veil-bar' }, el('i', {}))),
+  );
 
   constructor() {
     this.#raws = [];
     this.#prefs = loadPrefs();
     setCrests(this.#prefs.crests);
+    this.#busy('town', 'Gathering your heroes…');
     this.#session = new Session(this.#prefs, {
       onTown: (shown) => this.#onTown(shown),
       onUpdate: (shown) => this.#onUpdate(shown),
       onStatus: (text, kind) => {
         this.#statusEl.textContent = text;
         this.#statusEl.className = `status ${kind}`;
+        if (kind === 'error') this.#busy('town', null); // never hide the town behind a failed load
       },
       onBudget: (snap) => this.#onBudget(snap),
     });
@@ -109,6 +119,8 @@ export class App {
 
   start(): void {
     void this.#session.home();
+    // a themed 3D town waits for its bundle: say so rather than show the plain look first
+    if (this.#prefs.view === '3d' && (new URLSearchParams(location.search).get('theme') ?? this.#prefs.theme) !== '') this.#busy('theme', 'Raising the town…');
     // Asset packs: restore the loadout, then load packs (bundled and imported).
     assets.setLoadout(this.#prefs.loadout);
     let rebuild: ReturnType<typeof setTimeout> | undefined;
@@ -129,7 +141,7 @@ export class App {
       .then(() => loadThemeBundles('/themes', assets.packs.values()))
       .then((themes) => {
         this.#themes = themes;
-        this.#applyTheme();
+        if (!this.#applyTheme()) this.#busy('theme', null);
         this.#refreshThemePicker();
       });
     if (new URLSearchParams(location.search).has('freeze')) this.#sim.playing = false;
@@ -146,13 +158,19 @@ export class App {
   }
 
   /** Draw the 3D town with the chosen theme bundle (?theme= overrides, for tests). */
-  #applyTheme(): void {
+  /** True if a theme started loading. */
+  #applyTheme(): boolean {
     const r = this.#r3d;
-    if (r === null) return;
+    if (r === null) return false;
     const id = new URLSearchParams(location.search).get('theme') ?? this.#prefs.theme;
     const bundle = this.#themes.find((t) => t.id === id) ?? null;
-    if ((bundle?.id ?? '') === r.themeId) return;
-    void r.setTheme(bundle).catch((e: unknown) => console.warn('theme', e));
+    if ((bundle?.id ?? '') === r.themeId) return false;
+    if (bundle) this.#busy('theme', `Raising ${bundle.name}…`);
+    void r
+      .setTheme(bundle)
+      .catch((e: unknown) => console.warn('theme', e))
+      .finally(() => this.#busy('theme', null));
+    return bundle !== null;
   }
 
   #classOf(address: string): HeroClass {
@@ -163,12 +181,45 @@ export class App {
 
   #rebuild(): void {
     this.#guild = buildGuild(this.#raws, this.#prefs.window, { names: this.#names });
+    this.#nameHeroes();
     const plan = planTown(this.#guild);
     this.#sim = new Sim(this.#guild, plan);
     this.#sim.speed = this.#prefs.speed;
     this.#sim.fog = this.#prefs.fog;
     this.#logCount = -1;
     this.#countMedals();
+  }
+
+  /** The names heroes were given by the town (ENS or a generated one), before the player renamed any. */
+  #bornNames = new Map<string, string>();
+
+  /** Heroes wear the names the player gave them. */
+  #nameHeroes(): void {
+    for (const h of this.#guild.heroes) {
+      this.#bornNames.set(h.address, h.name);
+      const mine = this.#prefs.names[h.address.toLowerCase()];
+      if (mine !== undefined && mine.trim() !== '') h.name = mine;
+    }
+  }
+
+  #rename(address: string, name: string | null): void {
+    const key = address.toLowerCase();
+    const clean = name?.trim().slice(0, 40) ?? '';
+    if (clean === '' || clean === this.#bornNames.get(address)) delete this.#prefs.names[key];
+    else this.#prefs.names[key] = clean;
+    savePrefs(this.#prefs);
+    const hero = this.#guild.heroes.find((h) => h.address === address);
+    if (hero) hero.name = this.#prefs.names[key] ?? this.#bornNames.get(address) ?? hero.name;
+    this.#logCount = -1; // the quest log shows names: redraw it
+  }
+
+  /** Show (text) or clear (null) one reason the town is not ready yet. */
+  #busy(reason: string, text: string | null): void {
+    if (text === null) this.#loading.delete(reason);
+    else this.#loading.set(reason, text);
+    const last = [...this.#loading.values()].at(-1);
+    this.#veil.hidden = last === undefined;
+    if (last !== undefined) this.#veilText.textContent = last;
   }
 
   /** Medals from the loaded guild, merged with (and added to) the ones remembered. */
@@ -212,6 +263,7 @@ export class App {
   }
 
   #onTown(shown: Shown): void {
+    this.#busy('town', null);
     // what the open panel shows, to keep it if the new town still has it
     const was = this.#inspector.hidden ? null : this.#renderer.selected;
     this.#shown = shown;
@@ -324,9 +376,21 @@ export class App {
           this.#session.keyChanged();
           void this.#session.home();
         },
-        onVisit: (a) => void this.#session.visit(a),
+        onVisit: (a) => {
+          this.#busy('town', 'Travelling to their town…');
+          void this.#session.visit(a);
+        },
         onClearCache: () => this.#session.clearCache(),
         refresh: () => this.#openGuild(),
+        heroes: this.#guild.heroes,
+        classOf: (a) => this.#classOf(a),
+        onSelectHero: (a) => this.#selectHero(a),
+        setName: (a, name) => {
+          this.#rename(a, name);
+          this.#openGuild();
+        },
+        bornName: (a) => this.#bornNames.get(a) ?? '',
+        portraitOf: (a, cls) => this.#r3d?.portrait(a, cls) ?? null,
       }),
       true,
     );
@@ -348,6 +412,7 @@ export class App {
   async #setView(v: ViewKind, save = true): Promise<void> {
     if (v === '3d') {
       if (this.#r3d === null) {
+        this.#busy('3d', 'Raising the town in 3D…');
         try {
           const { Renderer3D } = await import('../render/three/renderer3d.js');
           const r = new Renderer3D(this.#sim, this.#prefs.quality);
@@ -366,6 +431,8 @@ export class App {
         } catch (error) {
           console.error('3D view unavailable', error);
           return;
+        } finally {
+          this.#busy('3d', null);
         }
       }
       this.#renderer = this.#r3d;
@@ -445,7 +512,10 @@ export class App {
     const guildBtn = el('button', { class: 'btn' }, '⚙ Guild');
     guildBtn.onclick = () => (this.#guildOpen ? this.#closeInspector() : this.#openGuild());
     this.#inkEl.onclick = () => this.#openGuild();
-    this.#homeBtn.onclick = () => void this.#session.home();
+    this.#homeBtn.onclick = () => {
+      this.#busy('town', 'Heading home…');
+      void this.#session.home();
+    };
     const header = el(
       'header',
       { class: 'topbar' },
@@ -480,9 +550,22 @@ export class App {
     this.#scrub.onchange = () => (this.#scrubbing = false);
 
     const timeline = el('footer', { class: 'timeline' }, this.#playBtn, speeds, this.#scrub, this.#dateLabel, this.#modeLabel, this.#beatLabel);
-    const questlog = el('section', { class: 'questlog' }, el('h4', {}, 'Quest log'), this.#log);
+    const fold = el('button', { class: 'fold', 'aria-label': 'Collapse the quest log', 'aria-expanded': 'true' }, '▾');
+    const questlog = el('section', { class: 'questlog' }, el('h4', {}, el('span', {}, 'Quest log'), fold), this.#log);
+    const setFolded = (folded: boolean): void => {
+      questlog.classList.toggle('collapsed', folded);
+      fold.textContent = folded ? '▸' : '▾';
+      fold.setAttribute('aria-expanded', String(!folded));
+      fold.setAttribute('aria-label', folded ? 'Expand the quest log' : 'Collapse the quest log');
+    };
+    setFolded(this.#prefs.questlogFolded);
+    questlog.querySelector('h4')!.onclick = () => {
+      this.#prefs.questlogFolded = !this.#prefs.questlogFolded;
+      savePrefs(this.#prefs);
+      setFolded(this.#prefs.questlogFolded);
+    };
 
-    return el('div', { class: 'app' }, header, el('main', { class: 'world' }, this.#stage, questlog, legend, this.#toasts, this.#inspector, this.#tooltip), timeline);
+    return el('div', { class: 'app' }, header, el('main', { class: 'world' }, this.#stage, questlog, legend, this.#toasts, this.#veil, this.#inspector, this.#tooltip), timeline);
   }
 
   #togglePlay(): void {
@@ -658,6 +741,12 @@ export class App {
         savePrefs(this.#prefs);
         this.#selectHero(a);
       },
+      setName: (a, name) => {
+        this.#rename(a, name);
+        this.#selectHero(a);
+      },
+      bornName: (a) => this.#bornNames.get(a) ?? '',
+      portraitOf: (a, cls) => this.#r3d?.portrait(a, cls) ?? null,
       setCrest: (a, color) => {
         const key = a.toLowerCase();
         if (color === null) delete this.#prefs.crests[key];

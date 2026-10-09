@@ -33,6 +33,10 @@ export interface Prefs {
   crests: Record<string, [string, string]>;
   /** Fog of war over unvisited buildings (opt in). */
   fog: boolean;
+  /** The quest log folded down to its title. */
+  questlogFolded: boolean;
+  /** Names the player gave heroes, by lowercase address. */
+  names: Record<string, string>;
 }
 
 const KEY = 'wallet-landia-v4/prefs/v1';
@@ -52,6 +56,8 @@ const DEFAULTS: Prefs = {
   titles: {},
   crests: {},
   fog: false,
+  questlogFolded: false,
+  names: {},
 };
 
 export function loadPrefs(): Prefs {

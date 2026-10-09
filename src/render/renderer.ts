@@ -5,7 +5,7 @@
 
 import type { HeroClass } from '../domain/model.js';
 import { MAP_H, MAP_W, type Placed, type Pt } from '../world/layout.js';
-import type { Agent, Effect, Sim } from '../world/sim.js';
+import { CARAVAN_BACK, type Agent, type Effect, type Sim } from '../world/sim.js';
 import { crestColors, hashString, makeRng } from '../util/rng.js';
 import { brandColor, ISO_H, ISO_W } from './buildings.js';
 import { buildingArt, caravanArt, heroArt, npcArt, propArt, villagerArt } from '../assets/art.js';
@@ -345,9 +345,9 @@ export class Renderer implements WorldView {
 
     // the caravan follows on the trail, one or two steps behind
     if (a.carrying !== null && a.carrying > 0 && a.kind === 'hero') {
-      const back = a.trail[a.flying ? 6 : 9];
+      const back = a.trail[CARAVAN_BACK];
       const cs = caravanArt(a.carrying, frame);
-      if (back && cs) out.push({ depth: this.#depth(back.x, back.y), draw: () => this.#blit(cs, back.x, back.y, flip, lift * 0.6) });
+      if (back && cs) out.push({ depth: this.#depth(back.x, back.y), draw: () => this.#blit(cs, back.x, back.y, flip) }); // on the ground, behind
     }
 
     out.push({

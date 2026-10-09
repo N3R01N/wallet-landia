@@ -51,6 +51,33 @@ export interface PanelContext {
   setTitle: (address: string, title: string | null) => void;
   /** Pick a crest colour (null: the one the hero was born with). */
   setCrest: (address: string, color: string | null) => void;
+  /** Rename a hero (null or empty: back to the name the town gave them). */
+  setName: (address: string, name: string | null) => void;
+  /** The name the town gave a hero. */
+  bornName: (address: string) => string;
+  /** A portrait in the chosen theme's look (an image URL), if it has one. */
+  portraitOf?: (address: string, cls: HeroClass) => string | null;
+}
+
+/** A hero's name with a ✎ to rename them in place (Enter saves, Escape cancels, empty restores). */
+export function heroNameEditor(hero: Hero, ctx: Pick<PanelContext, 'setName' | 'bornName'>): HTMLElement {
+  const title = el('h2', { class: 'hero-name' }, hero.name);
+  const edit = el('button', { class: 'rename', title: 'Rename this hero', 'aria-label': 'Rename this hero' }, '✎');
+  const wrap = el('div', { class: 'name-row' }, title, edit);
+  edit.onclick = () => {
+    const input = el('input', { type: 'text', value: hero.name, maxlength: '40', 'aria-label': 'Hero name', placeholder: ctx.bornName(hero.address) });
+    const save = (): void => ctx.setName(hero.address, input.value);
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') save();
+      if (e.key === 'Escape') wrap.replaceChildren(title, edit);
+    };
+    const ok = el('button', { class: 'btn small' }, 'Save');
+    ok.onclick = save;
+    wrap.replaceChildren(input, ok);
+    input.focus();
+    input.select();
+  };
+  return wrap;
 }
 
 function chip(text: string, color: string): HTMLElement {
@@ -60,7 +87,23 @@ function chip(text: string, color: string): HTMLElement {
   return c;
 }
 
-function portrait(hero: Hero, cls: HeroClass): HTMLCanvasElement {
+/** A hero's portrait: the theme's rigged character when there is one, else the pixel-art sprite. */
+export function portrait(hero: Hero, cls: HeroClass, themed?: ((address: string, cls: HeroClass) => string | null) | undefined): HTMLElement {
+  let url: string | null = null;
+  try {
+    url = themed?.(hero.address, cls) ?? null;
+  } catch (error) {
+    console.warn('portrait', error);
+  }
+  if (url !== null) {
+    const img = el('img', { class: 'portrait themed', alt: `Portrait of ${hero.name}` });
+    img.src = url;
+    return img;
+  }
+  return pixelPortrait(hero, cls);
+}
+
+function pixelPortrait(hero: Hero, cls: HeroClass): HTMLCanvasElement {
   const h = hashString(hero.address);
   const s = heroArt({ address: hero.address, cls, tier: hero.tier, crest: crestColors(hero.address)[0], skin: h % 4, hair: (h >> 3) % 6 }, 0);
   const canvas = el('canvas', { class: 'portrait' });
@@ -89,11 +132,17 @@ function itemSlot(item: Item | null, opts: { pouch?: { count: number; usd: numbe
   slot.append(canvas);
   if (item !== null) {
     slot.style.borderColor = TIER_COLORS[item.tier] ?? '#888';
+    if (item.category === 'nft') slot.classList.add('nft');
     if (item.iconUrl !== null && safeHref(item.iconUrl) !== null) {
+      // the token's own logo (or the NFT's picture) is the big thing; the category icon sits in the corner
       const img = el('img', { class: 'slot-logo', alt: '', referrerpolicy: 'no-referrer' });
       img.src = item.iconUrl;
-      img.onerror = () => img.remove();
-      slot.append(img);
+      img.onerror = () => {
+        img.remove();
+        slot.classList.remove('has-logo');
+      };
+      slot.classList.add('has-logo');
+      canvas.before(img);
     }
     slot.append(el('span', { class: 'slot-qty' }, item.category === 'nft' ? '' : formatQty(item.quantity)));
     slot.title = `${item.name} (${item.symbol})\n${formatQty(item.quantity)} · ${exactUsd(item.usd)}\n${TIER_NAMES[item.tier]} · ${item.category}`;
@@ -216,7 +265,7 @@ export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
   return el(
     'div',
     { class: 'panel-body' },
-    el('div', { class: 'sheet-head' }, portrait(hero, cls), el('div', {}, el('h2', {}, hero.name), el('div', { class: 'hero-title' }, title), el('div', { class: 'muted mono' }, shortAddr(hero.address)), el('div', { class: 'muted' }, hero.label))),
+    el('div', { class: 'sheet-head' }, portrait(hero, cls, ctx.portraitOf), el('div', {}, heroNameEditor(hero, ctx), el('div', { class: 'hero-title' }, title), el('div', { class: 'muted mono' }, shortAddr(hero.address)), el('div', { class: 'muted' }, hero.label))),
     el('div', { class: 'stat-row' }, el('span', {}, 'Net worth'), el('strong', {}, exactUsd(hero.netWorth)), chip(TIER_NAMES[hero.tier], TIER_COLORS[hero.tier] ?? '#888')),
     el('div', { class: 'stat-row' }, el('span', {}, 'Mount'), el('strong', {}, MOUNT_NAMES[hero.tier])),
     el('div', { class: 'stat-row' }, el('span', {}, 'Class'), select),

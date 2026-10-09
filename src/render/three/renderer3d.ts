@@ -14,7 +14,7 @@ import type { HeroClass } from '../../domain/model.js';
 import type { Tier } from '../../domain/tiers.js';
 import { crestColors, hashString } from '../../util/rng.js';
 import { MAP_H, MAP_W, type Placed } from '../../world/layout.js';
-import type { Agent, Effect, Sim } from '../../world/sim.js';
+import { CARAVAN_BACK, type Agent, type Effect, type Sim } from '../../world/sim.js';
 import { brandColor } from '../buildings.js';
 import { caravanArt, heroArt, npcArt, villagerArt } from '../../assets/art.js';
 import { BuildingFactory, type BuildingSpec } from './buildingFactory.js';
@@ -27,6 +27,7 @@ import { EnvironmentController, skyForHour } from './environment.js';
 import { bundleTheme, type CharacterProvider, type SandboxCharacter, type Theme } from './themes.js';
 import type { Companion } from './grammar/companions.js';
 import { FogBank } from './fogBank.js';
+import { PortraitStudio } from './portrait.js';
 import { Smoke, type Emitter } from './smoke.js';
 import { rippling } from './water.js';
 import { tileSurfaces, townSite } from './townSite.js';
@@ -670,7 +671,7 @@ export class Renderer3D implements WorldView {
 
   /** A hero's caravan, following its trail. Returns whether one is shown. */
   #moveCaravan(a: Agent, dt: number, make: (tier: Tier, crest: string) => Companion): boolean {
-    const back = a.trail[a.flying ? 6 : 9];
+    const back = a.trail[CARAVAN_BACK];
     const tier = a.kind === 'hero' && a.carrying !== null && a.carrying > 0 ? a.carrying : 0;
     let c = this.#caravans.get(a.id);
     if (!back || tier === 0) {
@@ -687,7 +688,7 @@ export class Renderer3D implements WorldView {
     c.x = back.x;
     c.y = back.y;
     c.c.object.visible = true;
-    c.c.object.position.set(back.x, a.alt * 0.6, back.y);
+    c.c.object.position.set(back.x, 0, back.y); // on the ground, behind
     // face the leader
     if (Math.hypot(a.x - back.x, a.y - back.y) > 0.05) c.c.object.rotation.y = Math.atan2(a.x - back.x, a.y - back.y);
     c.c.update(dt, speed);
@@ -761,12 +762,12 @@ export class Renderer3D implements WorldView {
     this.#placeSprite(body, s, a.x, a.y, lift, flip, scale);
     this.#shadow(a.x, a.y, a.kind === 'hero' ? (a.hero && a.hero.tier >= 5 ? 1.7 : 1.15) : a.kind === 'raven' ? 0.5 : 0.8, lift);
 
-    const back = a.trail[a.flying ? 6 : 9];
+    const back = a.trail[CARAVAN_BACK];
     const cs = a.kind === 'hero' && a.carrying !== null && a.carrying > 0 ? caravanArt(a.carrying, frame, false) : null;
     caravan.visible = back !== undefined && cs !== null;
     if (back && cs) {
-      this.#placeSprite(caravan, cs, back.x, back.y, lift * 0.6, flip, HERO_SCALE);
-      this.#shadow(back.x, back.y, a.carrying !== null && a.carrying >= 4 ? 1.6 : 0.9, lift * 0.6);
+      this.#placeSprite(caravan, cs, back.x, back.y, 0, flip, HERO_SCALE);
+      this.#shadow(back.x, back.y, a.carrying !== null && a.carrying >= 4 ? 1.6 : 0.9, 0);
     }
   }
 
@@ -1060,6 +1061,23 @@ export class Renderer3D implements WorldView {
   /** The scene, for tests and tuning tools only. */
   debugScene(): THREE.Scene {
     return this.#scene;
+  }
+
+  #studio: PortraitStudio | null = null;
+
+  /**
+   * A portrait of a hero in the theme's own look (its rigged character), as an
+   * image URL; null when the town is drawn in the built-in look or its people
+   * have not loaded yet.
+   */
+  portrait(address: string, cls: HeroClass): string | null {
+    const people = this.#people;
+    if (people === null || this.#theme === null) return null;
+    const crest = crestColors(address)[0];
+    const seed = hashString(address);
+    this.#studio ??= new PortraitStudio();
+    // on foot: a mount would fill the frame
+    return this.#studio.shoot(`${this.#theme.id}:${cls}:${crest}:${seed}`, () => people.create({ id: `portrait:${address}`, kind: 'hero', cls, tier: 0, crest, seed }));
   }
 
   /** Put the camera somewhere at once (tuning tools only): looking at (x, y) from `distance` tiles. */

@@ -185,6 +185,7 @@ select {
 
 .inspector {
   position: absolute;
+  z-index: 5;
   top: 12px;
   right: 12px;
   bottom: 12px;
@@ -305,12 +306,25 @@ select {
 }
 
 .slot-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.slot.nft .slot-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+}
+
+/* with a logo, the category icon becomes a little badge in the corner */
+.slot.has-logo .slot-icon {
   position: absolute;
-  top: 2px;
-  right: 2px;
+  top: 1px;
+  right: 1px;
   width: 16px;
   height: 16px;
-  border-radius: 50%;
 }
 
 .slot-qty {
@@ -413,6 +427,11 @@ select {
 }
 
 .questlog h4 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
   margin: 0 0 4px;
   font-size: 12px;
   text-transform: uppercase;
@@ -781,4 +800,220 @@ select {
 
 .game-options {
   margin-top: 12px;
+}
+
+/* --- loading veil: before the town (or its theme) is ready ------------------- */
+
+.veil {
+  position: absolute;
+  inset: 0;
+  z-index: 4; /* over the town, under the panels (Looks stays usable while a theme loads) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* no backdrop blur: blurring a live WebGL canvas every frame is costly, and the page is busy loading */
+  background: radial-gradient(circle at 50% 45%, rgba(58, 36, 20, 0.7), rgba(26, 16, 10, 0.92));
+}
+
+.veil-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 34px 20px;
+  background: var(--parchment);
+  border: 3px solid var(--wood);
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--wood-dark), 6px 8px 0 rgba(0, 0, 0, 0.3);
+  min-width: 260px;
+}
+
+.veil-text {
+  font-size: 15px;
+  font-weight: bold;
+  color: var(--ink);
+}
+
+/* three little houses popping up in turn */
+.veil-crest {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  height: 44px;
+}
+
+.veil-crest span {
+  position: relative;
+  width: 26px;
+  height: 22px;
+  background: var(--wood-light);
+  border: 2px solid var(--wood-dark);
+  animation: veil-raise 1.5s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+.veil-crest span::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  bottom: 100%;
+  height: 14px;
+  background: #b0302a;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.veil-crest span:nth-child(2) {
+  height: 30px;
+  animation-delay: 0.2s;
+}
+
+.veil-crest span:nth-child(2)::before {
+  background: #2a58b0;
+}
+
+.veil-crest span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.veil-crest span:nth-child(3)::before {
+  background: #2f7d3a;
+}
+
+@keyframes veil-raise {
+  0%,
+  100% {
+    transform: scaleY(0.25);
+    opacity: 0.4;
+  }
+  40%,
+  70% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.veil-bar {
+  width: 200px;
+  height: 8px;
+  border: 2px solid var(--wood-dark);
+  border-radius: 4px;
+  background: var(--parchment-dark);
+  overflow: hidden;
+}
+
+.veil-bar i {
+  display: block;
+  width: 40%;
+  height: 100%;
+  background: var(--gold);
+  animation: veil-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes veil-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .veil-crest span,
+  .veil-bar i {
+    animation: none;
+  }
+}
+
+.questlog .fold {
+  border: 0;
+  background: none;
+  color: var(--wood);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.questlog.collapsed {
+  width: auto;
+  min-width: 140px;
+}
+
+.questlog.collapsed h4 {
+  margin: 0;
+  gap: 10px;
+}
+
+.questlog.collapsed .questlog-list {
+  display: none;
+}
+
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.name-row input {
+  font-size: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.rename {
+  border: 0;
+  background: none;
+  color: var(--wood);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.rename:hover {
+  color: var(--ink);
+}
+
+.portrait.themed {
+  image-rendering: auto;
+  object-fit: cover;
+}
+
+.hero-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hero-card {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px;
+  border: 2px solid var(--parchment-dark);
+  border-radius: 6px;
+}
+
+.hero-card .portrait.mini {
+  width: 72px;
+  height: 66px;
+  flex: none;
+  cursor: pointer;
+}
+
+.hero-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.hero-card-body .hero-name {
+  font-size: 16px;
+}
+
+.hero-card-body .btn {
+  align-self: flex-start;
 }
