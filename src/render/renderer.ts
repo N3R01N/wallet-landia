@@ -115,6 +115,7 @@ export class Renderer implements WorldView {
   }
 
   pan(dx: number, dy: number): void {
+    this.#follow = null; // the player takes the camera back
     this.ox += dx;
     this.oy += dy;
   }
@@ -124,6 +125,32 @@ export class Renderer implements WorldView {
   }
 
   /** Centre the camera on a tile position. */
+  #follow: string | null = null;
+  #followThen: string | null = null;
+
+  /** Keep someone in view (Quest Replay): see WorldView.follow. Panning stops it. */
+  follow(key: string | null, then: string | null = null): void {
+    this.#follow = key;
+    this.#followThen = then;
+  }
+
+  /** Glide towards whoever is followed (a little each frame, so it is easy on the eye). */
+  #track(): void {
+    if (this.#follow === null) return;
+    let a = this.#sim.findAgent(this.#follow);
+    if (!a && this.#followThen !== null) {
+      this.#follow = this.#followThen;
+      this.#followThen = null;
+      a = this.#sim.findAgent(this.#follow);
+    }
+    if (!a) return;
+    const [ax, ay] = this.toArt(a.x, a.y);
+    const tx = this.canvas.clientWidth / 2 - ax * this.scale;
+    const ty = this.canvas.clientHeight / 2 - ay * this.scale;
+    this.ox += (tx - this.ox) * 0.08;
+    this.oy += (ty - this.oy) * 0.08;
+  }
+
   focus(x: number, y: number): void {
     const [ax, ay] = this.toArt(x, y);
     this.ox = this.canvas.clientWidth / 2 - ax * this.scale;
@@ -141,6 +168,7 @@ export class Renderer implements WorldView {
   // --- frame -----------------------------------------------------------------
 
   draw(): void {
+    this.#track();
     const c = this.ctx;
     const dpr = window.devicePixelRatio || 1;
     const w = this.canvas.clientWidth;

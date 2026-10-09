@@ -851,7 +851,9 @@ export class App {
   #replay(j: Journey): void {
     this.#sim.route = this.#sim.routeFor(j);
     this.#sim.solo(j);
-    this.#renderer.follow?.(j.initiated ? j.hero : null);
+    // follow whoever carries it out: the hero, or the raven, herald or bailiffs coming to them (then the hero)
+    const actor = this.#sim.soloActor;
+    this.#renderer.follow?.(actor?.id ?? j.hero, j.hero);
     if (!this.#sim.playing) this.#togglePlay();
   }
 

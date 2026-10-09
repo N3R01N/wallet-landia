@@ -203,6 +203,16 @@ export class Sim {
     return this.#heroAgents.get(address);
   }
 
+  /** Whoever carries out the quest replaying on its own (the hero, or the raven, herald or bailiffs that come to them). */
+  get soloActor(): Agent | null {
+    return this.#solo?.agent ?? null;
+  }
+
+  /** An agent by its id, or a hero by address; undefined once gone. */
+  findAgent(key: string): Agent | undefined {
+    return this.#heroAgents.get(key) ?? this.agents.find((a) => a.id === key && !a.gone);
+  }
+
   /** The real-world time the replay cursor stands at. */
   realTime(): number {
     const s = this.scheduled;

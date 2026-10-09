@@ -225,3 +225,21 @@ describe('NFT goods', () => {
     if (j) expect(j.label).toContain([...j.steps[0]!.give, ...j.steps[0]!.get].find((y) => y.isNft)!.name!);
   });
 });
+
+describe('replaying a quest that came to the hero', () => {
+  it('names the messenger who carries it, so the camera can follow them', async () => {
+    const { Sim } = await import('../src/world/sim.js');
+    const guild = buildGuild(demo);
+    const sim = new Sim(guild, planTown(guild));
+    const j = guild.journeys.find((x) => !x.initiated && x.verb !== 'liquidated' && x.verb !== 'airdrop')!;
+    sim.solo(j);
+    const actor = sim.soloActor!;
+    expect(actor.kind).toBe('raven');
+    expect(sim.findAgent(actor.id)).toBe(actor);
+    // it flies to the hero's door, delivers, and leaves; then it is gone
+    for (let i = 0; i < 4000 && !actor.gone; i++) sim.step(0.05);
+    expect(actor.gone).toBe(true);
+    expect(sim.findAgent(actor.id)).toBeUndefined();
+    expect(sim.findAgent(j.hero)).toBeDefined(); // the camera goes back to the hero
+  });
+});

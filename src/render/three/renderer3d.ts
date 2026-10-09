@@ -119,6 +119,7 @@ export class Renderer3D implements WorldView {
   #distance = 62;
   #goal = { target: new THREE.Vector3(MAP_W / 2, 0, MAP_H / 2), distance: 62 };
   #follow: string | null = null;
+  #followThen: string | null = null;
 
   #pipeline: ImagePipeline;
   #lastSize = '';
@@ -350,16 +351,27 @@ export class Renderer3D implements WorldView {
     this.#goal.distance = Math.min(this.#goal.distance, 34);
   }
 
-  /** Keep a hero in view (Quest Replay); null to stop. Panning also stops it. */
-  follow(address: string | null): void {
-    this.#follow = address;
-    if (address !== null) this.#goal.distance = Math.min(this.#goal.distance, 30);
+  /**
+   * Keep someone in view (Quest Replay): a hero, or the raven or herald that
+   * brings them something; `then` (a hero) once they have left town. Null to
+   * stop; panning also stops it.
+   */
+  follow(key: string | null, then: string | null = null): void {
+    this.#follow = key;
+    this.#followThen = then;
+    if (key !== null) this.#goal.distance = Math.min(this.#goal.distance, 30);
   }
 
   #placeCamera(dt: number): void {
     if (this.#follow !== null) {
-      const a = this.#sim.heroAgent(this.#follow);
-      if (a) this.#goal.target.set(a.x, 0, a.y);
+      let a = this.#sim.findAgent(this.#follow);
+      if (!a && this.#followThen !== null) {
+        // the messenger has gone: back to the hero they came to
+        this.#follow = this.#followThen;
+        this.#followThen = null;
+        a = this.#sim.findAgent(this.#follow);
+      }
+      if (a) this.#goal.target.set(a.x, a.alt, a.y);
     }
     const k = 1 - Math.exp(-4 * Math.max(0, dt));
     this.#target.lerp(this.#goal.target, k);

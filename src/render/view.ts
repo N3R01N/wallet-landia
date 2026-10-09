@@ -28,7 +28,8 @@ export interface WorldView {
   /** Centre the camera on a tile position. */
   focus(x: number, y: number): void;
   /** Keep a hero in view (3D Quest Replay); optional. */
-  follow?(address: string | null): void;
+  /** Keep someone in view: a hero's address or any agent's id; `then` (an address) once they are gone. */
+  follow?(key: string | null, then?: string | null): void;
   /** Orbit the camera; a no-op where the projection is fixed. */
   rotate(dx: number, dy: number): void;
 }
