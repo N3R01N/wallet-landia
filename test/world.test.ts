@@ -83,7 +83,7 @@ describe('schedule', () => {
     const shortGap = s[1]!.at - s[0]!.at;
     const longGap = s[2]!.at - s[1]!.at;
     expect(longGap).toBeGreaterThan(shortGap);
-    expect(longGap).toBeLessThanOrEqual(9);
+    expect(longGap).toBeLessThanOrEqual(18);
   });
 });
 

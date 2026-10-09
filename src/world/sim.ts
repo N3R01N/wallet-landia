@@ -21,7 +21,8 @@ export interface Scheduled {
 /**
  * Event time, not wall time: a wallet idle for two weeks then busy for an hour
  * would otherwise replay as two weeks of nothing. Gaps are log-compressed into
- * 1.5–9 s, so order and rough rhythm survive but nothing drags.
+ * 3–18 s, so order and rough rhythm survive but nothing drags (and a hero
+ * walking at a real pace has time to get somewhere between them).
  */
 export function schedule(journeys: readonly Journey[]): Scheduled[] {
   const out: Scheduled[] = [];
@@ -30,7 +31,7 @@ export function schedule(journeys: readonly Journey[]): Scheduled[] {
   for (const j of journeys) {
     if (prev !== null) {
       const gapH = Math.max(0, (j.time - prev) / 3_600_000);
-      at += 1.5 + Math.min(7.5, 2.2 * Math.log1p(gapH));
+      at += 3 + Math.min(15, 4.4 * Math.log1p(gapH));
     }
     out.push({ journey: j, at });
     prev = j.time;
@@ -99,8 +100,10 @@ export interface LogEntry {
   at: number;
 }
 
-const WALK_SPEED = 3.4;
-const MOUNT_SPEED = [0.8, 0.9, 1, 1.15, 1.3, 1.9, 2.2] as const;
+/** Tiles per second on foot: a brisk walk (~2.2 m/s); a hero with errands piling up hurries. */
+const WALK_SPEED = 1.2;
+/** Mounts by tier, as multiples of walking: a donkey's amble up to a griffin's flight. */
+const MOUNT_SPEED = [0.85, 0.95, 1.1, 1.35, 1.7, 2.4, 3] as const;
 
 export interface SimOptions {
   classOverride?: (address: string) => HeroClass | null;
@@ -115,6 +118,8 @@ export class Sim {
   agents: Agent[] = [];
   effects: Effect[] = [];
   log: LogEntry[] = [];
+  /** Journeys played so far (the log only keeps the latest). */
+  played = 0;
 
   t = 0;
   speed = 1;
@@ -195,6 +200,7 @@ export class Sim {
     }
     this.effects = [];
     this.log = this.scheduled.slice(0, this.#next).map((s) => ({ journey: s.journey, at: s.at })).slice(-40);
+    this.played = this.#next;
     this.gloom = 0;
   }
 
@@ -301,6 +307,7 @@ export class Sim {
 
   #dispatch(j: Journey): void {
     this.log.push({ journey: j, at: this.t });
+    this.played++;
     if (this.log.length > 40) this.log.shift();
     const hero = this.#heroAgents.get(j.hero);
     if (hero === undefined || hero.hero === undefined) return;
@@ -323,7 +330,7 @@ export class Sim {
       courier.flying = kind === 'raven';
       courier.carrying = j.tier;
       courier.journey = j;
-      courier.speed = kind === 'raven' ? 6 : 3;
+      courier.speed = kind === 'raven' ? 4 : 1.6;
       courier.tasks = [
         this.#toDoor(home, courier.flying),
         { type: 'act', verb: 'give', seconds: 0.8, journey: j },
@@ -354,7 +361,7 @@ export class Sim {
     const count = j.drama === 1 ? 1 : j.drama === 2 ? 3 : 6;
     for (let i = 0; i < count; i++) {
       const b = this.#makeAgent('bailiff', this.plan.gate.doorAt.x + ((i % 3) - 1) * 0.3, this.plan.gate.doorAt.y + Math.floor(i / 3) * 0.3);
-      b.speed = 3 + i * 0.1;
+      b.speed = 2 + i * 0.1;
       b.journey = j;
       b.tasks = [
         this.#toDoor(bank),
@@ -422,7 +429,7 @@ export class Sim {
   // --- movement --------------------------------------------------------------
 
   #advance(a: Agent, dt: number): void {
-    a.phase += dt * (a.path.length > 0 ? 8 : 2);
+    a.phase += dt * (a.path.length > 0 ? 2.5 + a.speed * 1.6 : 2); // steps keep time with the pace
     if (a.acting !== null) {
       a.acting.left -= dt;
       if (a.acting.left <= 0) a.acting = null;

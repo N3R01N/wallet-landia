@@ -45,9 +45,38 @@ export function heroName(address: string): string {
   return `${pick(rng, FIRST)} ${pick(rng, LAST)}`;
 }
 
-/** A crest colour pair per address. */
-export function crestColors(address: string): [string, string] {
+/** Heraldic tinctures a player may pick for a crest. */
+export const TINCTURES: readonly { name: string; color: string }[] = [
+  { name: 'Gules', color: '#b0302a' },
+  { name: 'Sanguine', color: '#7a1f24' },
+  { name: 'Tenné', color: '#c8692a' },
+  { name: 'Or', color: '#d4a32a' },
+  { name: 'Vert', color: '#2f7d3a' },
+  { name: 'Teal', color: '#1f7a78' },
+  { name: 'Celeste', color: '#6aaee0' },
+  { name: 'Azure', color: '#2a58b0' },
+  { name: 'Purpure', color: '#73409c' },
+  { name: 'Murrey', color: '#8a3a62' },
+  { name: 'Sable', color: '#2a2628' },
+  { name: 'Argent', color: '#e6e4de' },
+];
+
+/** Crests the player chose, by lowercase address (see `setCrests`). */
+let chosen: Record<string, [string, string]> = {};
+
+/** The player's chosen crests (from their preferences); every crest drawn after this uses them. */
+export function setCrests(crests: Record<string, [string, string]>): void {
+  chosen = crests;
+}
+
+/** The crest an address is born with. */
+export function bornCrest(address: string): [string, string] {
   const h = hashString(`crest:${address.toLowerCase()}`);
   const hue = h % 360;
   return [`hsl(${hue} 55% 45%)`, `hsl(${(hue + 40) % 360} 70% 75%)`];
+}
+
+/** A crest colour pair per address: the player's choice, else the one it was born with. */
+export function crestColors(address: string): [string, string] {
+  return chosen[address.toLowerCase()] ?? bornCrest(address);
 }

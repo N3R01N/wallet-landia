@@ -171,9 +171,9 @@ Same scope for both: **the Town view only.**
 
 ### Phase 5: Gamification
 - Fog of war over districts and buildings, revealed by interacting.
-- Titles and medals (achievements): "First Barter", "Survived the Bailiffs", "Keeper of Keys" (revoked stale approvals).
-- Quests that teach: "Recover your master keys", "Visit the Temple", "Diversify your treasury".
-- Guild crest customisation, persistence (local first).
+- [x] Titles and medals (achievements), `domain/feats.ts`: 22 medals, each earned by the first journey that qualifies (or by holdings: a balanced treasury, a dragon's hoard), each with a plain-words lesson and a title it unlocks. The replay announces a medal when the journey that earned it plays; medals are remembered in the browser as the history window moves on; the player picks the title a hero wears.
+- [x] Quests that teach, fitted to each hero (only when they mean something for the wallet): recover your master keys (approvals seen vs revoked, with a revoke.cash link), visit the Temple, diversify your treasury, keep the bailiffs away, bring in the harvest, leave the cursed junk alone.
+- [x] Crest customisation (a heraldic tincture per hero: banners, shields, caravans, the guild flag), persistence local first.
 - Home wear and tear from wallet age.
 - **Creator economy:** pack authoring guide/tooling, a community pack gallery, and later selling packs (possibly as NFTs).
 

@@ -25,6 +25,12 @@ export interface Prefs {
   loadout: Record<string, string>;
   /** The theme bundle drawing the 3D town ('' = the built-in look). */
   theme: string;
+  /** Medals once seen, address → medal id → when earned (null: for holdings). Kept as the history window moves on. */
+  medals: Record<string, Record<string, number | null>>;
+  /** The title each hero wears, if the player picked one. */
+  titles: Record<string, string>;
+  /** Crest colours the player picked (field, charge), by address. */
+  crests: Record<string, [string, string]>;
 }
 
 const KEY = 'wallet-landia-v4/prefs/v1';
@@ -40,6 +46,9 @@ const DEFAULTS: Prefs = {
   quality: 'medium',
   loadout: {},
   theme: '',
+  medals: {},
+  titles: {},
+  crests: {},
 };
 
 export function loadPrefs(): Prefs {

@@ -23,6 +23,8 @@ import { loadPrefs, savePrefs, type Prefs } from '../settings.js';
 import type { Renderer3D } from '../render/three/renderer3d.js';
 import { loadThemeBundles, type ThemeBundle } from '../assets/themeBundles.js';
 import { el, fmtDate } from './dom.js';
+import { setCrests } from '../util/rng.js';
+import { defaultTitle, earnedMedals, medalById, medalsByJourney, titleOptions, type Earned, type Medal } from '../domain/feats.js';
 import { buildingPanel, heroPanel, questLogRow, questPanel, type PanelContext } from './panels.js';
 
 const SPEEDS = [0.5, 1, 2, 4, 8];
@@ -69,10 +71,16 @@ export class App {
   #scrubbing = false;
   #logCount = -1;
   #selectedKey = '';
+  /** Each hero's medals: earned in the loaded guild, plus those remembered from before. */
+  #medals = new Map<string, Map<string, Earned>>();
+  /** Which journeys earn which medals, to announce them as the replay plays. */
+  #medalJourneys = new Map<string, { hero: string; medal: Medal }[]>();
+  #toasts = el('div', { class: 'toasts', 'aria-live': 'polite' });
 
   constructor() {
     this.#raws = [];
     this.#prefs = loadPrefs();
+    setCrests(this.#prefs.crests);
     this.#session = new Session(this.#prefs, {
       onTown: (shown) => this.#onTown(shown),
       onUpdate: (shown) => this.#onUpdate(shown),
@@ -159,6 +167,47 @@ export class App {
     this.#sim = new Sim(this.#guild, plan);
     this.#sim.speed = this.#prefs.speed;
     this.#logCount = -1;
+    this.#countMedals();
+  }
+
+  /** Medals from the loaded guild, merged with (and added to) the ones remembered. */
+  #countMedals(): void {
+    this.#medals.clear();
+    let changed = false;
+    for (const hero of this.#guild.heroes) {
+      const earned = earnedMedals(hero, this.#guild);
+      const kept = (this.#prefs.medals[hero.address] ??= {});
+      for (const [id, e] of earned) {
+        if (!(id in kept) || (kept[id] === null && e.at !== null)) {
+          kept[id] = e.at;
+          changed = true;
+        }
+      }
+      for (const [id, at] of Object.entries(kept)) if (!earned.has(id) && medalById(id)) earned.set(id, { at, journey: null });
+      this.#medals.set(hero.address, earned);
+    }
+    if (changed) savePrefs(this.#prefs);
+    this.#medalJourneys = medalsByJourney(this.#guild);
+  }
+
+  #titleOf(address: string): string {
+    const medals = this.#medals.get(address)?.keys() ?? [];
+    const cls = this.#classOf(address);
+    const picked = this.#prefs.titles[address];
+    const options = titleOptions(cls, this.#medals.get(address)?.keys() ?? []);
+    return picked !== undefined && options.includes(picked) ? picked : defaultTitle(cls, medals);
+  }
+
+  /** A medal earned as the replay plays: a moment of glory in the corner of the town. */
+  #announce(address: string, medal: Medal): void {
+    const hero = this.#guild.heroes.find((h) => h.address === address);
+    if (!hero) return;
+    const toast = el('div', { class: 'toast' }, el('span', { class: 'toast-icon' }, medal.icon), el('div', {}, el('strong', {}, `${hero.name} earned ${medal.name}`), el('div', { class: 'muted' }, `New title: ${medal.title}`)));
+    toast.onclick = () => this.#selectHero(address);
+    this.#toasts.append(toast);
+    while (this.#toasts.children.length > 3) this.#toasts.firstElementChild?.remove();
+    setTimeout(() => toast.classList.add('leaving'), 5000);
+    setTimeout(() => toast.remove(), 5600);
   }
 
   #onTown(shown: Shown): void {
@@ -170,6 +219,9 @@ export class App {
     this.#sourceEl.textContent = shown.label;
     this.#homeBtn.hidden = shown.visiting === null;
     this.#rebuild();
+    // ?at=<seconds>: start the replay at that moment (a link to it; tests)
+    const at = Number(new URLSearchParams(location.search).get('at'));
+    if (at > 0) this.#sim.seek(at);
     this.#r2d.setSim(this.#sim);
     this.#r3d?.setSim(this.#sim);
     if (this.#beat) this.#sim.bell(this.#beat.number, this.#beat.busy);
@@ -277,6 +329,9 @@ export class App {
     this.#prefs.window = w;
     savePrefs(this.#prefs);
     this.#rebuild();
+    // ?at=<seconds>: start the replay at that moment (a link to it; tests)
+    const at = Number(new URLSearchParams(location.search).get('at'));
+    if (at > 0) this.#sim.seek(at);
     this.#r2d.setSim(this.#sim);
     this.#r3d?.setSim(this.#sim);
     if (this.#beat) this.#sim.bell(this.#beat.number, this.#beat.busy);
@@ -420,7 +475,7 @@ export class App {
     const timeline = el('footer', { class: 'timeline' }, this.#playBtn, speeds, this.#scrub, this.#dateLabel, this.#modeLabel, this.#beatLabel);
     const questlog = el('section', { class: 'questlog' }, el('h4', {}, 'Quest log'), this.#log);
 
-    return el('div', { class: 'app' }, header, el('main', { class: 'world' }, this.#stage, questlog, legend, this.#inspector, this.#tooltip), timeline);
+    return el('div', { class: 'app' }, header, el('main', { class: 'world' }, this.#stage, questlog, legend, this.#toasts, this.#inspector, this.#tooltip), timeline);
   }
 
   #togglePlay(): void {
@@ -434,8 +489,11 @@ export class App {
     this.#dateLabel.textContent = fmtDate(sim.realTime());
     this.#modeLabel.textContent = sim.live ? '● LIVE' : 'replaying';
     this.#modeLabel.classList.toggle('live', sim.live);
-    if (sim.log.length !== this.#logCount || sim.log.at(-1)?.journey.key !== this.#selectedKey) {
-      this.#logCount = sim.log.length;
+    if (sim.played !== this.#logCount || sim.log.at(-1)?.journey.key !== this.#selectedKey) {
+      // medals for journeys just played (not for a jump along the timeline)
+      const fresh = sim.played - this.#logCount;
+      if (this.#logCount >= 0 && fresh > 0 && fresh <= 3) for (const e of sim.log.slice(-fresh)) for (const m of this.#medalJourneys.get(e.journey.key) ?? []) this.#announce(m.hero, m.medal);
+      this.#logCount = sim.played;
       this.#selectedKey = sim.log.at(-1)?.journey.key ?? '';
       this.#log.replaceChildren(...sim.log.slice(-8).reverse().map((e) => questLogRow(e.journey, this.#guild, (j) => this.#openJourney(j))));
     }
@@ -584,6 +642,25 @@ export class App {
       onJourney: (j) => this.#openJourney(j),
       onReplay: (j) => this.#replay(j),
       beat: this.#beat,
+      medalsOf: (a) => this.#medals.get(a) ?? new Map(),
+      titleOf: (a) => this.#titleOf(a),
+      setTitle: (a, t) => {
+        if (t === null) delete this.#prefs.titles[a];
+        else this.#prefs.titles[a] = t;
+        savePrefs(this.#prefs);
+        this.#selectHero(a);
+      },
+      setCrest: (a, color) => {
+        const key = a.toLowerCase();
+        if (color === null) delete this.#prefs.crests[key];
+        else this.#prefs.crests[key] = [color, '#e6e4de'];
+        savePrefs(this.#prefs);
+        setCrests(this.#prefs.crests);
+        // banners, shields and caravans are built with the crest: redraw the town
+        this.#r2d.setSim(this.#sim);
+        this.#r3d?.setSim(this.#sim);
+        this.#selectHero(a);
+      },
     };
   }
 

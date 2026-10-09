@@ -7,9 +7,10 @@ import { CATEGORY_LABEL } from '../domain/catalog.js';
 import { buildingName, districtName, heroArt, itemArt } from '../assets/art.js';
 import { CLASS_LABEL, type Goods, type Guild, type Hero, type HeroClass, type Item, type Journey, type Target, type Verb } from '../domain/model.js';
 import { verbText } from '../domain/mappers.js';
+import { ALL_MEDALS, teachingQuests, titleOptions, type Earned } from '../domain/feats.js';
 import { TIER_COLORS, TIER_NAMES, approxUsd, exactUsd, formatQty } from '../domain/tiers.js';
 import { MOUNT_NAMES } from '../render/characters.js';
-import { crestColors, hashString } from '../util/rng.js';
+import { bornCrest, crestColors, hashString, TINCTURES } from '../util/rng.js';
 import type { Placed } from '../world/layout.js';
 import type { BlockBeat } from '../data/rpc.js';
 import { el, fmtDate, safeHref, shortAddr } from './dom.js';
@@ -42,6 +43,14 @@ export interface PanelContext {
   onJourney: (j: Journey) => void;
   onReplay: (j: Journey) => void;
   beat: BlockBeat | null;
+  /** A hero's medals (earned now, or remembered). */
+  medalsOf: (address: string) => Map<string, Earned>;
+  /** The title a hero wears. */
+  titleOf: (address: string) => string;
+  /** Pick a title (null: back to the one the town chooses). */
+  setTitle: (address: string, title: string | null) => void;
+  /** Pick a crest colour (null: the one the hero was born with). */
+  setCrest: (address: string, color: string | null) => void;
 }
 
 function chip(text: string, color: string): HTMLElement {
@@ -117,8 +126,57 @@ function journeyRow(j: Journey, guild: Guild, onOpen?: (j: Journey) => void): HT
   return row;
 }
 
+/** The medal case: every medal, earned ones bright, the rest showing how to earn them. */
+function medalCase(medals: Map<string, Earned>): HTMLElement {
+  return el(
+    'div',
+    { class: 'medals' },
+    ...ALL_MEDALS.map((m) => {
+      const e = medals.get(m.id);
+      const when = e === undefined ? '' : e.at === null ? 'Earned for what this hero holds.' : `Earned ${new Date(e.at).toLocaleDateString('en-GB')}.`;
+      const badge = el('div', { class: `medal${e ? ' earned' : ''}`, 'data-medal': m.id }, el('span', { class: 'medal-icon' }, m.icon), el('span', { class: 'medal-name' }, m.name));
+      badge.title = e ? `${m.name}: ${when}\nTitle: ${m.title}\n\n${m.lesson}` : `${m.name} (not yet)\n${m.hint}`;
+      return badge;
+    }),
+  );
+}
+
+function questCard(q: ReturnType<typeof teachingQuests>[number]): HTMLElement {
+  return el(
+    'div',
+    { class: `tquest${q.done ? ' done' : ''}`, 'data-quest': q.id },
+    el('div', { class: 'tquest-head' }, el('span', { class: 'tquest-icon' }, q.icon), el('strong', {}, q.name), q.done ? chip('done', '#9dff8a') : chip('open', '#ffd166')),
+    el('p', { class: 'tquest-story' }, q.story),
+    el('p', { class: 'muted' }, q.lesson),
+    el('p', {}, q.progress),
+    q.link && safeHref(q.link.href) ? el('a', { href: q.link.href, target: '_blank', rel: 'noopener noreferrer' }, q.link.label) : null,
+  );
+}
+
+/** Swatches for the crest: the colour on banners, shields, caravans and the guild's flag. */
+function crestPicker(hero: Hero, ctx: PanelContext): HTMLElement {
+  const current = crestColors(hero.address)[0];
+  const swatch = (color: string, label: string, pick: string | null): HTMLElement => {
+    const b = el('button', { class: `swatch${color === current ? ' on' : ''}`, title: label, 'aria-label': `Crest: ${label}` });
+    b.style.background = color;
+    b.onclick = () => ctx.setCrest(hero.address, pick);
+    return b;
+  };
+  return el('div', { class: 'swatches' }, swatch(bornCrest(hero.address)[0], 'As born', null), ...TINCTURES.map((t) => swatch(t.color, t.name, t.color)));
+}
+
 export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
   const cls = ctx.classOf(hero.address);
+  const medals = ctx.medalsOf(hero.address);
+  const title = ctx.titleOf(hero.address);
+  const titleSelect = el('select', { 'aria-label': 'Hero title' });
+  for (const t of titleOptions(cls, medals.keys())) {
+    const opt = el('option', { value: t }, t);
+    if (t === title) opt.selected = true;
+    titleSelect.append(opt);
+  }
+  titleSelect.onchange = () => ctx.setTitle(hero.address, titleSelect.value);
+  const quests = teachingQuests(hero, ctx.guild);
   const select = el('select', { 'aria-label': 'Hero class' });
   for (const c of Object.keys(CLASS_LABEL) as HeroClass[]) {
     const label = c === hero.suggestedClass ? `${CLASS_LABEL[c]} (suggested)` : CLASS_LABEL[c];
@@ -158,10 +216,12 @@ export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
   return el(
     'div',
     { class: 'panel-body' },
-    el('div', { class: 'sheet-head' }, portrait(hero, cls), el('div', {}, el('h2', {}, hero.name), el('div', { class: 'muted mono' }, shortAddr(hero.address)), el('div', { class: 'muted' }, hero.label))),
+    el('div', { class: 'sheet-head' }, portrait(hero, cls), el('div', {}, el('h2', {}, hero.name), el('div', { class: 'hero-title' }, title), el('div', { class: 'muted mono' }, shortAddr(hero.address)), el('div', { class: 'muted' }, hero.label))),
     el('div', { class: 'stat-row' }, el('span', {}, 'Net worth'), el('strong', {}, exactUsd(hero.netWorth)), chip(TIER_NAMES[hero.tier], TIER_COLORS[hero.tier] ?? '#888')),
     el('div', { class: 'stat-row' }, el('span', {}, 'Mount'), el('strong', {}, MOUNT_NAMES[hero.tier])),
     el('div', { class: 'stat-row' }, el('span', {}, 'Class'), select),
+    el('div', { class: 'stat-row' }, el('span', {}, 'Title'), titleSelect),
+    el('div', { class: 'stat-row' }, el('span', {}, 'Crest'), crestPicker(hero, ctx)),
     el('div', { class: 'stat-row' }, el('span', {}, 'Journeys in window'), el('strong', {}, String(journeys.length)), el('span', { class: 'muted' }, `tolls paid ${exactUsd(tolls)}`)),
     el('h3', {}, 'Treasure'),
     big.length + small.length > 0 ? grid : el('p', { class: 'muted' }, 'An empty chest.'),
@@ -170,6 +230,10 @@ export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
     el('h3', {}, 'Stashes abroad'),
     hero.stashes.length > 0 ? stashes : el('p', { class: 'muted' }, 'Nothing stored in any building.'),
     hero.spamCount > 0 ? el('p', { class: 'muted' }, `🗑 ${hero.spamCount} pieces of cursed junk lie in the midden by the fence (spam tokens, hidden).`) : null,
+    el('h3', {}, `Medals (${medals.size} of ${ALL_MEDALS.length})`),
+    medalCase(medals),
+    quests.length > 0 ? el('h3', {}, `Teaching quests (${quests.filter((q) => q.done).length} of ${quests.length} done)`) : null,
+    quests.length > 0 ? el('div', { class: 'tquests' }, ...quests.map(questCard)) : null,
     el('h3', {}, 'Quest log'),
     el('div', { class: 'log' }, ...journeys.slice(-30).reverse().map((j) => journeyRow(j, ctx.guild, ctx.onJourney))),
   );
@@ -206,7 +270,7 @@ export function buildingPanel(b: Placed, ctx: PanelContext): HTMLElement {
       body.append(
         el('div', { class: 'stat-row' }, el('span', {}, 'Guild treasury'), el('strong', {}, exactUsd(total))),
         ...ctx.guild.heroes.map((h) => {
-          const row = el('div', { class: 'stat-row clickable' }, el('span', {}, h.name), chip(approxUsd(h.netWorth), TIER_COLORS[h.tier] ?? '#888'));
+          const row = el('div', { class: 'stat-row clickable' }, el('span', {}, `${h.name}, ${ctx.titleOf(h.address)}`), el('span', { class: 'muted' }, `🏅 ${ctx.medalsOf(h.address).size}`), chip(approxUsd(h.netWorth), TIER_COLORS[h.tier] ?? '#888'));
           row.onclick = () => ctx.onSelectHero(h.address);
           return row;
         }),

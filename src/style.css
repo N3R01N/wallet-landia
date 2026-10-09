@@ -605,3 +605,167 @@ select {
   font-size: 12px;
   color: var(--wood);
 }
+
+/* --- feats: titles, medals, teaching quests, medal toasts ---------------------- */
+
+.hero-title {
+  font-style: italic;
+  color: var(--wood);
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.medals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 6px;
+}
+
+.medal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border: 2px dashed var(--parchment-dark);
+  border-radius: 6px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--muted);
+  cursor: help;
+}
+
+.medal .medal-icon {
+  font-size: 22px;
+  filter: grayscale(1);
+  opacity: 0.35;
+}
+
+.medal.earned {
+  border: 2px solid var(--gold);
+  background: radial-gradient(#fffbe8, #f6e7c1);
+  color: var(--ink);
+  font-weight: bold;
+}
+
+.medal.earned .medal-icon {
+  filter: none;
+  opacity: 1;
+}
+
+.tquests {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tquest {
+  border: 2px solid var(--wood-light);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #fbf1d6;
+}
+
+.tquest.done {
+  border-color: var(--parchment-dark);
+  background: transparent;
+}
+
+.tquest-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tquest-head strong {
+  flex: 1;
+}
+
+.tquest-icon {
+  font-size: 18px;
+}
+
+.inspector .tquest p {
+  margin: 4px 0;
+}
+
+.tquest-story {
+  font-style: italic;
+}
+
+.toasts {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  background: var(--parchment);
+  border: 3px solid var(--gold);
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px var(--wood-dark), 4px 6px 0 rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  cursor: pointer;
+  animation: toast-in 0.35s ease-out;
+  transition: opacity 0.5s, transform 0.5s;
+}
+
+.toast.leaving {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.toast-icon {
+  font-size: 26px;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.95);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+    transition: none;
+  }
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 220px;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid var(--wood-dark);
+  border-radius: 4px 4px 10px 10px; /* a little shield */
+  cursor: pointer;
+}
+
+.swatch.on {
+  outline: 3px solid var(--gold);
+  outline-offset: 1px;
+}
+
+.swatch:first-child {
+  margin-right: 6px;
+}
