@@ -36,6 +36,8 @@ export interface TerrainSpec {
   dips?: { x: number; z: number; r: number; depth: number }[];
   /** A river cut through it (its water level is settled from this terrain). */
   river?: River;
+  /** Basins dug even into the flat town (a harbour): `edge` is the signed distance to the shore, negative inside. */
+  basins?: { edge(x: number, z: number): number; depth: number }[];
   seed: number;
 }
 
@@ -124,7 +126,9 @@ export class Terrain {
 
   /** Ground height (tiles) at a point. Zero over the town. */
   heightAt(x: number, z: number): number {
-    const h = this.#natural(x, z);
+    let h = this.#natural(x, z);
+    // a basin's banks shelve from the shore down to its depth over a couple of tiles
+    for (const b of this.#spec.basins ?? []) h = Math.min(h, -b.depth * smooth(0.25, -2.4, b.edge(x, z)));
     return this.#spec.river ? this.#spec.river.carve(x, z, h) : h;
   }
 

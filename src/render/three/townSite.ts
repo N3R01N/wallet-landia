@@ -23,6 +23,10 @@ const kindAt = (plan: TownPlan, x: number, y: number): TileKind | null => {
 
 const PAVED = new Set<TileKind>(['road', 'plaza']);
 
+/** The harbour's water tiles, and its level: a little below the streets, so its shore is dug, not drawn. */
+const HARBOUR = { x0: 37, x1: MAP_W, z0: 29, z1: MAP_H };
+const HARBOUR_LEVEL = -0.12;
+
 /**
  * The river: down from the hills to the north-east, into the harbour from
  * the east, and out of it to the south through the meadow.
@@ -72,7 +76,8 @@ export function townSite(plan: TownPlan, lamps: Lamp[]): Site {
     buildings,
     plants,
     // the harbour's water is the river's, at the town's water level
-    river: { points: RIVER, pin: { x: 42.5, z: 32.5, level: 0.03 }, under: { x0: 37, x1: MAP_W, z0: 29, z1: MAP_H } },
+    river: { points: RIVER, pin: { x: 42.5, z: 32.5, level: HARBOUR_LEVEL }, under: HARBOUR },
+    harbour: { ...HARBOUR, level: HARBOUR_LEVEL },
     seed: 11,
   };
 }

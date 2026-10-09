@@ -57,6 +57,8 @@ interface Person {
   shown: boolean;
   /** Casting shadows now. */
   shadow: boolean;
+  /** When it last switched between model and sprite (seconds, renderer clock). */
+  switchedAt: number;
 }
 
 /** Above this many tiles per second a rigged person runs. */
@@ -421,7 +423,8 @@ export class Renderer3D implements WorldView {
       this.#world.add(s.group);
       this.#lamps = s.lamps;
       const surface = (w: 'road' | 'plaza' | 'path'): THREE.Material => theme.groundMaterial?.(w) ?? this.#factory.mat(w === 'path' ? '#8a7556' : '#9a8f80');
-      for (const m of tileSurfaces(plan, { paved: surface('road'), plaza: surface('plaza'), trodden: surface('path'), water: this.#themedWater })) this.#world.add(m);
+      // (the harbour's water comes with the surroundings, in its dug basin)
+      for (const m of tileSurfaces(plan, { paved: surface('road'), plaza: surface('plaza'), trodden: surface('path'), water: this.#themedWater })) if (m.name !== 'ground-water' || !s.group.getObjectByName('harbour')) this.#world.add(m);
       return;
     }
 
@@ -584,10 +587,16 @@ export class Renderer3D implements WorldView {
     const cam = this.#camera.position;
     const ranks = new Map<string, { dist: number; rank: number }>();
     if (this.#people) {
+      // Whoever is drawn as a model now keeps a head start, so two people near
+      // the cut-off do not trade places (and looks) every frame as they move.
       const near = this.#sim.agents
         .filter((a) => a.kind !== 'raven')
-        .map((a) => [a.id, Math.hypot(a.x - cam.x, a.alt - cam.y, a.y - cam.z)] as const)
-        .sort((x, y) => x[1] - y[1]);
+        .map((a) => {
+          const d = Math.hypot(a.x - cam.x, a.alt - cam.y, a.y - cam.z);
+          const shown = this.#persons.get(a.id)?.shown === true;
+          return [a.id, d, shown ? d * 0.6 - 6 : d] as const;
+        })
+        .sort((x, y) => x[2] - y[2]);
       near.forEach(([id, d], i) => ranks.set(id, { dist: i < RIG.max ? d : Infinity, rank: i }));
     }
     for (const a of this.#sim.agents) {
@@ -665,7 +674,7 @@ export class Renderer3D implements WorldView {
         char.object.add(proxy);
       }
       this.#scene.add(char.object);
-      p = { char, proxy, x: a.x, y: a.y, speed: 0, heading: 0, state: 'idle', shown: true, shadow: true };
+      p = { char, proxy, x: a.x, y: a.y, speed: 0, heading: 0, state: 'idle', shown: true, shadow: true, switchedAt: -1e9 };
       char.setState('idle');
       this.#persons.set(a.id, p);
     }
@@ -719,9 +728,12 @@ export class Renderer3D implements WorldView {
 
   /** Rigged or sprite, shadows or not, for this frame. `dist` is Infinity past the cap; `rank` 0 is the nearest. */
   #lod(p: Person, { dist, rank }: { dist: number; rank: number }): boolean {
-    const show = dist < (p.shown ? RIG.hide : RIG.show);
+    let show = dist < (p.shown ? RIG.hide : RIG.show);
+    // and no switching back and forth: a model stays at least 3 s, a sprite at least 1 s
+    if (show !== p.shown && performance.now() / 1000 - p.switchedAt < (p.shown ? 3 : 1)) show = p.shown;
     if (show !== p.shown) {
       p.shown = show;
+      p.switchedAt = performance.now() / 1000;
       p.char.object.visible = show;
     }
     // real shadows only for the nearest few; everyone keeps the soft contact blob

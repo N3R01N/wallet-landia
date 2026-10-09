@@ -32,6 +32,8 @@ export interface Site {
   pond?: false;
   /** A river through the surroundings (default: none). */
   river?: RiverSpec;
+  /** A harbour basin in the town: dug into the ground with a natural shore, its water at `level` (tiles). */
+  harbour?: Box2 & { level: number };
   /** Spots the town already chose for scenery (its 2D trees and rocks); planted as they are. */
   plants?: SitePlant[];
   seed: number;
@@ -107,7 +109,25 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
   const riverDist = (x: number, z: number): number => (river ? river.edgeDist(x, z) : Infinity);
   const wear = (x: number, z: number): number =>
     Math.max(site.wear(x, z), 1 - smooth(0.3, 1.1, trailDist(x, z)), 0.8 * (1 - smooth(-0.6, 0.9, Math.abs(pondDist(x, z) + 0.4))), 0.85 * (1 - smooth(0.2, 1.4, riverDist(x, z))));
-  const terrain = new Terrain({ flat, bounds, wear, ...(pond ? { dips: [pond] } : {}), ...(river ? { river } : {}), woods: (x, z) => smooth(0.15, 0.6, woods(x, z)), relief: (_x, z) => relief * (0.3 + 0.7 * smooth(flat.z1 + 22, flat.z1 + 45, z)), seed: site.seed }, lib);
+  // the harbour: a rounded basin with a wandering shore inside its box
+  const harbour = site.harbour;
+  const harbourEdge = harbour
+    ? (x: number, z: number): number => {
+        const cx = (harbour.x0 + harbour.x1) / 2;
+        const cz = (harbour.z0 + harbour.z1) / 2;
+        const rx = (harbour.x1 - harbour.x0) / 2 - 0.35;
+        const rz = (harbour.z1 - harbour.z0) / 2 - 0.3;
+        const u = Math.abs(x - cx) / rx;
+        const v = Math.abs(z - cz) / rz;
+        // a superellipse (squarish, round-cornered), its rim nudged in and out
+        const r = Math.pow(Math.pow(u, 3.2) + Math.pow(v, 3.2), 1 / 3.2);
+        const wobble = (n.noise(x * 0.55 + 31, z * 0.55 - 17) - 0.5) * 0.9;
+        return (r - 1) * Math.min(rx, rz) + wobble;
+      }
+    : null;
+  // a muddy, sandy shore round the harbour
+  const shoreWear = (x: number, z: number): number => Math.max(wear(x, z), harbourEdge ? 0.75 * (1 - smooth(0.2, 1.2, Math.abs(harbourEdge(x, z) + 0.5))) : 0);
+  const terrain = new Terrain({ flat, bounds, wear: shoreWear, ...(pond ? { dips: [pond] } : {}), ...(river ? { river } : {}), ...(harbourEdge ? { basins: [{ edge: harbourEdge, depth: 0.95 }] } : {}), woods: (x, z) => smooth(0.15, 0.6, woods(x, z)), relief: (_x, z) => relief * (0.3 + 0.7 * smooth(flat.z1 + 22, flat.z1 + 45, z)), seed: site.seed }, lib);
   const h = (x: number, z: number): number => terrain.heightAt(x, z);
   const group = new THREE.Group();
   group.name = 'surroundings';
@@ -214,6 +234,14 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
     for (const o of veg.plant('bush', shore, site.seed + 9)) group.add(o);
   }
 
+  // the harbour's water: one sheet over its box, a little below the street; the dug shore shapes it
+  if (harbour) {
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(harbour.x1 - harbour.x0, harbour.z1 - harbour.z0).rotateX(-Math.PI / 2), waterMaterial());
+    water.position.set((harbour.x0 + harbour.x1) / 2, harbour.level, (harbour.z0 + harbour.z1) / 2);
+    water.receiveShadow = true;
+    water.name = 'harbour';
+    group.add(water);
+  }
   // the river: flowing water, shrubs and stones along its banks
   const props = new PropWriter(h, site.seed);
   const kit = style.style;

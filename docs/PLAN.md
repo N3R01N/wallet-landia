@@ -313,6 +313,10 @@ Same scope for both: **the Town view only.**
 - **Toll board** by the door: base fee with its trend and a transfer's cost, coloured by level; painted wood (built-in, medieval), an LED panel (modern) or a hologram (sci-fi) in 3D; a pixel board in 2D.
 - **Beacon** on the spire: a brazier fire, green when cheap through amber to red, bigger and brighter (and stronger at night) as the toll rises.
 
+### Fixes (2026-10-09)
+- People no longer flicker between their rigged model and the pixel sprite: the nearest-20 cut-off is sticky (a shown model ranks as if much nearer, 0.6·d − 6) and switches are held (a model at least 3 s, a sprite 1 s). The queue's crowd near the tower made the old per-frame trading at the cut-off obvious.
+- The harbour is a dug basin, not a blue rectangle: a round-cornered, wobbly shore inside its tiles, banks shelving down to ~1.7 m, water a little below the street (−0.12 tiles) so the ground shapes its outline, a muddy shore band; the river runs in and out at the same level.
+
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.
 - Approvals as a keyring (needs RPC/log reads), and the health factor for lending.
