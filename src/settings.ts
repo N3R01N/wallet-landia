@@ -42,6 +42,8 @@ export interface Prefs {
   /** Sound (off until the player turns it on) and its volume 0..1. */
   sound: boolean;
   volume: number;
+  /** The player's own Ethereum node ('' = the free public one). */
+  rpcUrl: string;
 }
 
 const KEY = 'wallet-landia-v4/prefs/v1';
@@ -66,6 +68,7 @@ const DEFAULTS: Prefs = {
   eth: {},
   sound: false,
   volume: 0.6,
+  rpcUrl: '',
 };
 
 export function loadPrefs(): Prefs {

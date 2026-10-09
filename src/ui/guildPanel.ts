@@ -7,6 +7,7 @@ import { isEnsName, resolveName } from '../data/ens.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { untilReset } from '../data/zerion/budget.js';
 import { loadApiKey, saveApiKey, savePrefs, type Prefs } from '../settings.js';
+import { ALLOWED_RPC_HOSTS, DEFAULT_RPC, validRpcUrl } from '../data/rpc.js';
 import { CLASS_LABEL, type Hero, type HeroClass } from '../domain/model.js';
 import { approxUsd, TIER_COLORS } from '../domain/tiers.js';
 import { el, shortAddr } from './dom.js';
@@ -21,6 +22,8 @@ export interface GuildPanelContext {
   onKeyChanged(): void;
   onVisit(address: string): void;
   onClearCache(): Promise<void>;
+  /** Use another Ethereum node ('' for the free public one). */
+  onRpc(url: string): void;
   /** Fetch what changed for the town on show now (null: not a live town). */
   onRefresh: (() => Promise<void>) | null;
   /** Re-render the panel (after a local change). */
@@ -191,6 +194,27 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
     ctx.refresh();
   });
 
+  // --- the Ethereum node (the bell, the queue, wallet checks)
+  const rpcInput = el('input', { type: 'text', placeholder: DEFAULT_RPC, spellcheck: 'false', autocomplete: 'off', 'aria-label': 'Ethereum RPC address' });
+  rpcInput.value = p.rpcUrl;
+  const rpcMsg = el('div', { class: 'form-msg' });
+  const rpcSave = el('button', { class: 'btn' }, 'Use');
+  rpcSave.onclick = () => {
+    const v = rpcInput.value.trim();
+    if (v !== '' && !validRpcUrl(v)) {
+      rpcMsg.textContent = `Use an https address from: ${ALLOWED_RPC_HOSTS.join(', ')}.`;
+      return;
+    }
+    ctx.onRpc(v);
+    rpcMsg.textContent = v === '' ? 'Using the free public node.' : 'Using your node.';
+  };
+  const rpcReset = el('button', { class: 'btn' }, 'Default');
+  rpcReset.onclick = () => {
+    rpcInput.value = '';
+    ctx.onRpc('');
+    rpcMsg.textContent = 'Using the free public node.';
+  };
+
   // --- ink
   const b = ctx.budget;
   const clear = el('button', { class: 'btn' }, 'Clear cached data');
@@ -247,6 +271,11 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
     p.followed.length === 0 ? el('p', { class: 'muted' }, 'Follow any address to visit its town.') : null,
     ...followed,
     addFollowed,
+
+    el('h3', {}, 'Ethereum node'),
+    el('p', { class: 'muted small' }, 'The bell, the tower queue and the check for wallet changes ask an Ethereum node about once a block (12 s) while the town is open. The free public node is shared by everyone; with many players it may slow down or refuse, so you can use your own (e.g. a free Alchemy, Infura or Ankr address).'),
+    el('div', { class: 'form-row' }, rpcInput, rpcSave, rpcReset),
+    rpcMsg,
 
     el('h3', {}, 'Scribe’s ink (requests today)'),
     el(

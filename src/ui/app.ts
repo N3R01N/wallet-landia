@@ -13,7 +13,7 @@ import { guildPanel } from './guildPanel.js';
 import { looksPanel, themePicker, type LooksContext } from './looksPanel.js';
 import { assets } from '../assets/registry.js';
 import { loadBundledPacks, loadImportedPacks } from '../assets/packs.js';
-import { startHeartbeat, type BlockBeat } from '../data/rpc.js';
+import { setRpcUrl, startHeartbeat, validRpcUrl, type BlockBeat } from '../data/rpc.js';
 import { buildingName } from '../assets/art.js';
 import { planTown } from '../world/layout.js';
 import { Sim } from '../world/sim.js';
@@ -96,6 +96,7 @@ export class App {
     this.#raws = [];
     this.#prefs = loadPrefs();
     setCrests(this.#prefs.crests);
+    if (this.#prefs.rpcUrl !== '' && validRpcUrl(this.#prefs.rpcUrl)) setRpcUrl(this.#prefs.rpcUrl);
     this.#sound.setVolume(this.#prefs.volume);
     this.#setSound(this.#prefs.sound, false);
     this.#soundBtn.onclick = () => this.#setSound(!this.#sound.on);
@@ -437,6 +438,11 @@ export class App {
         },
         onClearCache: () => this.#session.clearCache(),
         onRefresh: this.#shown?.mode === 'live' ? () => this.#session.refresh() : null,
+        onRpc: (url) => {
+          this.#prefs.rpcUrl = url;
+          savePrefs(this.#prefs);
+          setRpcUrl(url);
+        },
         refresh: () => this.#openGuild(),
         heroes: this.#guild.heroes,
         classOf: (a) => this.#classOf(a),

@@ -5,6 +5,7 @@
  * from arbitrary origins (the CSP stays tight).
  */
 
+import { versioned } from './themeBundles.js';
 import { openCache, type KV } from '../data/cache.js';
 import { referencedFiles, validatePack, type PackManifest } from './pack.js';
 import { assets, type LoadedPack } from './registry.js';
@@ -35,7 +36,7 @@ export async function loadBundledPacks(base = '/packs'): Promise<void> {
       const { manifest, problems } = validatePack(await r.json());
       if (problems.length > 0) console.warn(`pack ${id}:`, problems);
       if (manifest === null) continue;
-      assets.add({ manifest, source: 'bundled', files: referencedFiles(manifest), url: (p) => `${base}/${id}/${p}` });
+      assets.add({ manifest, source: 'bundled', files: referencedFiles(manifest), url: (p) => versioned(`${base}/${id}/${p}`, manifest.version) });
     }
   } catch (error) {
     console.warn('bundled packs unavailable', error);

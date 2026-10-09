@@ -12,6 +12,9 @@ import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
 export type SkyId = 'day' | 'sunset' | 'night' | 'overcast';
 
+/** Bump when a sky image changes: caches keep them until then. */
+const SKY_VERSION = 1;
+
 export const SKIES: Record<SkyId, { file: string; label: string; intensity: number; background: number }> = {
   day: { file: 'kloofendal_48d_partly_cloudy_puresky.hdr', label: 'Midday, partly cloudy', intensity: 0.75, background: 1 },
   sunset: { file: 'qwantani_sunset_puresky.hdr', label: 'Sunset', intensity: 0.8, background: 1 },
@@ -88,7 +91,7 @@ export class EnvironmentController {
   #load(id: SkyId): void {
     this.#cache.set(id, 'loading');
     new HDRLoader().load(
-      `${this.#base}/${SKIES[id].file}`,
+      `${this.#base}/${SKIES[id].file}?v=${SKY_VERSION}`,
       (tex) => {
         tex.mapping = THREE.EquirectangularReflectionMapping;
         const env = this.#pmrem.fromEquirectangular(tex).texture;

@@ -1,12 +1,17 @@
 /**
  * Fixtures: raw Zerion captures checked into the repo. Real captures live in
- * fixtures/*.json (written by `npm run capture`); the synthetic demo set in
- * fixtures/demo/ is used only when there are none.
+ * fixtures/*.json (written by `npm run capture`) and are used in development;
+ * the public build (and any build without them) shows the synthetic demo set
+ * in fixtures/demo/.
  */
 
 import type { RawWallet } from './zerion/endpoints.js';
 
-const captured = import.meta.glob<RawWallet>('/fixtures/*.json', { import: 'default' });
+// Captured wallets are real people's (usually the developer's own): only in a
+// development build, never in the public site, unless a build asks for them
+// on purpose (VITE_INCLUDE_CAPTURED=1, e.g. for a private demo).
+const captured: Record<string, () => Promise<RawWallet>> =
+  import.meta.env.DEV || import.meta.env.VITE_INCLUDE_CAPTURED === '1' ? import.meta.glob<RawWallet>('/fixtures/*.json', { import: 'default' }) : {};
 const demo = import.meta.glob<RawWallet>('/fixtures/demo/*.json', { import: 'default' });
 
 export interface FixtureSet {

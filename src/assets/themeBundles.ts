@@ -60,6 +60,11 @@ export function linkBundles(raws: Raw[]): ThemeBundle[] {
   });
 }
 
+/** A bundled file's URL stamped with its pack's version (`?v=`): kept by caches until that changes. */
+export function versioned(url: string, version: string): string {
+  return `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(version)}`;
+}
+
 export function rawBundle(manifest: PackManifest, url: (path: string) => string, source: ThemeBundle['source'], problems: string[] = []): Raw | null {
   if (!manifest.theme) return null;
   return { manifest: manifest as Raw['manifest'], source, resolved: resolveTheme(manifest.theme, url), problems };
@@ -75,7 +80,8 @@ export async function loadThemeBundles(base = '/themes', imported: Iterable<Load
       const r = await fetch(`${base}/${id}/pack.json`);
       if (!r.ok) continue;
       const { manifest, problems } = validatePack(await r.json());
-      const raw = manifest ? rawBundle(manifest, (p) => `${base}/${id}/${p}`, 'bundled', problems) : null;
+      // files carry the theme's version, so caches keep them until a new release
+      const raw = manifest ? rawBundle(manifest, (p) => versioned(`${base}/${id}/${p}`, manifest.version), 'bundled', problems) : null;
       if (raw) raws.push(raw);
       else console.warn(`theme ${id}:`, problems);
     }

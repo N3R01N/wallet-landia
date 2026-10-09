@@ -325,6 +325,13 @@ Same scope for both: **the Town view only.**
 ### Impostors: no pixel people in a themed town (2026-10-09)
 - People beyond the nearest 20 (or 70 tiles) used to fall back to the built-in pixel sprites, so a themed town mixed two styles (worse since the tower queue). Now they are the theme's own figures baked to sprites (`impostor.ts`): each look photographed once in a small studio (own WebGL context) from four sides, standing and two walking poses, at the town camera's tilt; drawn as smoothly filtered billboards from the side the camera sees. One look is baked a frame as people come into view; the pixel sprite shows only until then.
 
+### Hosting and traffic (2026-10-09)
+- **The server only serves static files**; Zerion (the player's key), the Ethereum node and logos are called from the browser. First visit: ~0.6 MB (built-in look) or ~12–13 MB (a 3D theme: textures, models, animations, a sky).
+- **Kept on the device:** a service worker (`public/sw.js`, production builds only) serves app code (hashed names) and versioned files (`?v=<pack version>` on theme and pack files, `?v=` on skies) from its cache; the page and the theme/pack lists come fresh when online. Measured on the production build: a second visit to a themed town fetched 0 files from the server (83 from the device). Wallet data stays in IndexedDB, settings in localStorage.
+- **Cache headers:** `public/_headers` (Cloudflare Pages / Netlify): hashed code and skies a year, immutable; theme and pack folders an hour (their files are versioned by URL); the page and the worker always re-checked. Other hosts: same rules in their config. A theme release must bump its pack `version`.
+- **The Ethereum node:** the heartbeat asks once per block, timed to the 12 s slot (a short retry when a block is late, back-off to 2 min when the node fails or rate-limits): ~300–360 requests an hour per open tab, down from ~900; wallet checks add one batch per block for live towns. Players can use their own node (Guild panel), limited to well-known providers listed in both `ALLOWED_RPC_HOSTS` and the CSP's connect-src, so an injected script still could not send the stored key elsewhere.
+- **Privacy:** captured wallets (`fixtures/*.json`) are in development builds only; the public build shows the synthetic demo (`VITE_INCLUDE_CAPTURED=1` builds a private demo with them).
+
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.
 - Approvals as a keyring (needs RPC/log reads), and the health factor for lending.

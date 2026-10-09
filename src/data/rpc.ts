@@ -9,8 +9,43 @@ export const DEFAULT_RPC = 'https://ethereum-rpc.publicnode.com';
 let rpcUrl = DEFAULT_RPC;
 let nextId = 1;
 
+/** Use another node (the player's own, from the Guild panel); empty for the default. */
 export function setRpcUrl(url: string): void {
-  rpcUrl = url;
+  rpcUrl = url.trim() === '' ? DEFAULT_RPC : url.trim();
+}
+
+export function currentRpcUrl(): string {
+  return rpcUrl;
+}
+
+/**
+ * Nodes the player may switch to. The page's security policy only lets it
+ * talk to these (so a script injected into the page could not send the
+ * stored Zerion key anywhere else); keep this list and index.html's
+ * connect-src in step.
+ */
+export const ALLOWED_RPC_HOSTS = [
+  'ethereum-rpc.publicnode.com',
+  'eth.llamarpc.com',
+  'rpc.ankr.com',
+  'eth.drpc.org',
+  'cloudflare-eth.com',
+  'mainnet.infura.io',
+  '*.g.alchemy.com',
+  '*.quiknode.pro',
+  'rpc.flashbots.net',
+  '*.blastapi.io',
+] as const;
+
+/** Is this a usable RPC address: https, on one of the allowed providers? */
+export function validRpcUrl(url: string): boolean {
+  try {
+    const u = new URL(url.trim());
+    if (u.protocol !== 'https:') return false;
+    return ALLOWED_RPC_HOSTS.some((h) => (h.startsWith('*.') ? u.hostname.endsWith(h.slice(1)) : u.hostname === h));
+  } catch {
+    return false;
+  }
 }
 
 export async function rpcCall<T>(method: string, params: unknown[]): Promise<T> {
@@ -76,8 +111,28 @@ interface RpcBlock {
   transactions: unknown[];
 }
 
-export function startHeartbeat(onBeat: (beat: BlockBeat) => void, intervalMs = 4_000): () => void {
+/** Ethereum seals a block every 12 seconds. */
+const SLOT_MS = 12_000;
+
+/**
+ * When to ask again. Right after a block, wait for the next one to be due
+ * (12 s after this one's timestamp, plus a moment for it to spread); when it
+ * is late, look again soon; when the node fails or limits us, back off.
+ * About one request a block instead of three, a tenth of that when failing.
+ */
+export function nextPollDelay(o: { lastBlockMs: number | null; now: number; misses: number; failures: number }): number {
+  if (o.failures > 0) return Math.min(120_000, 4_000 * 2 ** (o.failures - 1));
+  if (o.lastBlockMs === null) return 4_000;
+  if (o.misses > 0) return Math.min(SLOT_MS, 2_000 * o.misses); // a late or missed slot
+  const due = o.lastBlockMs + SLOT_MS + 1_500 - o.now;
+  return Math.min(SLOT_MS + 2_000, Math.max(2_000, due));
+}
+
+export function startHeartbeat(onBeat: (beat: BlockBeat) => void): () => void {
   let last = -1;
+  let lastBlockMs: number | null = null;
+  let misses = 0;
+  let failures = 0;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -90,26 +145,32 @@ export function startHeartbeat(onBeat: (beat: BlockBeat) => void, intervalMs = 4
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['latest', false] }),
         });
+        if (!res.ok) throw new Error(`rpc ${res.status}`); // 429: rate-limited
         const body = (await res.json()) as { result?: RpcBlock };
         const b = body.result;
-        if (b !== undefined) {
-          const number = parseInt(b.number, 16);
-          if (number !== last) {
-            last = number;
-            onBeat({
-              number,
-              busy: Math.min(1, parseInt(b.gasUsed, 16) / Math.max(1, parseInt(b.gasLimit, 16))),
-              baseFeeGwei: b.baseFeePerGas !== undefined ? parseInt(b.baseFeePerGas, 16) / 1e9 : null,
-              txCount: b.transactions.length,
-              timestamp: parseInt(b.timestamp, 16) * 1000,
-            });
-          }
-        }
+        if (b === undefined) throw new Error('rpc: no block');
+        failures = 0;
+        const number = parseInt(b.number, 16);
+        if (number !== last) {
+          last = number;
+          misses = 0;
+          lastBlockMs = parseInt(b.timestamp, 16) * 1000;
+          onBeat({
+            number,
+            busy: Math.min(1, parseInt(b.gasUsed, 16) / Math.max(1, parseInt(b.gasLimit, 16))),
+            baseFeeGwei: b.baseFeePerGas !== undefined ? parseInt(b.baseFeePerGas, 16) / 1e9 : null,
+            txCount: b.transactions.length,
+            timestamp: lastBlockMs,
+          });
+        } else misses++;
       }
     } catch {
-      // offline or rate-limited: try again next tick
+      // offline, or the node is limiting us: back off
+      failures++;
     }
-    timer = setTimeout(() => void tick(), intervalMs);
+    // a hidden tab asks nothing; look again every so often to see if it is back
+    const delay = document.visibilityState === 'visible' ? nextPollDelay({ lastBlockMs, now: Date.now(), misses, failures }) : 5_000;
+    timer = setTimeout(() => void tick(), delay);
   };
   void tick();
   return () => {
