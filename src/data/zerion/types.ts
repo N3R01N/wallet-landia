@@ -135,7 +135,7 @@ export interface TransferResource {
   recipient: string;
   act_id?: string;
   fungible_info?: FungibleInfo;
-  nft_info?: { name?: string; content?: unknown; collection_info?: { name?: string }; contract_address?: string; token_id?: string };
+  nft_info?: { name?: string; content?: { preview?: { url?: string } | null } | null; collection_info?: { name?: string }; contract_address?: string; token_id?: string };
 }
 
 export interface TransactionResource {

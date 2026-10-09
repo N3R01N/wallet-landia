@@ -120,10 +120,15 @@ export type Verb =
   | 'unknown';
 
 export interface Goods {
+  /** Token symbol, or an NFT's collection. */
   symbol: string;
   quantity: number;
   usd: number | null;
   isNft: boolean;
+  /** An NFT's own name ("AlchemistV3 Position #57"). */
+  name?: string;
+  /** An NFT's picture (a preview URL), when known. */
+  image?: string;
 }
 
 export type Target =

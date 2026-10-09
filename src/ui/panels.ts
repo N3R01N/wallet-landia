@@ -413,14 +413,23 @@ const VERB_EXPLAIN: Partial<Record<Verb, string>> = {
 };
 
 function goodsList(list: Goods[], sign: '−' | '+'): HTMLElement[] {
-  return list.map((g) =>
-    el(
+  return list.map((g) => {
+    const cls = `goods ${sign === '−' ? 'out' : 'in'}`;
+    if (!g.isNft) return el('div', { class: cls }, el('span', {}, `${sign} ${formatQty(g.quantity)} ${g.symbol}`), el('span', {}, exactUsd(g.usd)));
+    // an NFT: its picture, its own name, and the collection it belongs to
+    const pic = g.image !== undefined && safeHref(g.image) !== null ? el('img', { class: 'nft-thumb', alt: '', referrerpolicy: 'no-referrer', loading: 'lazy' }) : null;
+    if (pic && g.image) {
+      pic.src = g.image;
+      pic.onerror = () => pic.remove();
+    }
+    const many = g.quantity > 1 ? ` ×${formatQty(g.quantity)}` : '';
+    return el(
       'div',
-      { class: `goods ${sign === '−' ? 'out' : 'in'}` },
-      el('span', {}, `${sign} ${g.isNft ? g.symbol : `${formatQty(g.quantity)} ${g.symbol}`}`),
+      { class: `${cls} nft` },
+      el('span', { class: 'nft-goods' }, el('span', { class: 'sign' }, sign), pic, el('span', {}, el('strong', {}, `${g.name ?? g.symbol}${many}`), g.name !== undefined && g.name !== g.symbol ? el('div', { class: 'muted small' }, g.symbol) : null)),
       el('span', {}, exactUsd(g.usd)),
-    ),
-  );
+    );
+  });
 }
 
 function placeName(target: Target, ctx: PanelContext): string {

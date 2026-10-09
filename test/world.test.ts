@@ -206,3 +206,22 @@ describe('griffins and dragons', () => {
     expect(travelled).toBeGreaterThan(50);
   });
 });
+
+describe('NFT goods', () => {
+  it('carry the NFT’s own name and picture, not just its collection', () => {
+    const dir = resolve(__dirname, '../fixtures');
+    const captured: RawWallet[] = readdirSync(dir)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => JSON.parse(readFileSync(resolve(dir, f), 'utf8')) as RawWallet);
+    if (captured.length === 0) return; // no captured wallets in this checkout
+    const g = buildGuild(captured);
+    const nfts = g.journeys.flatMap((j) => j.steps.flatMap((s) => [...s.give, ...s.get])).filter((x) => x.isNft);
+    expect(nfts.length).toBeGreaterThan(0);
+    const named = nfts.filter((x) => x.name !== undefined);
+    expect(named.length).toBeGreaterThan(0);
+    expect(nfts.some((x) => x.image?.startsWith('https://'))).toBe(true);
+    // a journey moving one NFT names it in its label
+    const j = g.journeys.find((x) => x.steps.length === 1 && [...x.steps[0]!.give, ...x.steps[0]!.get].filter((y) => y.isNft && y.name).length === 1 && x.steps[0]!.give.concat(x.steps[0]!.get).every((y) => y.isNft));
+    if (j) expect(j.label).toContain([...j.steps[0]!.give, ...j.steps[0]!.get].find((y) => y.isNft)!.name!);
+  });
+});

@@ -405,12 +405,20 @@ export function verbText(v: Verb): string {
 }
 
 function goods(t: TransferResource): Goods {
-  return {
-    symbol: t.nft_info !== undefined ? (t.nft_info.collection_info?.name ?? t.nft_info.name ?? 'NFT') : (t.fungible_info?.symbol ?? '?'),
+  const nft = t.nft_info;
+  const g: Goods = {
+    symbol: nft !== undefined ? (nft.collection_info?.name ?? nft.name ?? 'NFT') : (t.fungible_info?.symbol ?? '?'),
     quantity: t.quantity.float,
     usd: t.value,
-    isNft: t.nft_info !== undefined,
+    isNft: nft !== undefined,
   };
+  if (nft !== undefined) {
+    const name = nft.name ?? (nft.token_id !== undefined ? `${g.symbol} #${nft.token_id}` : undefined);
+    if (name !== undefined) g.name = name;
+    const image = nft.content?.preview?.url;
+    if (typeof image === 'string' && image !== '') g.image = image;
+  }
+  return g;
 }
 
 function describeGoods(list: Goods[]): string {
@@ -418,7 +426,7 @@ function describeGoods(list: Goods[]): string {
   const g = list.slice().sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0))[0];
   if (g === undefined) return '';
   const more = list.length > 1 ? ` +${list.length - 1}` : '';
-  return g.isNft ? `${g.symbol}${more}` : `${formatQty(g.quantity)} ${g.symbol}${more}`;
+  return g.isNft ? `${g.name ?? g.symbol}${more}` : `${formatQty(g.quantity)} ${g.symbol}${more}`;
 }
 
 function dramaFor(verb: Verb, tier: Tier, status: string): 0 | 1 | 2 | 3 {

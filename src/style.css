@@ -1017,3 +1017,25 @@ select {
 .hero-card-body .btn {
   align-self: flex-start;
 }
+
+.goods.nft {
+  align-items: center;
+  padding: 3px 0;
+}
+
+.nft-goods {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.nft-thumb {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 2px solid var(--parchment-dark);
+  background: #fff;
+}
