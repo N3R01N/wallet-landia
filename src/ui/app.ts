@@ -24,6 +24,8 @@ import type { Renderer3D } from '../render/three/renderer3d.js';
 import { loadThemeBundles, type ThemeBundle } from '../assets/themeBundles.js';
 import { el, fmtDate } from './dom.js';
 import { setCrests } from '../util/rng.js';
+import { priceMove, type PriceMove } from '../domain/risk.js';
+import { ethPriceFrom } from '../world/chain.js';
 import { defaultTitle, earnedMedals, medalById, medalsByJourney, titleOptions, type Earned, type Medal } from '../domain/feats.js';
 import { buildingPanel, heroPanel, questLogRow, questPanel, type PanelContext } from './panels.js';
 
@@ -186,8 +188,31 @@ export class App {
     this.#sim = new Sim(this.#guild, plan);
     this.#sim.speed = this.#prefs.speed;
     this.#sim.fog = this.#prefs.fog;
+    this.#sim.setPriceMove(this.#priceMove);
     this.#logCount = -1;
     this.#countMedals();
+  }
+
+  /** How ETH moved since the player's last visit (settled from the first home town of the session). */
+  #priceMove: PriceMove | null = null;
+  #priceSettled = false;
+
+  /**
+   * "Since you were last here": the price seen on a visit more than an hour
+   * ago is the baseline (reloads within a session keep the same one).
+   */
+  #settlePrice(): void {
+    if (this.#priceSettled || this.#shown?.visiting) return;
+    const now = ethPriceFrom(this.#guild.heroes.flatMap((h) => h.items));
+    if (now === null) return;
+    this.#priceSettled = true;
+    const eth = this.#prefs.eth;
+    const t = Date.now();
+    if (eth.seen && t - eth.seen.at > 60 * 60_000) eth.prev = eth.seen;
+    eth.seen = { usd: now, at: t };
+    savePrefs(this.#prefs);
+    this.#priceMove = eth.prev ? priceMove(now, eth.prev) : null;
+    this.#sim.setPriceMove(this.#priceMove);
   }
 
   /** The names heroes were given by the town (ENS or a generated one), before the player renamed any. */
@@ -264,6 +289,7 @@ export class App {
 
   #onTown(shown: Shown): void {
     this.#busy('town', null);
+    queueMicrotask(() => this.#settlePrice());
     // what the open panel shows, to keep it if the new town still has it
     const was = this.#inspector.hidden ? null : this.#renderer.selected;
     this.#shown = shown;

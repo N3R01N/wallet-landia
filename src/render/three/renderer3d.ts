@@ -19,7 +19,7 @@ import { brandColor } from '../buildings.js';
 import { caravanArt, heroArt, npcArt, villagerArt } from '../../assets/art.js';
 import { BuildingFactory, type BuildingSpec } from './buildingFactory.js';
 import { bakeTopGround, scatterProps, type Prop } from '../ground.js';
-import { districtLabels, tollLines, floatingText, markers, nameTags, nightFactor, route, weather, type Project } from '../overlay.js';
+import { districtLabels, marketLines, tollLines, floatingText, markers, nameTags, nightFactor, route, weather, type Project } from '../overlay.js';
 import { P, type Sprite } from '../pixel.js';
 import { ImagePipeline, type DebugView, type Quality } from './pipeline.js';
 import { buildGrass, buildLamps, buildPropMeshes, placeLamps, type LampSet } from './scenery.js';
@@ -27,7 +27,7 @@ import { EnvironmentController, skyForHour } from './environment.js';
 import { bundleTheme, type CharacterProvider, type SandboxCharacter, type Theme } from './themes.js';
 import type { Companion } from './grammar/companions.js';
 import { FogBank } from './fogBank.js';
-import { Beacon3D, TollBoard3D } from './towerSigns.js';
+import { Beacon3D, harvestPile, TollBoard3D } from './towerSigns.js';
 import { heatColor, tollOf } from '../../world/chain.js';
 import { PortraitStudio } from './portrait.js';
 import { Smoke, type Emitter } from './smoke.js';
@@ -152,6 +152,10 @@ export class Renderer3D implements WorldView {
   #smoke: Smoke | null = null;
   /** The Chronicle Tower's toll board and beacon: how busy and how dear the chain is. */
   #tollBoard: TollBoard3D | null = null;
+  /** ETH since the player's last visit, on a board in the square. */
+  #marketBoard: TollBoard3D | null = null;
+  /** Harvest piles at doors, hidden while their building is in fog. */
+  #harvestPiles: { placed: Placed; object: THREE.Object3D }[] = [];
   #beacon: Beacon3D | null = null;
   /** Fog of war over unvisited buildings, and which buildings it covers. */
   #fog: FogBank | null = null;
@@ -406,9 +410,25 @@ export class Renderer3D implements WorldView {
       this.#tollBoard.object.position.set(t.x + t.w + 0.25, 0, t.y + t.h + 0.75);
       this.#tollBoard.object.rotation.y = -0.35; // turned a little towards the street
       this.#world.add(this.#beacon.object, this.#tollBoard.object);
+      this.#marketBoard = new TollBoard3D(this.#theme?.board ?? 'wood');
+      this.#marketBoard.object.name = 'market-board';
+      this.#marketBoard.object.position.set(t.x - 2.2, 0, t.y + t.h + 0.75);
+      this.#marketBoard.object.rotation.y = 0.35;
+      this.#world.add(this.#marketBoard.object);
     } else {
       this.#beacon = null;
       this.#tollBoard = null;
+      this.#marketBoard = null;
+    }
+    // rewards ready to claim, heaped by the doors
+    this.#harvestPiles = [];
+    for (const [id, crop] of this.#sim.harvests) {
+      const b = this.#sim.plan.buildings.find((x) => x.id === id);
+      if (!b) continue;
+      const pile = harvestPile(crop.size);
+      pile.position.set(b.doorAt.x + 0.85, 0, b.doorAt.y - 0.15);
+      this.#world.add(pile);
+      this.#harvestPiles.push({ placed: b, object: pile });
     }
     // fog of war can cover any protocol's building (shown or not as the replay goes)
     const fogged = this.#buildings.filter((b) => b.placed.protocolId !== undefined);
@@ -876,7 +896,10 @@ export class Renderer3D implements WorldView {
     if (gloom > 0.6 && Math.random() < dt * 0.6) this.#flash = 1;
     this.#flash = Math.max(0, this.#flash - dt * 5);
     this.#sky.copy(day).lerp(dusk, night).lerp(new THREE.Color('#3a3e48'), gloom * 0.8).lerp(new THREE.Color('#e8ecff'), this.#flash * 0.6);
-    this.#sun.intensity = 2.2 * (1 - night * 0.8) * (1 - gloom * 0.6) + this.#flash * 2;
+    // a rising market brings a brighter day (a falling one brings rain: the sim's gloom)
+    const mood = sim.priceMove?.mood;
+    const shine = mood === 'boom' ? 1.18 : mood === 'up' ? 1.08 : 1;
+    this.#sun.intensity = 2.2 * shine * (1 - night * 0.8) * (1 - gloom * 0.6) + this.#flash * 2;
     this.#sun.color.set(night > 0.5 ? '#9fb0ff' : '#fff1d6');
     this.#hemi.intensity = 1.1 * (1 - night * 0.55) * (1 - gloom * 0.4) + this.#flash;
     // Emissive hierarchy (bloom skill): fire > lamp bulbs > windows > lit walls.
@@ -903,6 +926,12 @@ export class Renderer3D implements WorldView {
       this.#beacon?.update(this.#sim.elapsed, toll.heat, heatColor(toll.heat), night);
       this.#tollBoard?.update(tollLines(this.#sim));
     }
+    const market = marketLines(this.#sim);
+    if (this.#marketBoard) {
+      this.#marketBoard.object.visible = market !== null;
+      if (market) this.#marketBoard.update(market);
+    }
+    for (const p of this.#harvestPiles) p.object.visible = this.#sim.fogOver(p.placed) <= 0.5;
     this.#pipeline.setNight(Math.max(night, gloom * 0.5));
     this.#waterMat.opacity = 0.8 + Math.sin(sim.elapsed * 1.3) * 0.06;
     // Wind: a breeze, rising with the storm.

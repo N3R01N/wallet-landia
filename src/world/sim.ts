@@ -8,6 +8,7 @@ import type { Guild, Hero, HeroClass, Journey, Target, Verb } from '../domain/mo
 import type { Tier } from '../domain/tiers.js';
 import { makeRng } from '../util/rng.js';
 import { type Placed, type Pt, type TownPlan } from './layout.js';
+import { harvestOf, harvestOfUsd, loanHealth, type Harvest, type LoanHealth, type PriceMove } from '../domain/risk.js';
 import { ethPriceFrom, initialChain, nextChain, type BlockInfo, type ChainState } from './chain.js';
 import { doorSlot, flightRoute, walkRoute } from './route.js';
 
@@ -68,6 +69,8 @@ export interface Agent {
   hover: number;
   /** Waiting in line at the Chronicle Tower (a transaction waiting for a page). */
   queued?: boolean;
+  /** Hangs about here (bailiffs watching a risky loan's Counting House). */
+  loiterAt?: Pt;
   /** The door this agent is waiting at, if any (see door slots). */
   slotAt: string | null;
   /** Value tier of what is being carried right now, or null when empty-handed. */
@@ -131,6 +134,14 @@ export class Sim {
   log: LogEntry[] = [];
   /** Journeys played so far (the log only keeps the latest). */
   played = 0;
+  /** Each lending building's riskiest loan (by building id): its marker, and bailiffs at its door when in danger. */
+  readonly loans = new Map<string, LoanHealth>();
+  /** Rewards waiting to be harvested, per building id. */
+  readonly harvests = new Map<string, Harvest>();
+  /** How ETH moved since the player last looked (the market board and the weather), if known. */
+  priceMove: PriceMove | null = null;
+  /** The weather the market sets: rain after a drop, a storm after a crash (0..1, the floor under `gloom`). */
+  #mood = 0;
   /** The real chain, as of the last bell: the queue, the toll board and the beacon read it. */
   chain: ChainState = initialChain();
   /** ETH in USD, from what the guild holds (for the toll in dollars), or null. */
@@ -174,6 +185,8 @@ export class Sim {
     const last = this.scheduled[this.scheduled.length - 1];
     this.duration = (last?.at ?? 0) + 12;
     this.#spawnHeroes();
+    this.#readStashes();
+    this.#spawnWatchers();
     for (let i = 0; i < this.#villagerTarget; i++) this.#spawnVillager(true);
     this.ethUsd = ethPriceFrom(guild.heroes.flatMap((h) => h.items));
     this.queueLine = this.#lineFromTower();
@@ -211,6 +224,50 @@ export class Sim {
     for (const b of this.plan.buildings) if (b.protocolId !== undefined && !this.revealed.has(b.protocolId)) this.revealed.set(b.protocolId, at);
   }
 
+  /** The market since the player last looked: a falling price brings rain, a crash a storm. */
+  setPriceMove(m: PriceMove | null): void {
+    this.priceMove = m;
+    this.#mood = m === null ? 0 : m.mood === 'crash' ? 0.7 : m.mood === 'down' ? 0.3 : 0;
+    this.gloom = Math.max(this.gloom, this.#mood);
+  }
+
+  /** Loans and harvests per building, from every hero's stashes. */
+  #readStashes(): void {
+    const byProtocol = new Map(this.plan.buildings.filter((b) => b.protocolId !== undefined).map((b) => [b.protocolId!, b.id]));
+    const crops = new Map<string, number>();
+    for (const hero of this.guild.heroes) {
+      for (const stash of hero.stashes) {
+        const id = byProtocol.get(stash.protocolId);
+        if (id === undefined) continue;
+        const loan = loanHealth(stash);
+        const worst = this.loans.get(id);
+        if (loan && (!worst || loan.health < worst.health)) this.loans.set(id, loan);
+        const crop = harvestOf(stash);
+        if (crop) crops.set(id, (crops.get(id) ?? 0) + crop.usd);
+      }
+    }
+    for (const [id, usd] of crops) {
+      const h = harvestOfUsd(usd);
+      if (h) this.harvests.set(id, h);
+    }
+  }
+
+  /** Bailiffs hanging about the door of a Counting House whose loan is in danger (two when it is near liquidation). */
+  #spawnWatchers(): void {
+    this.agents = this.agents.filter((a) => a.loiterAt === undefined);
+    for (const [id, loan] of this.loans) {
+      if (loan.level !== 'danger' && loan.level !== 'critical') continue;
+      const b = this.plan.buildings.find((x) => x.id === id);
+      if (!b) continue;
+      for (let i = 0; i < (loan.level === 'critical' ? 2 : 1); i++) {
+        const a = this.#makeAgent('bailiff', b.doorAt.x + (i - 0.5) * 0.6, b.doorAt.y + 0.4);
+        a.loiterAt = { x: b.doorAt.x, y: b.doorAt.y + 0.3 };
+        a.speed = WALK_SPEED * 0.6;
+        this.agents.push(a);
+      }
+    }
+  }
+
   /** How hidden a building is: 1 in fog, falling to 0 as it lifts; 0 without fog of war. */
   fogOver(b: Placed): number {
     if (!this.fog || b.protocolId === undefined) return 0;
@@ -242,6 +299,7 @@ export class Sim {
     this.effects = [];
     this.log = this.scheduled.slice(0, this.#next).map((s) => ({ journey: s.journey, at: s.at })).slice(-40);
     this.played = this.#next;
+    this.#spawnWatchers();
     // everything visited before the cursor is known, without a show
     this.revealed.clear();
     for (const s of this.scheduled.slice(0, this.#next)) for (const step of s.journey.steps) if (step.target.kind === 'building') this.revealed.set(step.target.protocolId, -1e9);
@@ -351,7 +409,7 @@ export class Sim {
 
     for (const e of this.effects) e.age += dtReal;
     this.effects = this.effects.filter((e) => e.age < e.ttl);
-    this.gloom = Math.max(0, this.gloom - dtReal * 0.08);
+    this.gloom = Math.max(this.#mood, this.gloom - dtReal * 0.08);
     this.shake = Math.max(0, this.shake - dtReal * 2);
   }
 
@@ -673,6 +731,12 @@ export class Sim {
   #idle(a: Agent): void {
     a.journey = null;
     a.carrying = null;
+    if (a.loiterAt) {
+      // pacing outside, waiting for the loan to slip
+      const at = a.loiterAt;
+      a.tasks = [{ type: 'walk', to: { x: at.x + (this.#rng() - 0.5) * 1.4, y: at.y + this.#rng() * 0.8 } }, { type: 'act', verb: 'unknown', seconds: 2 + this.#rng() * 4 }];
+      return;
+    }
     if (a.queued) {
       // waiting their turn: face the tower
       const door = this.plan.tower.doorAt;

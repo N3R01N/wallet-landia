@@ -344,3 +344,61 @@ function poly(c: Ctx, pts: [number, number][], fill: string): void {
 }
 
 export const MOUNT_NAMES = ['Barefoot', 'On foot', 'Donkey', 'Horse', 'Armoured warhorse', 'Griffin', 'Dragon'] as const;
+
+const harvests = new Map<string, Sprite>();
+
+/**
+ * Rewards waiting to be claimed, heaped by a building's door: a sack for a
+ * little, crates and sacks for some, crates and a heap of gold for a lot.
+ */
+export function harvestSprite(size: 'little' | 'some' | 'lot', glint: number): Sprite {
+  const key = `${size}:${glint}`;
+  const hit = harvests.get(key);
+  if (hit) return hit;
+  const W = 26;
+  const H = 20;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d')!;
+  const px = (x: number, y: number, w: number, h: number, color: string): void => {
+    g.fillStyle = color;
+    g.fillRect(x, y, w, h);
+  };
+  const sack = (x: number, y: number): void => {
+    px(x + 1, y + 2, 6, 6, '#b08a52');
+    px(x, y + 3, 8, 4, '#b08a52');
+    px(x + 1, y + 7, 6, 1, '#7a5a30');
+    px(x + 3, y, 2, 2, '#7a5a30');
+    px(x + 2, y + 3, 2, 2, '#d0ac70');
+  };
+  const crate = (x: number, y: number): void => {
+    px(x, y, 8, 7, '#8a5a2a');
+    px(x, y, 8, 1, '#b07a40');
+    px(x, y + 3, 8, 1, '#6a4020');
+    px(x + 3, y, 1, 7, '#6a4020');
+  };
+  const gold = (x: number, y: number): void => {
+    px(x + 2, y, 6, 2, '#f5c518');
+    px(x, y + 2, 10, 3, '#e0a810');
+    px(x + 1, y + 2, 4, 1, '#ffe680');
+    px(x - 1, y + 5, 12, 2, '#b88a08');
+  };
+  if (size === 'little') sack(9, 11);
+  else if (size === 'some') {
+    crate(4, 12);
+    crate(12, 12);
+    sack(8, 6);
+  } else {
+    crate(1, 12);
+    crate(17, 12);
+    crate(9, 6);
+    gold(8, 13);
+    // a glint that wanders over the gold
+    px(9 + glint * 2, 13, 1, 1, '#ffffff');
+    px(8 + glint * 2, 12, 3, 1, 'rgba(255,255,255,0.6)');
+  }
+  const s: Sprite = { canvas: c, ax: W / 2, ay: H - 1 };
+  harvests.set(key, s);
+  return s;
+}

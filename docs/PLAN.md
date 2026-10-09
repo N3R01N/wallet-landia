@@ -317,6 +317,11 @@ Same scope for both: **the Town view only.**
 - People no longer flicker between their rigged model and the pixel sprite: the nearest-20 cut-off is sticky (a shown model ranks as if much nearer, 0.6·d − 6) and switches are held (a model at least 3 s, a sprite 1 s). The queue's crowd near the tower made the old per-frame trading at the cut-off obvious.
 - The harbour is a dug basin, not a blue rectangle: a round-cornered, wobbly shore inside its tiles, banks shelving down to ~1.7 m, water a little below the street (−0.12 tiles) so the ground shapes its outline, a muddy shore band; the river runs in and out at the same level.
 
+### Money at a glance (2026-10-09)
+- **ETH since your last visit** (`domain/risk.ts`, `prefs.eth`): the price seen on a visit more than an hour ago is the baseline. A market board left of the tower door shows the price, the change and when it was; a fall brings lasting rain (−1.5% … −8%) or a storm (worse), a rise a brighter sun.
+- **Loans:** an estimated health factor per lending building (a typical 80% liquidation threshold over Zerion's collateral and debt): a ⚖ marker coloured safe → watch → danger → critical (flashing), a bailiff pacing at the door in danger and two near liquidation; the sheet explains it is an estimate.
+- **Harvests:** rewards ready to claim sized little (< $50), some (< $1k) or a lot: a "! $…" marker growing with the crop, and a heap at the door (a sack; crates and sacks; crates and a heap of gold); the sheet says whether claiming is worth the toll.
+
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.
 - Approvals as a keyring (needs RPC/log reads), and the health factor for lending.

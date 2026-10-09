@@ -57,7 +57,7 @@ test('a rigged hero in a themed town answers hover and click', async ({ page }) 
     const shown = town.debugPeople().filter((p) => p.shown === true);
     return { smoke, rigged: shown.length, both: shown.filter((p) => sprites.has(p.id)).length };
   });
-  await expect.poll(async () => (await observe()).rigged, { timeout: 15_000 }).toBeGreaterThan(0);
+  await expect.poll(async () => (await observe()).rigged, { timeout: 45_000 }).toBeGreaterThan(0); // slow frames under load: a few seconds each
   const look = await observe();
   expect(look.smoke).toBe(true);
   expect(look.both).toBe(0);

@@ -37,6 +37,8 @@ export interface Prefs {
   questlogFolded: boolean;
   /** Names the player gave heroes, by lowercase address. */
   names: Record<string, string>;
+  /** ETH prices seen: this session's (`seen`), and the visit before it (`prev`), for "since you were last here". */
+  eth: { seen?: { usd: number; at: number }; prev?: { usd: number; at: number } };
 }
 
 const KEY = 'wallet-landia-v4/prefs/v1';
@@ -58,6 +60,7 @@ const DEFAULTS: Prefs = {
   fog: false,
   questlogFolded: false,
   names: {},
+  eth: {},
 };
 
 export function loadPrefs(): Prefs {

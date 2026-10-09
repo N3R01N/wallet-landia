@@ -1039,3 +1039,12 @@ select {
   border: 2px solid var(--parchment-dark);
   background: #fff;
 }
+
+.stash-health {
+  font-size: 12px;
+  margin: 4px 0 2px;
+}
+
+.stash-health .chip {
+  margin-right: 4px;
+}

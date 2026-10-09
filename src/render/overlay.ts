@@ -9,6 +9,7 @@ import type { District } from '../world/layout.js';
 import { districtName } from '../assets/art.js';
 import type { Route, Sim } from '../world/sim.js';
 import { formatGwei, formatTransferUsd, heatColor, TOLL_COLORS, tollOf } from '../world/chain.js';
+import { LOAN_COLORS, MOOD_COLORS } from '../domain/risk.js';
 
 export type Project = (x: number, y: number, z?: number) => [number, number] | null;
 
@@ -41,30 +42,31 @@ export function districtLabels(c: CanvasRenderingContext2D, project: Project): v
 /** Unclaimed rewards (!), debt (IOU), and sleeping heroes (z). `tops` = screen top-centre per building id. */
 export function markers(c: CanvasRenderingContext2D, sim: Sim, tops: Map<string, [number, number]>): void {
   const bounce = Math.sin(sim.elapsed * 4) * 2;
-  const mark = (id: string, color: string, glyph: string): void => {
+  const mark = (id: string, color: string, glyph: string, scale = 1, lift = 0): void => {
     const top = tops.get(id);
     if (top === undefined) return;
-    const [sx, sy] = [top[0], top[1] - 10 + bounce];
-    c.font = 'bold 11px system-ui, sans-serif';
-    const w = Math.max(14, c.measureText(glyph).width + 8);
+    const [sx, sy] = [top[0], top[1] - 10 + bounce - lift];
+    c.font = `bold ${Math.round(11 * scale)}px system-ui, sans-serif`;
+    const w = Math.max(14, c.measureText(glyph).width + 8 * scale);
+    const h = 14 * scale;
     c.fillStyle = '#2b1d14';
-    c.fillRect(sx - w / 2 - 1, sy - 9, w + 2, 16);
+    c.fillRect(sx - w / 2 - 1, sy - h / 2 - 2, w + 2, h + 2);
     c.fillStyle = color;
-    c.fillRect(sx - w / 2, sy - 8, w, 14);
+    c.fillRect(sx - w / 2, sy - h / 2 - 1, w, h);
     c.fillStyle = '#2b1d14';
     c.textAlign = 'center';
-    c.fillText(glyph, sx, sy + 3);
+    c.fillText(glyph, sx, sy + 4 * scale - 1);
   };
-  const seen = new Set<string>();
+  // loans: an estimated health factor, coloured from safe to near liquidation (flashing when critical)
+  for (const [id, loan] of sim.loans) {
+    if (loan.level === 'critical' && Math.floor(sim.elapsed * 2.5) % 2 === 0) continue;
+    mark(id, LOAN_COLORS[loan.level], `⚖ ${loan.health >= 10 ? '10+' : loan.health.toFixed(1)}`, loan.level === 'safe' ? 1 : 1.15);
+  }
+  // harvests: the bigger the crop, the bigger the sign
+  for (const [id, crop] of sim.harvests) {
+    mark(id, TIER_COLORS[crop.tier] ?? '#ffd166', `! ${approxUsd(crop.usd).replace('~', '')}`, crop.size === 'lot' ? 1.4 : crop.size === 'some' ? 1.15 : 0.95, sim.loans.has(id) ? 20 : 0);
+  }
   for (const hero of sim.guild.heroes) {
-    for (const stash of hero.stashes) {
-      const id = `b:${stash.protocolId}`;
-      if (seen.has(id)) continue;
-      if (stash.hasRewards) mark(id, '#ffd166', '!');
-      else if (stash.hasDebt) mark(id, '#ff9a8a', 'IOU');
-      else continue;
-      seen.add(id);
-    }
     if (hero.lastActiveAt === null) {
       const top = tops.get(`home:${hero.address}`);
       if (top) {
@@ -248,8 +250,13 @@ export function tollLines(sim: Sim): { head: string; fee: string; sub: string; c
  */
 export function tollBoard(c: CanvasRenderingContext2D, sim: Sim, at: [number, number] | null, size: number): void {
   if (at === null || size < 0.45) return;
-  const { head, fee, sub, color } = tollLines(sim);
-  const w = 92 * size;
+  board(c, at, size, tollLines(sim));
+}
+
+/** A slate board on two posts, its foot at `at` (screen px). */
+function board(c: CanvasRenderingContext2D, at: [number, number], size: number, { head, fee, sub, color }: { head: string; fee: string; sub: string; color: string }): void {
+  c.font = `bold ${Math.round(14 * size)}px "Trebuchet MS", system-ui, sans-serif`;
+  const w = Math.max(92 * size, c.measureText(fee).width + 16 * size);
   const h = 46 * size;
   const x = Math.round(at[0] - w / 2);
   const y = Math.round(at[1] - h - 12 * size);
@@ -264,7 +271,7 @@ export function tollBoard(c: CanvasRenderingContext2D, sim: Sim, at: [number, nu
   c.fillRect(x, y, w, h);
   c.textAlign = 'center';
   c.fillStyle = '#d8c8a8';
-  c.font = `bold ${Math.round(8 * size)}px "Trebuchet MS", system-ui, sans-serif`;
+  c.font = `bold ${Math.round(7.5 * size)}px "Trebuchet MS", system-ui, sans-serif`;
   c.fillText(head, x + w / 2, y + 10 * size);
   c.fillStyle = color;
   c.font = `bold ${Math.round(14 * size)}px "Trebuchet MS", system-ui, sans-serif`;
@@ -302,4 +309,24 @@ export function towerBeacon(c: CanvasRenderingContext2D, sim: Sim, top: [number,
   c.beginPath();
   c.ellipse(x, y + fh * 0.05, fh * 0.16, fh * 0.28, 0, 0, Math.PI * 2);
   c.fill();
+}
+
+/** The market board's lines: ETH now, and how it moved since the player's last visit. */
+export function marketLines(sim: Sim): { head: string; fee: string; sub: string; color: string } | null {
+  const now = sim.ethUsd;
+  if (now === null) return null;
+  const price = `$${Math.round(now).toLocaleString('en-US')}`;
+  const m = sim.priceMove;
+  if (m === null) return { head: 'ETH', fee: price, sub: 'first visit: changes show next time', color: '#e8dcc0' };
+  const arrow = m.pct > 0.05 ? '▲' : m.pct < -0.05 ? '▼' : '▶';
+  const days = (Date.now() - m.since) / 86_400_000;
+  const ago = days >= 2 ? `${Math.round(days)} days ago` : days >= 1 ? 'a day ago' : `${Math.max(1, Math.round(days * 24))} h ago`;
+  return { head: 'ETH SINCE LAST VISIT', fee: `${price} ${arrow}${Math.abs(m.pct).toFixed(1)}%`, sub: `was $${Math.round(m.thenUsd).toLocaleString('en-US')}, ${ago}`, color: MOOD_COLORS[m.mood] };
+}
+
+/** The market board in the town square (2D views). */
+export function marketBoard(c: CanvasRenderingContext2D, sim: Sim, at: [number, number] | null, size: number): void {
+  const lines = marketLines(sim);
+  if (at === null || lines === null || size < 0.45) return;
+  board(c, at, size, lines);
 }

@@ -11,7 +11,8 @@ import { brandColor, ISO_H, ISO_W } from './buildings.js';
 import { buildingArt, caravanArt, heroArt, npcArt, propArt, villagerArt } from '../assets/art.js';
 import { bakeIsoGround, bakeTopGround, scatterProps, type Ground, type Prop } from './ground.js';
 import type { Sprite } from './pixel.js';
-import { districtLabels, tollBoard, towerBeacon, floatingText, markers, nameTags, route, weather } from './overlay.js';
+import { harvestSprite } from './characters.js';
+import { districtLabels, marketBoard, tollBoard, towerBeacon, floatingText, markers, nameTags, route, weather } from './overlay.js';
 import type { HitTarget, WorldView } from './view.js';
 
 export type { HitTarget } from './view.js';
@@ -169,6 +170,14 @@ export class Renderer implements WorldView {
       const s = propArt(p.kind);
       items.push({ depth: this.#depth(p.x, p.y) - 0.3, draw: () => this.#blit(s, p.x, p.y) });
     }
+    // rewards ready to claim, heaped by the building's door
+    for (const [id, crop] of sim.harvests) {
+      const b = sim.plan.buildings.find((x) => x.id === id);
+      if (!b || sim.fogOver(b) > 0.5) continue;
+      const at = { x: b.doorAt.x + 0.85, y: b.doorAt.y - 0.1 };
+      const glint = Math.floor(sim.elapsed * 3) % 4;
+      items.push({ depth: this.#depth(at.x, at.y), draw: () => this.#blit(harvestSprite(crop.size, glint), at.x, at.y) });
+    }
     for (const a of sim.agents) items.push(...this.#agentDrawables(a));
     items.sort((p, q) => p.depth - q.depth);
     for (const d of items) d.draw();
@@ -186,6 +195,7 @@ export class Renderer implements WorldView {
     const towerSize = Math.min(1.6, Math.max(0.85, this.scale / 1.8));
     towerBeacon(c, sim, this.#tops.get(tower.id), towerSize);
     tollBoard(c, sim, this.toScreen(tower.x + tower.w + 0.2, tower.y + tower.h + 0.7), towerSize);
+    marketBoard(c, sim, this.toScreen(tower.x - 3, tower.y + tower.h + 0.7), towerSize);
     markers(c, sim, this.#tops);
     floatingText(c, sim, (x, y) => {
       const p = this.toScreen(x, y);

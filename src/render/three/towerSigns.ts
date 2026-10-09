@@ -107,19 +107,26 @@ export class TollBoard3D {
     const font = look === 'wood' ? '"Trebuchet MS", system-ui, sans-serif' : '"Consolas", "Menlo", monospace';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
+    // each line at its size, or smaller if it would not fit the face
+    const fit = (text: string, px: number, weight: string): void => {
+      const max = W - 56;
+      c.font = `${weight}${px}px ${font}`;
+      const w = c.measureText(text).width;
+      if (w > max) c.font = `${weight}${Math.floor((px * max) / w)}px ${font}`;
+    };
     c.fillStyle = ink;
-    c.font = `bold 34px ${font}`;
+    fit(t.head, 34, 'bold ');
     c.fillText(t.head, W / 2, 52);
     c.fillStyle = t.color;
     if (look !== 'wood') {
       c.shadowColor = t.color;
       c.shadowBlur = 14;
     }
-    c.font = `bold 72px ${font}`;
+    fit(t.fee, 72, 'bold ');
     c.fillText(t.fee, W / 2, 124);
     c.shadowBlur = 0;
     c.fillStyle = ink;
-    c.font = `30px ${font}`;
+    fit(t.sub, 30, '');
     c.fillText(t.sub, W / 2, 196);
     this.#tex.needsUpdate = true;
   }
@@ -180,4 +187,52 @@ export class Beacon3D {
     const halo = (1.4 + heat * 2.6) * (1 + night * 0.5) * flicker;
     this.#halo.scale.set(halo, halo, 1);
   }
+}
+
+/**
+ * Rewards ready to claim, heaped by a building's door (tiles): a sack for a
+ * little, crates and sacks for some, crates and a glittering heap of gold for
+ * a lot.
+ */
+export function harvestPile(size: 'little' | 'some' | 'lot'): THREE.Group {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: '#8a5a2a', roughness: 0.85 });
+  const band = new THREE.MeshStandardMaterial({ color: '#5a3818', roughness: 0.8 });
+  const burlap = new THREE.MeshStandardMaterial({ color: '#b08a52', roughness: 0.95 });
+  const goldMat = new THREE.MeshStandardMaterial({ color: '#f5c518', roughness: 0.25, metalness: 0.9, emissive: new THREE.Color('#5a4000'), emissiveIntensity: 0.4 });
+  const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, ry = 0): THREE.Mesh => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.rotation.y = ry;
+    m.castShadow = true;
+    g.add(m);
+    return m;
+  };
+  const sack = (x: number, z: number, s = 1): void => {
+    add(new THREE.SphereGeometry(0.16 * s, 10, 8).scale(1, 1.15, 1), burlap, x, 0.16 * s, z);
+    add(new THREE.CylinderGeometry(0.04 * s, 0.07 * s, 0.08 * s, 8), band, x, 0.36 * s, z);
+  };
+  const crate = (x: number, y: number, z: number, ry: number): void => {
+    add(new THREE.BoxGeometry(0.34, 0.3, 0.34), wood, x, y + 0.15, z, ry);
+    add(new THREE.BoxGeometry(0.36, 0.05, 0.36), band, x, y + 0.27, z, ry);
+  };
+  if (size === 'little') sack(0, 0);
+  else if (size === 'some') {
+    crate(-0.2, 0, 0, 0.2);
+    crate(0.2, 0, 0.05, -0.15);
+    sack(0, 0.3, 0.85);
+    sack(0.05, -0.05, 0.8);
+  } else {
+    crate(-0.32, 0, -0.05, 0.25);
+    crate(0.32, 0, -0.08, -0.2);
+    crate(0, 0.3, -0.06, 0.05);
+    // the heap of gold, coins spilling round it
+    add(new THREE.ConeGeometry(0.3, 0.26, 14), goldMat, 0, 0.13, 0.32);
+    for (let i = 0; i < 7; i++) {
+      const a = i * 0.9;
+      add(new THREE.CylinderGeometry(0.05, 0.05, 0.015, 10), goldMat, Math.cos(a) * 0.38, 0.01, 0.32 + Math.sin(a) * 0.22, a);
+    }
+  }
+  g.name = 'harvest';
+  return g;
 }

@@ -5,8 +5,9 @@
 
 import { CATEGORY_LABEL } from '../domain/catalog.js';
 import { buildingName, districtName, heroArt, itemArt } from '../assets/art.js';
-import { CLASS_LABEL, type Goods, type Guild, type Hero, type HeroClass, type Item, type Journey, type Target, type Verb } from '../domain/model.js';
+import { CLASS_LABEL, type Stash, type Goods, type Guild, type Hero, type HeroClass, type Item, type Journey, type Target, type Verb } from '../domain/model.js';
 import { verbText } from '../domain/mappers.js';
+import { harvestOf, LOAN_COLORS, LOAN_WORDS, loanHealth } from '../domain/risk.js';
 import { ALL_MEDALS, teachingQuests, titleOptions, type Earned } from '../domain/feats.js';
 import { TIER_COLORS, TIER_NAMES, approxUsd, exactUsd, formatQty } from '../domain/tiers.js';
 import { MOUNT_NAMES } from '../render/characters.js';
@@ -175,6 +176,24 @@ function journeyRow(j: Journey, guild: Guild, onOpen?: (j: Journey) => void): HT
   return row;
 }
 
+/** A stash's loan health and ready harvest, in words (estimates: see domain/risk.ts). */
+function stashHealth(s: Stash): HTMLElement | null {
+  const loan = loanHealth(s);
+  const crop = harvestOf(s);
+  if (!loan && !crop) return null;
+  const out = el('div', { class: 'stash-health' });
+  if (loan) {
+    const c = chip(`⚖ health ≈ ${loan.health >= 10 ? '10+' : loan.health.toFixed(2)}`, LOAN_COLORS[loan.level]);
+    out.append(
+      c,
+      el('span', {}, ` ${LOAN_WORDS[loan.level]} · borrowed ${Math.round(loan.ltv * 100)}% of the collateral`),
+      el('div', { class: 'muted small' }, `Estimated with a typical 80% liquidation threshold: below 1.0 the loan can be liquidated. The protocol's own page shows the exact figure.`),
+    );
+  }
+  if (crop) out.append(el('div', {}, chip(`! ${approxUsd(crop.usd)} to harvest`, TIER_COLORS[crop.tier] ?? '#ffd166'), el('span', { class: 'muted' }, crop.size === 'lot' ? ' a big harvest: well worth the toll to claim' : crop.size === 'some' ? ' worth claiming' : ' a little: claiming may cost more in toll than it brings')));
+  return out;
+}
+
 /** The medal case: every medal, earned ones bright, the rest showing how to earn them. */
 function medalCase(medals: Map<string, Earned>): HTMLElement {
   return el(
@@ -255,6 +274,7 @@ export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
         'div',
         { class: 'stash' },
         el('div', { class: 'stash-head' }, el('strong', {}, p?.name ?? s.protocolId), el('span', { class: 'muted' }, ` · ${p ? buildingName(p.building) : ''}`), chip(approxUsd(s.netUsd), TIER_COLORS[s.tier] ?? '#888')),
+        stashHealth(s),
         ...s.entries.map((e) =>
           el('div', { class: `stash-row${e.kind === 'loan' ? ' debt' : ''}` }, el('span', {}, `${e.kind === 'loan' ? 'IOU' : e.kind} · ${formatQty(e.quantity)} ${e.symbol}`), el('span', {}, exactUsd(e.usd))),
         ),
@@ -362,6 +382,7 @@ export function buildingPanel(b: Placed, ctx: PanelContext): HTMLElement {
               'div',
               { class: 'stash' },
               el('div', { class: 'stash-head' }, el('strong', {}, h.name), chip(approxUsd(s.netUsd), TIER_COLORS[s.tier] ?? '#888'), s.hasRewards ? chip('rewards ready!', '#ffd166') : null, s.hasDebt ? chip('owes', '#ff8a8a') : null),
+              stashHealth(s),
               ...s.entries.map((e) => el('div', { class: `stash-row${e.kind === 'loan' ? ' debt' : ''}` }, el('span', {}, `${e.kind === 'loan' ? 'IOU' : e.kind} · ${formatQty(e.quantity)} ${e.symbol}`), el('span', {}, exactUsd(e.usd)))),
             ),
           ),
