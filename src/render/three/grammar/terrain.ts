@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { makeRng } from '../../../util/rng.js';
 import type { MaterialLibrary } from './materials.js';
 import { METRES_PER_TILE } from './medieval.js';
+import type { River } from './river.js';
 
 export interface Box2 {
   x0: number;
@@ -33,6 +34,8 @@ export interface TerrainSpec {
   relief?(x: number, z: number): number;
   /** Hollows (ponds): a bowl of radius r (tiles) and depth at (x, z). */
   dips?: { x: number; z: number; r: number; depth: number }[];
+  /** A river cut through it (its water level is settled from this terrain). */
+  river?: River;
   seed: number;
 }
 
@@ -93,14 +96,15 @@ export function outside(b: Box2, x: number, z: number): number {
 
 // --- the terrain ---------------------------------------------------------------
 
-/** Grid lines: fine near the town, coarser towards the horizon. */
-function axis(a0: number, a1: number, f0: number, f1: number): number[] {
+/** Grid lines: fine near the town, coarser towards the horizon; fine enough along a river for its banks. */
+function axis(a0: number, a1: number, f0: number, f1: number, r0 = Infinity, r1 = -Infinity): number[] {
   const out: number[] = [];
   let a = a0;
   while (a < a1) {
     out.push(a);
     const d = Math.max(f0 - a, 0, a - f1);
-    a += d < 6 ? 0.5 : d < 30 ? 1.5 : 4;
+    const step = d < 6 ? 0.5 : d < 30 ? 1.5 : 4;
+    a += a >= r0 && a <= r1 ? Math.min(step, 0.75) : step;
   }
   out.push(a1);
   return out;
@@ -114,11 +118,18 @@ export class Terrain {
   constructor(spec: TerrainSpec, lib: MaterialLibrary) {
     this.#spec = spec;
     this.#n = makeNoise(spec.seed);
+    spec.river?.settle((x, z) => this.#natural(x, z));
     this.mesh = this.#build(lib);
   }
 
   /** Ground height (tiles) at a point. Zero over the town. */
   heightAt(x: number, z: number): number {
+    const h = this.#natural(x, z);
+    return this.#spec.river ? this.#spec.river.carve(x, z, h) : h;
+  }
+
+  /** The ground before any river cuts it. */
+  #natural(x: number, z: number): number {
     const d = outside(this.#spec.flat, x, z);
     if (d <= 0) return 0;
     const rise = smooth(0, 16, d);
@@ -141,8 +152,9 @@ export class Terrain {
 
   #build(lib: MaterialLibrary): THREE.Mesh {
     const { bounds: b, flat } = this.#spec;
-    const xs = axis(b.x0, b.x1, flat.x0, flat.x1);
-    const zs = axis(b.z0, b.z1, flat.z0, flat.z1);
+    const rb = this.#spec.river?.box;
+    const xs = axis(b.x0, b.x1, flat.x0, flat.x1, rb?.x0, rb?.x1);
+    const zs = axis(b.z0, b.z1, flat.z0, flat.z1, rb?.z0, rb?.z1);
     const nx = xs.length;
     const nz = zs.length;
     const pos = new Float32Array(nx * nz * 3);

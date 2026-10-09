@@ -14,6 +14,7 @@ import { buildGrassWhere, buildLamps, type Lamp, type LampSet } from '../scenery
 import type { MaterialLibrary } from './materials.js';
 import { buildBeacons, buildLanterns, buildRocks, PropWriter } from './props.js';
 import { waterMaterial } from '../water.js';
+import { River, type RiverSpec } from './river.js';
 import { makeNoise, outside, Terrain, type Box2 } from './terrain.js';
 import type { PlantSpot, Vegetation } from './vegetation.js';
 
@@ -29,6 +30,8 @@ export interface Site {
   buildings: { x: number; z: number; w: number; d: number; kind: string }[];
   /** No pond in the meadow (default: one). */
   pond?: false;
+  /** A river through the surroundings (default: none). */
+  river?: RiverSpec;
   /** Spots the town already chose for scenery (its 2D trees and rocks); planted as they are. */
   plants?: SitePlant[];
   seed: number;
@@ -74,6 +77,7 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
     [centre.x - 8, flat.z0, 0, -1],
     [flat.x0, centre.z + 4, -1, 0.2],
     [flat.x1, centre.z - 6, 1, -0.3],
+    [flat.x1, centre.z + 1, 1, 0.1],
   ].map(([x0, z0, dx, dz]) => {
     const pts: [number, number][] = [[x0!, z0!]];
     let ang = Math.atan2(dz!, dx!);
@@ -98,8 +102,12 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
   // a pond in the meadow, if the site has one
   const pond = site.pond === false ? null : { x: centre.x + 8, z: flat.z1 + 15, r: 4.5, depth: 1.1 };
   const pondDist = (x: number, z: number): number => (pond ? Math.hypot(x - pond.x, z - pond.z) - pond.r : Infinity);
-  const wear = (x: number, z: number): number => Math.max(site.wear(x, z), 1 - smooth(0.3, 1.1, trailDist(x, z)), 0.8 * (1 - smooth(-0.6, 0.9, Math.abs(pondDist(x, z) + 0.4))));
-  const terrain = new Terrain({ flat, bounds, wear, ...(pond ? { dips: [pond] } : {}), woods: (x, z) => smooth(0.15, 0.6, woods(x, z)), relief: (_x, z) => relief * (0.3 + 0.7 * smooth(flat.z1 + 22, flat.z1 + 45, z)), seed: site.seed }, lib);
+  const river = site.river ? new River(site.river) : null;
+  /** Distance from the river's water (negative in it). */
+  const riverDist = (x: number, z: number): number => (river ? river.edgeDist(x, z) : Infinity);
+  const wear = (x: number, z: number): number =>
+    Math.max(site.wear(x, z), 1 - smooth(0.3, 1.1, trailDist(x, z)), 0.8 * (1 - smooth(-0.6, 0.9, Math.abs(pondDist(x, z) + 0.4))), 0.85 * (1 - smooth(0.2, 1.4, riverDist(x, z))));
+  const terrain = new Terrain({ flat, bounds, wear, ...(pond ? { dips: [pond] } : {}), ...(river ? { river } : {}), woods: (x, z) => smooth(0.15, 0.6, woods(x, z)), relief: (_x, z) => relief * (0.3 + 0.7 * smooth(flat.z1 + 22, flat.z1 + 45, z)), seed: site.seed }, lib);
   const h = (x: number, z: number): number => terrain.heightAt(x, z);
   const group = new THREE.Group();
   group.name = 'surroundings';
@@ -107,7 +115,7 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
 
   /** Free ground around a point (nothing taken within r). */
   const free = (x: number, z: number, r: number): boolean => {
-    if (site.taken(x, z) || trailDist(x, z) < r + 0.6 || pondDist(x, z) < r + 0.3) return false;
+    if (site.taken(x, z) || trailDist(x, z) < r + 0.6 || pondDist(x, z) < r + 0.3 || riverDist(x, z) < r + 0.8) return false;
     for (let k = 0; k < 8; k++) {
       const a = (k / 8) * Math.PI * 2;
       if (site.taken(x + Math.cos(a) * r, z + Math.sin(a) * r)) return false;
@@ -177,13 +185,13 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
   // --- meadow: grass, flowers --------------------------------------------------------
   const grassArea = { x: flat.x0 - 14, y: flat.z0 - 10, w: flat.x1 - flat.x0 + 28, h: flat.z1 - flat.z0 + 32 };
   group.add(
-    buildGrassWhere(grassArea, (x, z) => !site.taken(x, z) && wear(x, z) < 0.4 && pondDist(x, z) > 0 && woods(x, z) < 0.5, 5000, (x, z) => woods(x, z) > 0.2, h, style.grass ?? { hue: 0.24, sat: 0.45, light: 0.17 }),
+    buildGrassWhere(grassArea, (x, z) => !site.taken(x, z) && wear(x, z) < 0.4 && pondDist(x, z) > 0 && riverDist(x, z) > 0.5 && woods(x, z) < 0.5, 5000, (x, z) => woods(x, z) > 0.2, h, style.grass ?? { hue: 0.24, sat: 0.45, light: 0.17 }),
   );
   const flowers: PlantSpot[] = [];
   for (let k = 0; k < 6000 && flowers.length < (style.flowers ?? 700); k++) {
     const x = grassArea.x + rng() * grassArea.w;
     const z = grassArea.y + rng() * grassArea.h;
-    if (n.fbm(x * 0.15 + 30, z * 0.15, 2) < 0.55 || site.taken(x, z) || wear(x, z) > 0.3 || pondDist(x, z) < 0.5 || woods(x, z) > 0.3) continue;
+    if (n.fbm(x * 0.15 + 30, z * 0.15, 2) < 0.55 || site.taken(x, z) || wear(x, z) > 0.3 || pondDist(x, z) < 0.5 || riverDist(x, z) < 1 || woods(x, z) > 0.3) continue;
     flowers.push({ x, y: h(x, z), z, s: 0.8 + rng() * 0.6 });
   }
   group.add(veg.flowers(flowers, site.seed + 5));
@@ -206,9 +214,73 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
     for (const o of veg.plant('bush', shore, site.seed + 9)) group.add(o);
   }
 
-  // --- props: rustic (medieval), urban (modern) or colony (sci-fi) ----------------------
-  const kit = style.style;
+  // the river: flowing water, shrubs and stones along its banks
   const props = new PropWriter(h, site.seed);
+  const kit = style.style;
+  if (river) {
+    group.add(river.water());
+    const banks: PlantSpot[] = [];
+    const stones: PlantSpot[] = [];
+    for (let i = 0; i < river.xs.length - 1; i += 5) {
+      const x = river.xs[i]!;
+      const z = river.zs[i]!;
+      if (Math.hypot(x - centre.x, z - centre.z) > 70) continue;
+      const tx = river.xs[i + 1]! - x;
+      const tz = river.zs[i + 1]! - z;
+      const tl = Math.hypot(tx, tz) || 1;
+      for (const side of [-1, 1]) {
+        const r = rng();
+        const off = river.halfWidth + 0.9 + rng() * 1.4;
+        const bx = x - (tz / tl) * side * off;
+        const bz = z + (tx / tl) * side * off;
+        if (site.taken(bx, bz) || trailDist(bx, bz) < 1.5 || outside(flat, bx, bz) < 1) continue;
+        if (r < 0.3) banks.push({ x: bx, y: h(bx, bz), z: bz, s: 0.6 + rng() * 0.6 });
+        else if (r < 0.42) stones.push({ x: bx, y: h(bx, bz), z: bz, s: 0.3 + rng() * 0.4 });
+      }
+    }
+    for (const o of veg.plant('bush', banks, site.seed + 11)) group.add(o);
+    if (stones.length > 0) group.add(buildRocks(stones, lib, site.seed + 12));
+    // a bridge wherever a trail crosses
+    for (const t of trails) {
+      const dense: [number, number][] = [];
+      for (let i = 0; i < t.length - 1; i++) for (let k = 0; k < 18; k++) dense.push([t[i]![0] + ((t[i + 1]![0] - t[i]![0]) * k) / 18, t[i]![1] + ((t[i + 1]![1] - t[i]![1]) * k) / 18]);
+      let from = -1;
+      for (let k = 0; k < dense.length; k++) {
+        const wet = riverDist(dense[k]![0], dense[k]![1]) < 0.2;
+        if (wet && from < 0) from = k;
+        if (!wet && from >= 0) {
+          const a = dense[Math.max(0, from - 1)]!;
+          const b = dense[k]!;
+          const deck = river.levelNear((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) + 0.45;
+          props.bridge(a, b, deck, kit);
+          from = -1;
+        }
+      }
+    }
+  }
+  /** A wall or pipeline, broken where it would cross the river. */
+  const dry = (points: [number, number][]): [number, number][][] => {
+    if (!river) return [points];
+    const out: [number, number][][] = [];
+    let run: [number, number][] = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const [x0, z0] = points[i]!;
+      const [x1, z1] = points[i + 1]!;
+      const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.5));
+      for (let k = i === 0 ? 0 : 1; k <= n; k++) {
+        const p: [number, number] = [x0 + ((x1 - x0) * k) / n, z0 + ((z1 - z0) * k) / n];
+        if (riverDist(p[0], p[1]) < 1.2) {
+          if (run.length > 1) out.push(run);
+          run = [];
+        } else if (k === 0 || k === n || run.length === 0) run.push(p);
+        else if (riverDist(x0 + ((x1 - x0) * (k + 1)) / n, z0 + ((z1 - z0) * (k + 1)) / n) < 1.2) run.push(p);
+      }
+    }
+    if (run.length > 1) out.push(run);
+    return out;
+  };
+
+  // --- props: rustic (medieval), urban (modern) or colony (sci-fi) ----------------------
   for (const b of site.buildings) {
     if (b.kind === 'gate' || b.kind === 'herald' || b.kind === 'tent') continue;
     const side = rng() < 0.5 ? -1 : 1;
@@ -257,7 +329,7 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
   const px0 = centre.x - 24;
   if (kit === 'scifi') {
     for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) props.solarPanel(px0 + 1.5 + i * 3, mz + 1.5 + j * 2.4);
-    props.pipeline([[centre.x + 8, mz + 1], [centre.x + 18, mz + 3], [centre.x + 30, mz + 2.2], [centre.x + 40, mz + 5]]);
+    for (const run of dry([[centre.x + 8, mz + 1], [centre.x + 18, mz + 3], [centre.x + 30, mz + 2.2], [centre.x + 40, mz + 5]])) props.pipeline(run);
   } else {
     props.fence([[px0 + 6, mz], [px0, mz], [px0, mz + 8], [px0 + 13, mz + 8], [px0 + 13, mz], [px0 + 9, mz]]);
     if (kit === 'modern') {
@@ -267,8 +339,8 @@ export function medievalSurroundings(site: Site, lib: MaterialLibrary, veg: Vege
       for (let k = 0; k < 5; k++) props.hay(px0 + 2 + rng() * 9, mz + 1.5 + rng() * 5, rng() * 3);
       props.woodpile(px0 + 11.5, mz + 6.5, 0.3);
     }
-    props.stoneWall([[centre.x + 8, mz + 1], [centre.x + 18, mz + 3], [centre.x + 30, mz + 2.2], [centre.x + 40, mz + 5]]);
-    props.stoneWall([[centre.x + 18, mz + 3], [centre.x + 20, mz + 14]]);
+    for (const run of dry([[centre.x + 8, mz + 1], [centre.x + 18, mz + 3], [centre.x + 30, mz + 2.2], [centre.x + 40, mz + 5]])) props.stoneWall(run);
+    for (const run of dry([[centre.x + 18, mz + 3], [centre.x + 20, mz + 14]])) props.stoneWall(run);
   }
   for (let k = 0; k < 100; k++) {
     const x = flat.x1 - 2 - rng() * 6;

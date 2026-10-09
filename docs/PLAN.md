@@ -271,7 +271,7 @@ Same scope for both: **the Town view only.**
      - `props.ts`: well, barrels, crates, hay, woodpiles, post-and-rail fences and dry-stone walls that follow the ground, a signpost, boulders, timber lantern posts with night pools.
      - Added CC0 ambientCG bark, rock and forest-floor textures; the medieval theme is now 11 MB.
      - Trails wander from the town's edges into the woods (worn dirt that trees and flowers avoid); a pond lies in a hollow in the meadow with rippling water (`water.ts`) and bushes on its muddy shore.
-     - Open: a river.
+     - A river (`grammar/river.ts`) comes down from the north-east hills, flows into the harbour and out again south through the meadow. Its water only runs downhill (level from the lowest ground met, pinned to the harbour's), the terrain is cut into a channel with banks that steepen into a gorge where the hills stand higher, and the grid is finer along its course. Flowing ripples (two-phase flow along the course), shallows lighter at the banks, shrubs and stones on muddy banks, field walls broken where they would cross, and a footbridge (plank, or concrete and steel) wherever a trail crosses.
    - ~~Phase 2, theme bundle format~~ done: pack format 2 adds a `theme` block (docs/PACKS.md, `src/assets/theme.ts`).
      - Materials by role with real-world sizes (UVs in metres), ground, building and surroundings parameters, characters (files, outfits per class, clips, speeds) and mounts per tier (model incl. FBX, height, tint, clips, seat bones, wings).
      - `extends` with field-by-field overrides and `use` for reusing another role's textures; validated and unit-tested; problems are reported, never fatal.

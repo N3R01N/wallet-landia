@@ -1051,6 +1051,15 @@ export class Renderer3D implements WorldView {
     return this.#scene;
   }
 
+  /** Put the camera somewhere at once (tuning tools only): looking at (x, y) from `distance` tiles. */
+  debugCamera(x: number, y: number, distance: number, yaw: number, pitch: number): void {
+    this.#goal.target.set(x, 0, y);
+    this.#target.copy(this.#goal.target);
+    this.#goal.distance = this.#distance = distance;
+    this.#yaw = yaw;
+    this.#pitch = pitch;
+  }
+
   /** Where a hero stands on screen (CSS px in the canvas), for tests: the middle of its body or rider. */
   heroOnScreen(address?: string): [number, number] | null {
     const w = this.canvas.clientWidth;

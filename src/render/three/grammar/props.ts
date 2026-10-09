@@ -126,6 +126,55 @@ export class PropWriter {
     }
   }
 
+  /**
+   * A footbridge over water from a to b (tile points on either bank), its
+   * deck at `deck` (tiles) or level with the banks if they stand higher;
+   * reaches out until it meets the ground, with a ramp where it does not.
+   * Plank and timber, or concrete and steel in the modern and sci-fi towns.
+   */
+  bridge(a: [number, number], b: [number, number], deck: number, kit: 'medieval' | 'modern' | 'scifi' = 'medieval'): void {
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const dx = (b[0] - a[0]) / len;
+    const dz = (b[1] - a[1]) / len;
+    let y = Math.max(deck, Math.min(this.#ground(...a), this.#ground(...b)));
+    // reach out to where the banks come up to the deck
+    let s0 = 0;
+    let s1 = len;
+    while (s0 > -3 && this.#ground(a[0] + dx * s0, a[1] + dz * s0) < y - 0.05) s0 -= 0.25;
+    while (s1 < len + 3 && this.#ground(a[0] + dx * s1, a[1] + dz * s1) < y - 0.05) s1 += 0.25;
+    y *= M;
+    const at = (s: number, lift = 0): V3 => [(a[0] + dx * s) * M, y + lift, (a[1] + dz * s) * M];
+    const rustic = kit === 'medieval';
+    const deckMat = rustic ? 'planks' : 'stone';
+    const railMat = rustic ? 'timber' : 'iron';
+    const width = 1.7;
+    this.w.beam(at(s0), at(s1), width, 0.16, deckMat);
+    // ramps down to the ground where the deck still stands above it
+    for (const [s, dir] of [[s0, -1], [s1, 1]] as const) {
+      const g = this.#ground(a[0] + dx * (s + dir), a[1] + dz * (s + dir)) * M;
+      if (y - g > 0.08) this.w.beam(at(s), [(a[0] + dx * (s + dir)) * M, g, (a[1] + dz * (s + dir)) * M], width, 0.14, deckMat);
+    }
+    // rails and their posts, and piers down into the water
+    const nx = -dz * (width / 2 - 0.06);
+    const nz = dx * (width / 2 - 0.06);
+    const span = (s1 - s0) * M;
+    const posts = Math.max(2, Math.round(span / 1.6));
+    for (const side of [-1, 1]) {
+      const p0 = at(s0, 0.95);
+      const p1 = at(s1, 0.95);
+      this.w.beam([p0[0] + nx * side, p0[1], p0[2] + nz * side], [p1[0] + nx * side, p1[1], p1[2] + nz * side], 0.08, rustic ? 0.1 : 0.06, railMat);
+      for (let i = 0; i <= posts; i++) {
+        const p = at(s0 + ((s1 - s0) * i) / posts);
+        this.w.box([p[0] + nx * side, p[1] + 0.5, p[2] + nz * side], [0.1, 0.95, 0.1], railMat);
+      }
+      for (const f of [0.33, 0.67]) {
+        const p = at(s0 + (s1 - s0) * f);
+        const bed = this.#ground((p[0] + nx * side) / M, (p[2] + nz * side) / M) * M - 0.2;
+        if (p[1] - bed > 0.3) this.w.box([p[0] + nx * side, (p[1] + bed) / 2, p[2] + nz * side], [0.22, p[1] - bed, 0.22], rustic ? 'timber' : 'stoneDark');
+      }
+    }
+  }
+
   // --- urban (modern) -----------------------------------------------------------
 
   bench(x: number, z: number, rot = 0): void {

@@ -22,6 +22,15 @@ const kindAt = (plan: TownPlan, x: number, y: number): TileKind | null => {
 };
 
 const PAVED = new Set<TileKind>(['road', 'plaza']);
+
+/**
+ * The river: down from the hills to the north-east, into the harbour from
+ * the east, and out of it to the south through the meadow.
+ */
+const RIVER: [number, number][] = [
+  [104, -62], [90, -34], [72, -10], [61, 8], [57, 22], [53, 30.5], [47.5, 31.5], [42.5, 32.5],
+  [43, 37.5], [46, 43.5], [52, 52], [51, 66], [58, 86], [66, 110], [72, 150],
+];
 const TRODDEN = new Set<TileKind>(['path', 'sand']);
 
 export function townSite(plan: TownPlan, lamps: Lamp[]): Site {
@@ -62,6 +71,8 @@ export function townSite(plan: TownPlan, lamps: Lamp[]): Site {
     lamps,
     buildings,
     plants,
+    // the harbour's water is the river's, at the town's water level
+    river: { points: RIVER, pin: { x: 42.5, z: 32.5, level: 0.03 }, under: { x0: 37, x1: MAP_W, z0: 29, z1: MAP_H } },
     seed: 11,
   };
 }
