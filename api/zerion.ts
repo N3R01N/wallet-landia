@@ -1,6 +1,7 @@
 /**
  * Zerion, through our own site: /api/zerion/v1/… → https://api.zerion.io/v1/…
- * (vercel.json rewrites /api/zerion/:path* to this function as ?path=…).
+ * (vercel.json rewrites /api/zerion/(.*) to this function as ?path=…; a
+ * `:path*` pattern would miss the trailing slash of Zerion's list endpoints).
  *
  * Zerion's API only answers browsers on localhost (its CORS check, and a 403
  * for any other Origin), so the deployed page cannot call it directly. This

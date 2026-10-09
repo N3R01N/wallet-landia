@@ -61,8 +61,8 @@
   ],
   "rewrites": [
     {
-      "source": "/api/zerion/:path*",
-      "destination": "/api/zerion?path=:path*"
+      "source": "/api/zerion/(.*)",
+      "destination": "/api/zerion?path=$1"
     }
   ]
 }
