@@ -166,6 +166,7 @@ export class App {
     const plan = planTown(this.#guild);
     this.#sim = new Sim(this.#guild, plan);
     this.#sim.speed = this.#prefs.speed;
+    this.#sim.fog = this.#prefs.fog;
     this.#logCount = -1;
     this.#countMedals();
   }
@@ -289,6 +290,12 @@ export class App {
         savePrefs(this.#prefs);
         this.#applyTheme();
         this.#refreshThemePicker();
+      },
+      fog: this.#prefs.fog,
+      onFog: (on) => {
+        this.#prefs.fog = on;
+        savePrefs(this.#prefs);
+        this.#sim.fog = on;
       },
     };
   }
@@ -616,6 +623,7 @@ export class App {
       const h = this.#guild.heroes.find((x) => x.address === b.heroAddress);
       return [el('strong', {}, `${h?.name ?? 'A hero'}'s home`), el('div', {}, `${approxUsd(h?.netWorth)} · click to see the treasure`)];
     }
+    if (b.protocolId !== undefined && this.#sim.fogOver(b) > 0.5) return [el('strong', {}, 'Unexplored'), el('div', { class: 'muted' }, 'No hero has been here yet in this replay')];
     if (b.protocolId !== undefined) {
       const p = this.#guild.protocols.get(b.protocolId);
       const mine = this.#guild.heroes.flatMap((h) => h.stashes.filter((s) => s.protocolId === b.protocolId)).reduce((s, x) => s + x.netUsd, 0);
@@ -676,6 +684,10 @@ export class App {
       return;
     }
     this.#renderer.selected = target;
+    if (this.#sim.fogOver(target.placed) > 0.5) {
+      this.#openInspector(el('div', { class: 'panel-body' }, el('h2', {}, 'Unexplored'), el('p', {}, 'A bank of mist hides this building. No hero has been here yet in this replay: it lifts when one visits, and the map is fully charted when the replay ends.'), el('p', { class: 'muted' }, 'Fog of war can be turned off in 🎨 Looks.')));
+      return;
+    }
     this.#openInspector(buildingPanel(target.placed, this.#ctx()));
   }
 

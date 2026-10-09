@@ -26,6 +26,7 @@ import { buildGrass, buildLamps, buildPropMeshes, placeLamps, type LampSet } fro
 import { EnvironmentController, skyForHour } from './environment.js';
 import { bundleTheme, type CharacterProvider, type SandboxCharacter, type Theme } from './themes.js';
 import type { Companion } from './grammar/companions.js';
+import { FogBank } from './fogBank.js';
 import { Smoke, type Emitter } from './smoke.js';
 import { rippling } from './water.js';
 import { tileSurfaces, townSite } from './townSite.js';
@@ -144,6 +145,9 @@ export class Renderer3D implements WorldView {
   #env: EnvironmentController | null = null;
   /** Smoke and steam from the town's chimneys and stacks. */
   #smoke: Smoke | null = null;
+  /** Fog of war over unvisited buildings, and which buildings it covers. */
+  #fog: FogBank | null = null;
+  #fogged: Placed[] = [];
   /** Deep, glossy water that mirrors the sky (themed towns are lit by an HDRI). */
   #themedWater = rippling(new THREE.MeshStandardMaterial({ color: '#27506a', roughness: 0.05, metalness: 0.15, transparent: true, opacity: 0.9 }));
 
@@ -381,6 +385,11 @@ export class Renderer3D implements WorldView {
       this.#world.add(this.#smoke.points);
       this.#lastSize = ''; // size the puffs to the viewport
     }
+    // fog of war can cover any protocol's building (shown or not as the replay goes)
+    const fogged = this.#buildings.filter((b) => b.placed.protocolId !== undefined);
+    this.#fogged = fogged.map((b) => b.placed);
+    this.#fog = fogged.length > 0 ? new FogBank(fogged.map((b) => ({ x: b.placed.x, z: b.placed.y, w: b.placed.w, d: b.placed.h, top: b.top }))) : null;
+    if (this.#fog) this.#world.add(this.#fog.mesh);
 
     const theme = this.#theme;
     if (theme?.surroundings) {
@@ -853,6 +862,7 @@ export class Renderer3D implements WorldView {
     for (const m of this.#spriteMats.values()) m.color.copy(this.#spriteTint);
     this.#lamps?.setNight(night);
     this.#smoke?.setNight(night);
+    this.#fog?.update(this.#sim.elapsed, night, (i) => this.#sim.fogOver(this.#fogged[i]!));
     this.#pipeline.setNight(Math.max(night, gloom * 0.5));
     this.#waterMat.opacity = 0.8 + Math.sin(sim.elapsed * 1.3) * 0.06;
     // Wind: a breeze, rising with the storm.
@@ -942,6 +952,7 @@ export class Renderer3D implements WorldView {
       if (s === undefined) continue;
       if (this.#camera.position.z - s.z < 0.5) continue; // seen from behind
       if (this.#hiddenSigns.has(b.placed.id)) continue; // another building is in the way
+      if (this.#sim.fogOver(b.placed) > 0.5) continue; // still in the fog of war
       let img = this.#logos.get(s.url);
       if (img === undefined) {
         img = new Image();

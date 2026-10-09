@@ -6,7 +6,7 @@
 import type { HeroClass } from '../domain/model.js';
 import { MAP_H, MAP_W, type Placed, type Pt } from '../world/layout.js';
 import type { Agent, Effect, Sim } from '../world/sim.js';
-import { crestColors, hashString } from '../util/rng.js';
+import { crestColors, hashString, makeRng } from '../util/rng.js';
 import { brandColor, ISO_H, ISO_W } from './buildings.js';
 import { buildingArt, caravanArt, heroArt, npcArt, propArt, villagerArt } from '../assets/art.js';
 import { bakeIsoGround, bakeTopGround, scatterProps, type Ground, type Prop } from './ground.js';
@@ -248,9 +248,20 @@ export class Renderer implements WorldView {
       draw: () => {
         const s = this.#buildingSprite(b);
         const anchor = this.view === 'top' ? { x: b.x, y: b.y + b.h } : { x: b.x, y: b.y };
-        const [left, top] = this.#blit(s, anchor.x, anchor.y);
+        const fog = this.#sim.fogOver(b);
+        let [left, top] = [0, 0];
+        if (fog < 1) [left, top] = this.#blit(s, anchor.x, anchor.y);
+        else [left, top] = this.#spriteBox(s, anchor.x, anchor.y);
         const protocol = b.protocolId !== undefined ? this.#sim.guild.protocols.get(b.protocolId) : undefined;
-        if (s.sign && protocol?.iconUrl) {
+        if (fog > 0) {
+          // fog of war: a cloud bank where the building stands, lifting once a hero has been
+          const cloud = fogCloud(s.canvas.width, s.canvas.height, hashString(b.id));
+          const drift = Math.round(Math.sin(this.#sim.elapsed * 0.6 + hashString(b.id)) * 1.5);
+          this.ctx.globalAlpha = Math.min(1, fog * 1.2);
+          this.ctx.drawImage(cloud, left + drift, top - Math.round((1 - fog) * 6));
+          this.ctx.globalAlpha = 1;
+        }
+        if (s.sign && protocol?.iconUrl && fog < 0.5) {
           const img = this.#logo(protocol.iconUrl);
           if (img.complete && img.naturalWidth > 0) {
             this.ctx.imageSmoothingEnabled = true;
@@ -285,6 +296,12 @@ export class Renderer implements WorldView {
         this.#tops.set(b.id, [(left + s.canvas.width / 2) * this.scale + this.ox, (top + headroom) * this.scale + this.oy]);
       },
     };
+  }
+
+  /** Where a sprite would be blitted (left, top in world pixels), without drawing it. */
+  #spriteBox(s: Sprite, x: number, y: number): [number, number] {
+    const [ax, ay] = this.toArt(x, y);
+    return [Math.round(ax - s.ax), Math.round(ay - s.ay)];
   }
 
   #isTarget(t: HitTarget | null, b: Placed): boolean {
@@ -448,4 +465,45 @@ export class Renderer implements WorldView {
         break;
     }
   }
+}
+
+const clouds = new Map<string, HTMLCanvasElement>();
+
+/**
+ * A bank of fog covering a building sprite's box: overlapping puffs in three
+ * greys, lit from above, crisp-edged like the rest of the pixel art.
+ */
+function fogCloud(w: number, h: number, seed: number): HTMLCanvasElement {
+  const key = `${w}x${h}:${seed % 7}`;
+  const hit = clouds.get(key);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d');
+  if (ctx) {
+    const rng = makeRng(seed % 7);
+    const puffs: [number, number, number][] = [];
+    // a dome of puffs: wide at the bottom, a few higher up, inside the sprite's box
+    for (let i = 0; i < 26; i++) {
+      const u = rng();
+      const r = Math.max(4, Math.min(w, h) * (0.16 + rng() * 0.14));
+      const x = r + u * (w - 2 * r);
+      const rise = rng() * rng();
+      const y = h - r - rise * (h - 2 * r) * (1 - Math.abs(u - 0.5));
+      puffs.push([x, y, r]);
+    }
+    const disc = (x: number, y: number, r: number, color: string): void => {
+      ctx.fillStyle = color;
+      for (let dy = -r; dy <= r; dy++) {
+        const half = Math.floor(Math.sqrt(r * r - dy * dy));
+        ctx.fillRect(Math.round(x - half), Math.round(y + dy), half * 2 + 1, 1);
+      }
+    };
+    for (const [x, y, r] of puffs) disc(x, y + 2, r, '#8e98a6'); // shadowed underside
+    for (const [x, y, r] of puffs) disc(x, y, r, '#c3cbd5');
+    for (const [x, y, r] of puffs) disc(x - r * 0.2, y - r * 0.25, Math.max(2, Math.round(r * 0.62)), '#e4e9ee'); // lit tops
+  }
+  clouds.set(key, c);
+  return c;
 }

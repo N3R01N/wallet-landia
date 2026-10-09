@@ -31,6 +31,8 @@ export interface Prefs {
   titles: Record<string, string>;
   /** Crest colours the player picked (field, charge), by address. */
   crests: Record<string, [string, string]>;
+  /** Fog of war over unvisited buildings (opt in). */
+  fog: boolean;
 }
 
 const KEY = 'wallet-landia-v4/prefs/v1';
@@ -49,6 +51,7 @@ const DEFAULTS: Prefs = {
   medals: {},
   titles: {},
   crests: {},
+  fog: false,
 };
 
 export function loadPrefs(): Prefs {

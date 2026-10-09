@@ -18,6 +18,23 @@ export interface LooksContext {
   /** The one in use ('' = built in). */
   theme: string;
   onTheme(id: string): void;
+  /** Fog of war: buildings hidden until a hero visits them in the replay. */
+  fog: boolean;
+  onFog(on: boolean): void;
+}
+
+/** Game options that change how the town plays out. */
+function gameOptions(ctx: LooksContext): HTMLElement {
+  const box = el('input', { type: 'checkbox', 'aria-label': 'Fog of war' });
+  box.checked = ctx.fog;
+  box.onchange = () => ctx.onFog(box.checked);
+  return el(
+    'div',
+    { class: 'game-options' },
+    el('h4', { class: 'slot-family' }, 'Game'),
+    el('label', { class: 'check-row' }, box, el('span', {}, 'Fog of war')),
+    el('div', { class: 'muted small' }, 'Buildings stay hidden in mist until a hero first visits them as the replay plays; the map is fully charted when it ends. Drag the timeline back to see it again.'),
+  );
 }
 
 /** The world theme for the 3D view: one choice for the whole look. */
@@ -121,6 +138,7 @@ export function looksPanel(ctx: LooksContext): HTMLElement {
     el('h2', {}, '🎨 Looks'),
     el('p', { class: 'muted' }, 'Asset packs restyle the town: heroes, townsfolk, treasure, buildings, scenery, even the names of places. Packs are images, models and text only — never code.'),
     themePicker(ctx),
+    gameOptions(ctx),
     el('h3', {}, `Installed packs (${packs.length})`),
     packs.length === 0 ? el('p', { class: 'muted' }, 'No packs yet. The town uses the built-in “Hearth & Harvest” art.') : null,
     ...packRows,

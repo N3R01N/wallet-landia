@@ -120,6 +120,10 @@ export class Sim {
   log: LogEntry[] = [];
   /** Journeys played so far (the log only keeps the latest). */
   played = 0;
+  /** Fog of war: buildings stay hidden until a hero first visits them in the replay. */
+  fog = false;
+  /** Protocols revealed so far, and when (`elapsed`), so the fog can lift as it happens. */
+  readonly revealed = new Map<string, number>();
 
   t = 0;
   speed = 1;
@@ -178,6 +182,18 @@ export class Sim {
     return a.journey.time + f * (b.journey.time - a.journey.time);
   }
 
+  #chart(at: number): void {
+    for (const b of this.plan.buildings) if (b.protocolId !== undefined && !this.revealed.has(b.protocolId)) this.revealed.set(b.protocolId, at);
+  }
+
+  /** How hidden a building is: 1 in fog, falling to 0 as it lifts; 0 without fog of war. */
+  fogOver(b: Placed): number {
+    if (!this.fog || b.protocolId === undefined) return 0;
+    const at = this.revealed.get(b.protocolId);
+    if (at === undefined) return 1;
+    return Math.max(0, 1 - (this.elapsed - at) / 1.6);
+  }
+
   /** Jump the cursor. Everyone goes home; nothing before the cursor replays. */
   seek(t: number): void {
     this.#solo = null;
@@ -201,6 +217,10 @@ export class Sim {
     this.effects = [];
     this.log = this.scheduled.slice(0, this.#next).map((s) => ({ journey: s.journey, at: s.at })).slice(-40);
     this.played = this.#next;
+    // everything visited before the cursor is known, without a show
+    this.revealed.clear();
+    for (const s of this.scheduled.slice(0, this.#next)) for (const step of s.journey.steps) if (step.target.kind === 'building') this.revealed.set(step.target.protocolId, -1e9);
+    if (this.t >= this.duration) this.#chart(-1e9);
     this.gloom = 0;
   }
 
@@ -293,6 +313,8 @@ export class Sim {
 
     for (const a of this.agents) this.#advance(a, dt);
     this.agents = this.agents.filter((a) => !a.gone);
+    // the replay's end charts the whole map (buildings known only for what is kept there)
+    if (this.t >= this.duration) this.#chart(this.elapsed);
 
     const villagers = this.agents.filter((a) => a.kind === 'villager').length;
     if (villagers < this.#villagerTarget && this.#rng() < dtReal * 0.8) this.#spawnVillager(false);
@@ -320,6 +342,8 @@ export class Sim {
     }
 
     if (!j.initiated) {
+      // whatever sent it steps out of the fog
+      for (const st of j.steps) if (st.target.kind === 'building' && !this.revealed.has(st.target.protocolId)) this.revealed.set(st.target.protocolId, this.elapsed);
       // Something arrived without the hero lifting a finger: a raven, or the
       // Herald for gifts, flies in from wherever it came from.
       const first = j.steps[0];
@@ -496,6 +520,10 @@ export class Sim {
     const big = j.drama;
     const step = j.steps[0];
     if (step?.target.kind === 'building') this.lastVisit.set(step.target.protocolId, this.elapsed);
+    // the fog lifts from the building the hero stands at
+    for (const b of this.plan.buildings) {
+      if (b.protocolId !== undefined && !this.revealed.has(b.protocolId) && Math.hypot(b.doorAt.x - a.x, b.doorAt.y - a.y) < 1.6) this.revealed.set(b.protocolId, this.elapsed);
+    }
     switch (verb) {
       case 'toll':
         this.effects.push({ kind: 'coins', ...at, age: 0, ttl: 1.2, drama: 0, color: '#ffb347' });

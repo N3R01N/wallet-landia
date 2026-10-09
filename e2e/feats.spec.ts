@@ -34,3 +34,29 @@ test('a medal is announced as the replay plays; the hero wears its title', async
   expect(Object.values(crests).map((c) => c[0])).toContain('#2a58b0');
   expect(errors).toEqual([]);
 });
+
+test('fog of war is opt in, kept, and hides buildings no hero has visited yet', async ({ page }) => {
+  await page.goto('/?freeze');
+  await page.keyboard.press('t');
+  await page.locator('.btn', { hasText: 'Looks' }).click();
+  const box = page.locator('input[aria-label="Fog of war"]');
+  await expect(box).not.toBeChecked();
+  await box.check();
+  const kept = await page.evaluate(() => (JSON.parse(localStorage.getItem('wallet-landia-v4/prefs/v1') ?? '{}') as { fog?: boolean }).fog);
+  expect(kept).toBe(true);
+  await page.locator('.inspector .close').click();
+
+  // at the start of the replay, the protocols' buildings are mist
+  const world = (await page.locator('.world').boundingBox())!;
+  let found = false;
+  for (let gy = 0.15; gy <= 0.85 && !found; gy += 0.05) {
+    for (let gx = 0.2; gx <= 0.85 && !found; gx += 0.03) {
+      await page.mouse.move(world.x + world.width * gx, world.y + world.height * gy);
+      found = (await page.locator('.tooltip').isVisible()) && (await page.locator('.tooltip').textContent())?.includes('Unexplored') === true;
+    }
+  }
+  expect(found, 'no building answered as unexplored').toBe(true);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(page.locator('.inspector h2')).toHaveText('Unexplored');
+});

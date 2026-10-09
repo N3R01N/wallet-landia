@@ -170,7 +170,7 @@ Same scope for both: **the Town view only.**
 - [ ] Town Crier "while you were away" summary.
 
 ### Phase 5: Gamification
-- Fog of war over districts and buildings, revealed by interacting.
+- [x] Fog of war (opt in, 🎨 Looks → Game): protocols' buildings stay in mist until a hero first visits them as the replay plays (or something arrives from them); the fog lifts with a little rise, and the map is fully charted when the replay ends. Seeking reveals everything before the cursor at once. Homes, the tower and the gate are always known; quest markers (! / IOU) show above the mist. 2D: a pixel-art cloud bank per building; 3D: one instanced mesh of camera-facing puffs (`fogBank.ts`, one draw call).
 - [x] Titles and medals (achievements), `domain/feats.ts`: 22 medals, each earned by the first journey that qualifies (or by holdings: a balanced treasury, a dragon's hoard), each with a plain-words lesson and a title it unlocks. The replay announces a medal when the journey that earned it plays; medals are remembered in the browser as the history window moves on; the player picks the title a hero wears.
 - [x] Quests that teach, fitted to each hero (only when they mean something for the wallet): recover your master keys (approvals seen vs revoked, with a revoke.cash link), visit the Temple, diversify your treasury, keep the bailiffs away, bring in the harvest, leave the cursed junk alone.
 - [x] Crest customisation (a heraldic tincture per hero: banners, shields, caravans, the guild flag), persistence local first.

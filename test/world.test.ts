@@ -132,3 +132,47 @@ describe('Quest Replay', () => {
     expect(sim.soloing).toBe(false);
   });
 });
+
+describe('fog of war', () => {
+  const guild = buildGuild(demo);
+  const plan = planTown(guild);
+  const protocolBuildings = plan.buildings.filter((b) => b.protocolId !== undefined);
+
+  it('hides every protocol building at the start, and nothing when off', async () => {
+    const { Sim } = await import('../src/world/sim.js');
+    const sim = new Sim(guild, plan);
+    expect(protocolBuildings.every((b) => sim.fogOver(b) === 0)).toBe(true);
+    sim.fog = true;
+    expect(protocolBuildings.length).toBeGreaterThan(0);
+    expect(protocolBuildings.every((b) => sim.fogOver(b) === 1)).toBe(true);
+    // homes, the tower and the gate are always known
+    expect(plan.buildings.filter((b) => b.protocolId === undefined).every((b) => sim.fogOver(b) === 0)).toBe(true);
+  });
+
+  it('lifts where a hero went before the cursor, and is charted at the end', async () => {
+    const { Sim } = await import('../src/world/sim.js');
+    const sim = new Sim(guild, plan);
+    sim.fog = true;
+    const mid = sim.scheduled[Math.floor(sim.scheduled.length / 2)]!;
+    sim.seek(mid.at + 0.01);
+    const visited = new Set(sim.scheduled.filter((s) => s.at <= mid.at).flatMap((s) => s.journey.steps.flatMap((st) => (st.target.kind === 'building' ? [st.target.protocolId] : []))));
+    for (const b of protocolBuildings) expect(sim.fogOver(b)).toBe(visited.has(b.protocolId!) ? 0 : 1);
+    sim.seek(sim.duration);
+    expect(protocolBuildings.every((b) => sim.fogOver(b) === 0)).toBe(true);
+  });
+
+  it('lifts gently as the replay plays a visit', async () => {
+    const { Sim } = await import('../src/world/sim.js');
+    const sim = new Sim(guild, plan);
+    sim.fog = true;
+    sim.speed = 4;
+    const first = () => protocolBuildings.find((b) => sim.revealed.has(b.protocolId!));
+    for (let i = 0; i < 20_000 && !first(); i++) sim.step(0.05);
+    const b = first()!;
+    expect(b).toBeDefined();
+    const at = sim.fogOver(b);
+    expect(at).toBeGreaterThan(0.5);
+    for (let i = 0; i < 40; i++) sim.step(0.05);
+    expect(sim.fogOver(b)).toBe(0);
+  });
+});
