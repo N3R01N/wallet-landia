@@ -111,7 +111,7 @@ export class App {
     void this.#setView(this.#prefs.view, false);
     startHeartbeat((beat) => {
       this.#beat = beat;
-      this.#sim.bell(beat.number, beat.busy);
+      this.#sim.bell(beat);
       void this.#session.onBlock();
       this.#beatLabel.textContent = `🔔 block #${beat.number.toLocaleString('en-US')} · ${beat.txCount} txs · base toll ${beat.baseFeeGwei?.toFixed(2) ?? '?'} gwei`;
     });
@@ -277,7 +277,7 @@ export class App {
     if (at > 0) this.#sim.seek(at);
     this.#r2d.setSim(this.#sim);
     this.#r3d?.setSim(this.#sim);
-    if (this.#beat) this.#sim.bell(this.#beat.number, this.#beat.busy);
+    if (this.#beat) this.#sim.bell(this.#beat);
     if (this.#guildOpen) {
       // Refresh the Guild panel for the new town, unless the player is typing
       // in it: replacing the form would throw away what they typed.
@@ -406,7 +406,7 @@ export class App {
     if (at > 0) this.#sim.seek(at);
     this.#r2d.setSim(this.#sim);
     this.#r3d?.setSim(this.#sim);
-    if (this.#beat) this.#sim.bell(this.#beat.number, this.#beat.busy);
+    if (this.#beat) this.#sim.bell(this.#beat);
     this.#closeInspector();
   }
 

@@ -37,3 +37,20 @@ test('a loading veil until the town is ready; heroes are listed in the Guild tab
   await page.keyboard.press('Enter');
   await expect(page.locator(`.hero-card[data-hero="${address}"] .hero-name`)).not.toHaveText('Sir Testalot');
 });
+
+test('the Chronicle Tower shows how busy the chain is: a beacon on top, a toll board, a queue at its door', async ({ page }) => {
+  await page.goto('/?expose&freeze');
+  await page.locator('.btn', { hasText: '3D' }).click();
+  await expect(page.locator('.stage3d')).toBeVisible({ timeout: 60_000 });
+  const look = await page.waitForFunction(() => {
+    const town = (window as unknown as { town3d?: { debugScene(): { getObjectByName(n: string): unknown }; debugPeople(): { kind: string; x: number; y: number }[] } }).town3d;
+    if (!town) return null;
+    const scene = town.debugScene();
+    const beacon = scene.getObjectByName('tower-beacon') !== undefined;
+    const board = scene.getObjectByName('toll-board') !== undefined;
+    // townsfolk standing in line on the road below the tower door (x ≈ 24.5, y 18–26)
+    const line = town.debugPeople().filter((p) => p.kind === 'villager' && Math.abs(p.x - 24.5) < 0.6 && p.y > 18 && p.y < 26).length;
+    return beacon && board && line >= 2 ? { beacon, board, line } : null;
+  }, null, { timeout: 60_000 });
+  expect(await look.jsonValue()).toMatchObject({ beacon: true, board: true });
+});

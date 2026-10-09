@@ -80,7 +80,11 @@ export interface Theme {
   };
   /** Terrain, vegetation, props and lamps around a site; the flat-colour meadow otherwise. */
   surroundings?(site: Site): Surroundings;
+  /** How the toll board at the Chronicle Tower looks: a painted board, an LED panel, a hologram. */
+  board?: BoardLook;
 }
+
+export type BoardLook = 'wood' | 'led' | 'holo';
 
 function baseline(): Theme {
   const factory = new BuildingFactory();
@@ -131,6 +135,7 @@ export function bundleTheme(b: ThemeBundle): Theme {
       courier: () => buildCourier(style, lib),
       caravan: (tier, crest) => buildCaravan(style, tier, lib, crest),
     },
+    board: style === 'modern' ? 'led' : style === 'scifi' ? 'holo' : 'wood',
   };
   if (spec.notes) theme.needs = spec.notes;
   const characters = spec.characters;

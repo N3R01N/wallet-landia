@@ -11,7 +11,7 @@ import { brandColor, ISO_H, ISO_W } from './buildings.js';
 import { buildingArt, caravanArt, heroArt, npcArt, propArt, villagerArt } from '../assets/art.js';
 import { bakeIsoGround, bakeTopGround, scatterProps, type Ground, type Prop } from './ground.js';
 import type { Sprite } from './pixel.js';
-import { districtLabels, floatingText, markers, nameTags, route, weather } from './overlay.js';
+import { districtLabels, tollBoard, towerBeacon, floatingText, markers, nameTags, route, weather } from './overlay.js';
 import type { HitTarget, WorldView } from './view.js';
 
 export type { HitTarget } from './view.js';
@@ -181,6 +181,11 @@ export class Renderer implements WorldView {
     const project = (x: number, y: number): [number, number] => this.toScreen(x, y);
     if (this.scale <= 3) districtLabels(c, project);
     if (sim.route) route(c, sim.route, project, sim.elapsed);
+    // the Chronicle Tower shows how busy the chain is: a beacon on top, a toll board at the door
+    const tower = sim.plan.tower;
+    const towerSize = Math.min(1.6, Math.max(0.85, this.scale / 1.8));
+    towerBeacon(c, sim, this.#tops.get(tower.id), towerSize);
+    tollBoard(c, sim, this.toScreen(tower.x + tower.w + 0.2, tower.y + tower.h + 0.7), towerSize);
     markers(c, sim, this.#tops);
     floatingText(c, sim, (x, y) => {
       const p = this.toScreen(x, y);

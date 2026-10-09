@@ -8,6 +8,7 @@ import { TIER_COLORS, approxUsd } from '../domain/tiers.js';
 import type { District } from '../world/layout.js';
 import { districtName } from '../assets/art.js';
 import type { Route, Sim } from '../world/sim.js';
+import { formatGwei, formatTransferUsd, heatColor, TOLL_COLORS, tollOf } from '../world/chain.js';
 
 export type Project = (x: number, y: number, z?: number) => [number, number] | null;
 
@@ -224,4 +225,81 @@ export function route(c: CanvasRenderingContext2D, r: Route, project: Project, e
     c.fillText(text, p[0] + 16, p[1] + 4);
   }
   c.restore();
+}
+
+// --- the Chronicle Tower: toll board and beacon -------------------------------------
+
+/** The three lines on the toll board: a heading, the base fee with its trend, and a plain transfer's cost. */
+export function tollLines(sim: Sim): { head: string; fee: string; sub: string; color: string } {
+  const toll = tollOf(sim.chain, sim.ethUsd);
+  if (toll.gwei === null) return { head: 'TOLL', fee: '…', sub: 'listening for the bell', color: '#d8d0c0' };
+  const arrow = toll.trend > 0 ? ' ▲' : toll.trend < 0 ? ' ▼' : ' ▶';
+  return {
+    head: 'TOLL',
+    fee: `${formatGwei(toll.gwei)} gwei${arrow}`,
+    sub: toll.transferUsd !== null ? `a transfer ≈ ${formatTransferUsd(toll.transferUsd)}` : `${Math.round(sim.chain.busy * 100)}% full`,
+    color: TOLL_COLORS[toll.level],
+  };
+}
+
+/**
+ * The toll board by the tower door, drawn over the 2D views at `at` (screen
+ * px, the board's foot), `size` 1 at the default zoom.
+ */
+export function tollBoard(c: CanvasRenderingContext2D, sim: Sim, at: [number, number] | null, size: number): void {
+  if (at === null || size < 0.45) return;
+  const { head, fee, sub, color } = tollLines(sim);
+  const w = 92 * size;
+  const h = 46 * size;
+  const x = Math.round(at[0] - w / 2);
+  const y = Math.round(at[1] - h - 12 * size);
+  // posts
+  c.fillStyle = '#4a2e18';
+  c.fillRect(x + 8 * size, y + h - 2, 4 * size, 14 * size);
+  c.fillRect(x + w - 12 * size, y + h - 2, 4 * size, 14 * size);
+  // board: wood frame, slate face
+  c.fillStyle = '#6b4226';
+  c.fillRect(x - 3 * size, y - 3 * size, w + 6 * size, h + 6 * size);
+  c.fillStyle = '#2b2622';
+  c.fillRect(x, y, w, h);
+  c.textAlign = 'center';
+  c.fillStyle = '#d8c8a8';
+  c.font = `bold ${Math.round(8 * size)}px "Trebuchet MS", system-ui, sans-serif`;
+  c.fillText(head, x + w / 2, y + 10 * size);
+  c.fillStyle = color;
+  c.font = `bold ${Math.round(14 * size)}px "Trebuchet MS", system-ui, sans-serif`;
+  c.fillText(fee, x + w / 2, y + 26 * size);
+  c.fillStyle = '#e8e0cc';
+  c.font = `${Math.round(8.5 * size)}px "Trebuchet MS", system-ui, sans-serif`;
+  c.fillText(sub, x + w / 2, y + 39 * size);
+}
+
+/** The beacon on the tower's top: a fire whose size and colour follow the toll (green cheap … red dear). */
+export function towerBeacon(c: CanvasRenderingContext2D, sim: Sim, top: [number, number] | undefined, size: number): void {
+  if (top === undefined) return;
+  const toll = tollOf(sim.chain, sim.ethUsd);
+  const [r, g, b] = heatColor(toll.heat).map((v) => Math.round(v * 255)) as [number, number, number];
+  const t = sim.elapsed;
+  const flicker = 1 + Math.sin(t * 9.1) * 0.06 + Math.sin(t * 13.7) * 0.04;
+  const radius = (15 + toll.heat * 24) * size * flicker;
+  const [x, y] = [top[0], top[1] - 6 * size];
+  const glow = c.createRadialGradient(x, y, 0, x, y, radius * 2.2);
+  glow.addColorStop(0, `rgba(${r},${g},${b},${0.7 + nightFactor() * 0.25})`);
+  glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
+  c.fillStyle = glow;
+  c.beginPath();
+  c.arc(x, y, radius * 2.2, 0, Math.PI * 2);
+  c.fill();
+  // the flame: a teardrop, white-hot at its heart
+  const fh = radius * 1.3;
+  c.fillStyle = `rgb(${r},${g},${b})`;
+  c.beginPath();
+  c.moveTo(x, y - fh);
+  c.quadraticCurveTo(x + fh * 0.55, y - fh * 0.1, x, y + fh * 0.35);
+  c.quadraticCurveTo(x - fh * 0.55, y - fh * 0.1, x, y - fh);
+  c.fill();
+  c.fillStyle = 'rgba(255,248,220,0.9)';
+  c.beginPath();
+  c.ellipse(x, y + fh * 0.05, fh * 0.16, fh * 0.28, 0, 0, Math.PI * 2);
+  c.fill();
 }

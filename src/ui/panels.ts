@@ -300,6 +300,13 @@ export function buildingPanel(b: Placed, ctx: PanelContext): HTMLElement {
     const title = buildingName(b.kind === 'tower' ? 'tower' : b.kind === 'guildhall' ? 'guildhall' : 'gate');
     const body = el('div', { class: 'panel-body' }, el('h2', {}, title), el('div', { class: 'muted' }, district), el('p', {}, EXPLAIN[b.kind] ?? ''));
     if (b.kind === 'tower') {
+      body.append(
+        el(
+          'p',
+          { class: 'muted' },
+          'Read the tower at a glance: the line at its door is how full recent blocks are (Ethereum aims for half full); the toll board shows the base fee, what a plain transfer costs, and whether it is rising (▲, blocks over half full) or falling (▼); the beacon on top burns green when the toll is cheap and red when it is dear.',
+        ),
+      );
       const beat = ctx.beat;
       body.append(
         beat === null

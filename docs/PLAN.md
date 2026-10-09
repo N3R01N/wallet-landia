@@ -307,6 +307,12 @@ Same scope for both: **the Town view only.**
 - The Guild panel lists the town's heroes with portraits; each opens the character sheet.
 - Heroes can be renamed (✎ on the sheet or in the Guild panel); names are remembered; an empty name restores the town's.
 
+### The Chronicle Tower shows how busy the chain is (2026-10-09)
+- From the block feed already polled for the bell (no Zerion requests): fullness (gas used / limit), base fee, tx count. `world/chain.ts` smooths fullness over blocks and reads the toll: gwei, a plain transfer's cost in USD (ETH price from the guild's holdings), heat (log scale, $0.02 cool … $5 hot) and trend (▲ over half full, ▼ under).
+- **Queue:** townsfolk line up on the road from the tower door, 2 when calm up to 18 when blocks are full; each sealed block lets the front in (more when it was full), newcomers walk up from the gate and the streets.
+- **Toll board** by the door: base fee with its trend and a transfer's cost, coloured by level; painted wood (built-in, medieval), an LED panel (modern) or a hologram (sci-fi) in 3D; a pixel board in 2D.
+- **Beacon** on the spire: a brazier fire, green when cheap through amber to red, bigger and brighter (and stronger at night) as the toll rises.
+
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.
 - Approvals as a keyring (needs RPC/log reads), and the health factor for lending.

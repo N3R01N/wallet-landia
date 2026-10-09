@@ -19,7 +19,7 @@ import { brandColor } from '../buildings.js';
 import { caravanArt, heroArt, npcArt, villagerArt } from '../../assets/art.js';
 import { BuildingFactory, type BuildingSpec } from './buildingFactory.js';
 import { bakeTopGround, scatterProps, type Prop } from '../ground.js';
-import { districtLabels, floatingText, markers, nameTags, nightFactor, route, weather, type Project } from '../overlay.js';
+import { districtLabels, tollLines, floatingText, markers, nameTags, nightFactor, route, weather, type Project } from '../overlay.js';
 import { P, type Sprite } from '../pixel.js';
 import { ImagePipeline, type DebugView, type Quality } from './pipeline.js';
 import { buildGrass, buildLamps, buildPropMeshes, placeLamps, type LampSet } from './scenery.js';
@@ -27,6 +27,8 @@ import { EnvironmentController, skyForHour } from './environment.js';
 import { bundleTheme, type CharacterProvider, type SandboxCharacter, type Theme } from './themes.js';
 import type { Companion } from './grammar/companions.js';
 import { FogBank } from './fogBank.js';
+import { Beacon3D, TollBoard3D } from './towerSigns.js';
+import { heatColor, tollOf } from '../../world/chain.js';
 import { PortraitStudio } from './portrait.js';
 import { Smoke, type Emitter } from './smoke.js';
 import { rippling } from './water.js';
@@ -146,6 +148,9 @@ export class Renderer3D implements WorldView {
   #env: EnvironmentController | null = null;
   /** Smoke and steam from the town's chimneys and stacks. */
   #smoke: Smoke | null = null;
+  /** The Chronicle Tower's toll board and beacon: how busy and how dear the chain is. */
+  #tollBoard: TollBoard3D | null = null;
+  #beacon: Beacon3D | null = null;
   /** Fog of war over unvisited buildings, and which buildings it covers. */
   #fog: FogBank | null = null;
   #fogged: Placed[] = [];
@@ -379,12 +384,29 @@ export class Renderer3D implements WorldView {
       this.#world.add(info.group);
       this.#buildings.push(info);
     }
+    // the tower's real height (its `top` has headroom for markers), measured before its parts are merged away
+    const towerInfo = this.#buildings.find((b) => b.placed.kind === 'tower');
+    const towerTip = towerInfo ? new THREE.Box3().setFromObject(towerInfo.group).max.y : 0;
     this.#mergeBuildings();
     const emitters = this.#buildings.flatMap((b) => b.smoke ?? []);
     this.#smoke = emitters.length > 0 ? new Smoke(emitters) : null;
     if (this.#smoke) {
       this.#world.add(this.#smoke.points);
       this.#lastSize = ''; // size the puffs to the viewport
+    }
+    // the tower's signs: a beacon on its top, a toll board by its door
+    const tower = this.#buildings.find((b) => b.placed.kind === 'tower');
+    if (tower) {
+      const t = tower.placed;
+      this.#beacon = new Beacon3D();
+      this.#beacon.object.position.set(t.x + t.w / 2, towerTip + 0.05, t.y + t.h / 2);
+      this.#tollBoard = new TollBoard3D(this.#theme?.board ?? 'wood');
+      this.#tollBoard.object.position.set(t.x + t.w + 0.25, 0, t.y + t.h + 0.75);
+      this.#tollBoard.object.rotation.y = -0.35; // turned a little towards the street
+      this.#world.add(this.#beacon.object, this.#tollBoard.object);
+    } else {
+      this.#beacon = null;
+      this.#tollBoard = null;
     }
     // fog of war can cover any protocol's building (shown or not as the replay goes)
     const fogged = this.#buildings.filter((b) => b.placed.protocolId !== undefined);
@@ -864,6 +886,11 @@ export class Renderer3D implements WorldView {
     this.#lamps?.setNight(night);
     this.#smoke?.setNight(night);
     this.#fog?.update(this.#sim.elapsed, night, (i) => this.#sim.fogOver(this.#fogged[i]!));
+    if (this.#beacon || this.#tollBoard) {
+      const toll = tollOf(this.#sim.chain, this.#sim.ethUsd);
+      this.#beacon?.update(this.#sim.elapsed, toll.heat, heatColor(toll.heat), night);
+      this.#tollBoard?.update(tollLines(this.#sim));
+    }
     this.#pipeline.setNight(Math.max(night, gloom * 0.5));
     this.#waterMat.opacity = 0.8 + Math.sin(sim.elapsed * 1.3) * 0.06;
     // Wind: a breeze, rising with the storm.

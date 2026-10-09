@@ -8,6 +8,7 @@ import type { Guild, Hero, HeroClass, Journey, Target, Verb } from '../domain/mo
 import type { Tier } from '../domain/tiers.js';
 import { makeRng } from '../util/rng.js';
 import { type Placed, type Pt, type TownPlan } from './layout.js';
+import { ethPriceFrom, initialChain, nextChain, type BlockInfo, type ChainState } from './chain.js';
 import { doorSlot, flightRoute, walkRoute } from './route.js';
 
 // --- schedule ----------------------------------------------------------------
@@ -65,6 +66,8 @@ export interface Agent {
   alt: number;
   /** Height it keeps when not flying: griffins and dragons hover low over the road. */
   hover: number;
+  /** Waiting in line at the Chronicle Tower (a transaction waiting for a page). */
+  queued?: boolean;
   /** The door this agent is waiting at, if any (see door slots). */
   slotAt: string | null;
   /** Value tier of what is being carried right now, or null when empty-handed. */
@@ -104,6 +107,8 @@ export interface LogEntry {
 
 /** Tiles per second on foot: a brisk walk (~2.2 m/s); a hero with errands piling up hurries. */
 const WALK_SPEED = 1.2;
+/** The longest the line at the tower gets (people). */
+const QUEUE_MAX = 18;
 /** Tiles between the points of an agent's trail. */
 const TRAIL_STEP = 0.12;
 /** How far back on its hero's trail a caravan rolls (index into the trail: ~1.4 tiles). */
@@ -126,6 +131,15 @@ export class Sim {
   log: LogEntry[] = [];
   /** Journeys played so far (the log only keeps the latest). */
   played = 0;
+  /** The real chain, as of the last bell: the queue, the toll board and the beacon read it. */
+  chain: ChainState = initialChain();
+  /** ETH in USD, from what the guild holds (for the toll in dollars), or null. */
+  readonly ethUsd: number | null;
+  /** The line at the tower door, front first. */
+  readonly queue: Agent[] = [];
+  /** Where the line stands: spots along the road from the tower door, front first. */
+  readonly queueLine: Pt[];
+  #queueTimer = 0;
   /** Fog of war: buildings stay hidden until a hero first visits them in the replay. */
   fog = false;
   /** Protocols revealed so far, and when (`elapsed`), so the fog can lift as it happens. */
@@ -161,6 +175,11 @@ export class Sim {
     this.duration = (last?.at ?? 0) + 12;
     this.#spawnHeroes();
     for (let i = 0; i < this.#villagerTarget; i++) this.#spawnVillager(true);
+    this.ethUsd = ethPriceFrom(guild.heroes.flatMap((h) => h.items));
+    this.queueLine = this.#lineFromTower();
+    // the town opens with the line already standing
+    for (let i = 0; i < this.queueTarget; i++) this.#joinQueue(this.queueLine[i]!);
+    this.#placeQueue();
   }
 
   get live(): boolean {
@@ -293,11 +312,15 @@ export class Sim {
   }
 
   /** A new block was sealed on the real chain. */
-  bell(blockNumber: number, busy: number): void {
+  bell(block: BlockInfo): void {
     const t = this.plan.tower;
-    this.effects.push({ kind: 'ring', x: t.x + t.w / 2, y: t.y + t.h / 2, age: 0, ttl: 2.2, drama: 1, text: `#${blockNumber}` });
+    const fresh = block.number !== this.chain.block;
+    this.chain = nextChain(this.chain, block);
+    this.effects.push({ kind: 'ring', x: t.x + t.w / 2, y: t.y + t.h / 2, age: 0, ttl: 2.2, drama: 1, text: `#${block.number}` });
     // Busier blocks bring more people into the streets.
-    this.#villagerTarget = Math.round(6 + busy * 14);
+    this.#villagerTarget = Math.round(6 + block.busy * 14);
+    // the block takes in the front of the line
+    if (fresh) this.#admit(block.busy);
   }
 
   step(dtReal: number): void {
@@ -319,10 +342,11 @@ export class Sim {
 
     for (const a of this.agents) this.#advance(a, dt);
     this.agents = this.agents.filter((a) => !a.gone);
+    this.#tendQueue(dtReal);
     // the replay's end charts the whole map (buildings known only for what is kept there)
     if (this.t >= this.duration) this.#chart(this.elapsed);
 
-    const villagers = this.agents.filter((a) => a.kind === 'villager').length;
+    const villagers = this.agents.filter((a) => a.kind === 'villager' && !a.queued).length;
     if (villagers < this.#villagerTarget && this.#rng() < dtReal * 0.8) this.#spawnVillager(false);
 
     for (const e of this.effects) e.age += dtReal;
@@ -560,12 +584,104 @@ export class Sim {
     if (big >= 3) this.shake = 0.6;
   }
 
+  // --- the queue at the tower --------------------------------------------------
+
+  /** Spots for the line: along the walk from the tower door towards the gate, a step apart. */
+  #lineFromTower(): Pt[] {
+    const door = this.plan.tower.doorAt;
+    const route = walkRoute(this.plan, door, this.plan.gate.doorAt);
+    const pts = [door, ...route];
+    const out: Pt[] = [];
+    const STEP = 0.42;
+    let want = 0.7; // the first one stands a little off the door
+    let walked = 0;
+    for (let i = 0; i < pts.length - 1 && out.length < QUEUE_MAX; i++) {
+      const a = pts[i]!;
+      const b = pts[i + 1]!;
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      while (want <= walked + len && out.length < QUEUE_MAX) {
+        const f = (want - walked) / len;
+        // a little to either side, as people stand in a real line
+        const side = (out.length % 2 === 0 ? 1 : -1) * 0.1;
+        out.push({ x: a.x + (b.x - a.x) * f - ((b.y - a.y) / len) * side, y: a.y + (b.y - a.y) * f + ((b.x - a.x) / len) * side });
+        want += STEP;
+      }
+      walked += len;
+    }
+    return out;
+  }
+
+  /** How long the line should be: a couple of people when the chain is calm, the whole street when blocks are full. */
+  get queueTarget(): number {
+    return Math.min(this.queueLine.length, Math.round(2 + this.chain.congestion * (QUEUE_MAX - 2)));
+  }
+
+  /** Send each person in line to their spot (after the front went in, or someone joined). */
+  #placeQueue(): void {
+    this.queue.forEach((a, i) => {
+      const spot = this.queueLine[i];
+      if (spot === undefined) return;
+      const goal = a.tasks[0]?.type === 'walk' ? a.tasks[0].to : a.path.at(-1);
+      if (goal && Math.hypot(goal.x - spot.x, goal.y - spot.y) < 0.05) return;
+      if (a.path.length === 0 && Math.hypot(a.x - spot.x, a.y - spot.y) < 0.05) return;
+      a.path = [];
+      a.acting = null;
+      a.tasks = [{ type: 'walk', to: spot }];
+    });
+  }
+
+  /** Someone joins the back of the line, starting from `at`. */
+  #joinQueue(at: Pt): void {
+    const a = this.#makeAgent('villager', at.x, at.y);
+    a.queued = true;
+    a.speed = WALK_SPEED * (0.9 + this.#rng() * 0.25);
+    this.agents.push(a);
+    this.queue.push(a);
+  }
+
+  /** A block sealed: the front of the line goes in (more of it when the block was full). */
+  #admit(busy: number): void {
+    const n = Math.min(this.queue.length, Math.max(1, Math.round(this.queue.length * (0.35 + busy * 0.3))));
+    for (const a of this.queue.splice(0, n)) {
+      a.queued = false;
+      a.path = [];
+      a.acting = null;
+      a.tasks = [{ type: 'walk', to: this.plan.tower.doorAt }, { type: 'vanish' }];
+    }
+    this.#placeQueue();
+  }
+
+  /** Keep the line as long as the chain is busy: newcomers join at the back, the tail drifts away when it calms. */
+  #tendQueue(dtReal: number): void {
+    for (let i = this.queue.length - 1; i >= 0; i--) if (this.queue[i]!.gone) this.queue.splice(i, 1);
+    const target = this.queueTarget;
+    this.#queueTimer -= dtReal;
+    if (this.queue.length < target && this.#queueTimer <= 0) {
+      // from the gate or any street door, they come to wait their turn
+      const from = this.#rng() < 0.5 ? this.plan.gate.doorAt : (this.plan.buildings[Math.floor(this.#rng() * this.plan.buildings.length)]?.doorAt ?? this.plan.gate.doorAt);
+      this.#joinQueue(from);
+      this.#placeQueue();
+      this.#queueTimer = 0.35 + this.#rng() * 0.6;
+    } else if (this.queue.length > target + 2) {
+      const a = this.queue.pop()!;
+      a.queued = false;
+      a.path = [];
+      a.tasks = [{ type: 'walk', to: this.plan.gate.doorAt }, { type: 'vanish' }];
+    }
+  }
+
   #idle(a: Agent): void {
     a.journey = null;
     a.carrying = null;
+    if (a.queued) {
+      // waiting their turn: face the tower
+      const door = this.plan.tower.doorAt;
+      if (Math.abs(door.x - a.x) > 0.05) a.facing = door.x > a.x ? 1 : -1;
+      return;
+    }
     if (a.kind === 'villager') {
       const b = this.plan.buildings[Math.floor(this.#rng() * this.plan.buildings.length)];
-      if (b === undefined || this.agents.filter((x) => x.kind === 'villager').length > this.#villagerTarget + 2) {
+      if (b === undefined || this.agents.filter((x) => x.kind === 'villager' && !x.queued).length > this.#villagerTarget + 2) {
         this.#releaseSlot(a);
         a.gone = true;
         return;
