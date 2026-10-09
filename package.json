@@ -13,6 +13,10 @@
     "capture": "vite-node scripts/capture-fixtures.ts",
     "inspect": "vite-node scripts/inspect.ts",
     "e2e": "playwright test",
+    "e2e:fast": "playwright test --project=fast --workers=4",
+    "e2e:slow": "playwright test --project=slow",
+    "check": "tsc --noEmit && vitest run && playwright test --project=fast --workers=4",
+    "check:full": "tsc --noEmit && vitest run && playwright test",
     "assets:quaternius": "vite-node scripts/import-quaternius.ts",
     "assets:textures": "vite-node scripts/fetch-textures.ts"
   },

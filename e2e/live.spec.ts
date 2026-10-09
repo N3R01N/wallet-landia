@@ -55,7 +55,7 @@ test.beforeEach(async ({ page }) => {
     sessionStorage.setItem('seeded', '1');
     localStorage.clear();
     localStorage.setItem('wallet-landia-v4/zerion-key', 'zk_test');
-    localStorage.setItem('wallet-landia-v4/prefs/v1', JSON.stringify({ owned: [addr] }));
+    localStorage.setItem('wallet-landia-v4/prefs/v1', JSON.stringify({ owned: [addr], view: 'top' }));
   }, ADDR);
 });
 
@@ -115,7 +115,7 @@ test('visiting a town and coming home again is free once cached, while the walle
   const fake = await fakeNetwork(page);
   const OTHER = '0x2222222222222222222222222222222222222222';
   await page.addInitScript(([addr, other]) => {
-    localStorage.setItem('wallet-landia-v4/prefs/v1', JSON.stringify({ owned: [addr], followed: [other] }));
+    localStorage.setItem('wallet-landia-v4/prefs/v1', JSON.stringify({ owned: [addr], followed: [other], view: 'top' }));
   }, [ADDR, OTHER]);
   await page.goto('/');
   await expect(page.locator('.brand')).toContainText('live', { timeout: 20_000 });
