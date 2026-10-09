@@ -54,7 +54,7 @@ export class PortraitStudio {
     const h = Math.max(0.2, box.max.y - box.min.y);
     const head = box.min.y + h * 0.84;
     // frame the upper third of the figure, a little from the side
-    const dist = h * 1.25;
+    const dist = h * 0.8;
     this.#camera.position.set(dist * 0.3, head + h * 0.02, dist);
     this.#camera.lookAt(0, head - h * 0.06, 0);
     this.#gl.setClearColor(0x000000, 0);

@@ -73,7 +73,21 @@ export function setCrests(crests: Record<string, [string, string]>): void {
 export function bornCrest(address: string): [string, string] {
   const h = hashString(`crest:${address.toLowerCase()}`);
   const hue = h % 360;
-  return [`hsl(${hue} 55% 45%)`, `hsl(${(hue + 40) % 360} 70% 75%)`];
+  // hex, not hsl(): the 3D library reads only the older comma form of hsl, and fell back to white
+  return [hslHex(hue, 0.55, 0.45), hslHex((hue + 40) % 360, 0.7, 0.75)];
+}
+
+/** An HSL colour as #rrggbb (hue in degrees, saturation and lightness 0..1). */
+export function hslHex(hue: number, sat: number, light: number): string {
+  const a = sat * Math.min(light, 1 - light);
+  const f = (n: number): string => {
+    const k = (n + hue / 30) % 12;
+    const v = light - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(v * 255)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
 }
 
 /** A crest colour pair per address: the player's choice, else the one it was born with. */

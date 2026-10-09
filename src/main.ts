@@ -1,5 +1,6 @@
 /** Boot: the app shows fixtures or demo at once, then goes live if a key and wallets are set. */
 
+import { inject } from '@vercel/analytics';
 import { App } from './ui/app.js';
 
 const root = document.querySelector<HTMLDivElement>('#app');
@@ -15,5 +16,16 @@ app.start();
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch((e: unknown) => console.warn('service worker', e));
+  });
+}
+
+// Vercel Web Analytics: cookie-less page views, on the deployed site only (the
+// script and its reports are same-origin there, /_vercel/insights/, so the
+// page's security policy needs no change). Query strings are dropped: only the
+// page path is counted.
+if (import.meta.env.PROD) {
+  inject({
+    mode: 'production',
+    beforeSend: (event) => ({ ...event, url: event.url.split('?')[0] ?? event.url }),
   });
 }

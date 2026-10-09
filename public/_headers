@@ -1,5 +1,5 @@
 # Cache headers for static hosts that read a _headers file (Cloudflare Pages,
-# Netlify). Other hosts: set the same rules in their own config.
+# Netlify). Vercel: the same rules are in vercel.json. Other hosts: set them in their config.
 #
 # App code: file names carry a content hash, so they never change.
 /assets/*

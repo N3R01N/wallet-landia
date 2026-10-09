@@ -18,7 +18,8 @@
     "check": "tsc --noEmit && vitest run && playwright test --project=fast --workers=4",
     "check:full": "tsc --noEmit && vitest run && playwright test",
     "assets:quaternius": "vite-node scripts/import-quaternius.ts",
-    "assets:textures": "vite-node scripts/fetch-textures.ts"
+    "assets:textures": "vite-node scripts/fetch-textures.ts",
+    "assets:versions": "vite-node scripts/asset-versions-cli.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",
@@ -38,6 +39,10 @@
     "vitest": "^5.0.3"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "three": "^0.186.1"
+  },
+  "engines": {
+    "node": ">=20.19"
   }
 }

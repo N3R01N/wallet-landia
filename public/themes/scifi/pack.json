@@ -11,7 +11,7 @@
     "extends": "medieval",
     "sky": "sunset",
     "notes": [
-      "People still wear the medieval kit: sci-fi outfits on the same universal skeleton are needed (the base body alone is underwear)",
+      "Clothes are made in code (painted on the base body, accessories on bones); real outfit models on the universal skeleton would look better up close",
       "Vehicles are simple models built in code"
     ],
     "materials": {
@@ -129,6 +129,7 @@
       "lamps": "beacon"
     },
     "characters": {
+      "wardrobe": "scifi",
       "mounts": {
         "t2": {
           "vehicle": "hoverboard"

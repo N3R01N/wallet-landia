@@ -22,6 +22,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { CharacterSpec, MountSpec, VehicleKind } from '../../assets/theme.js';
 import type { Vehicle } from './grammar/vehicles.js';
 import { attachGear, gearFor } from './gear.js';
+import { addDressWeights, dressedMaterial, dressFor, wardrobeGear } from './wardrobe.js';
 import type { AnimState, CharacterLook, CharacterProvider, SandboxCharacter } from './themes.js';
 
 /** World scale: one tile is this many metres, so a person is about one tile tall. */
@@ -458,9 +459,12 @@ class RiggedCharacter implements SandboxCharacter {
     this.#rider.add(body);
     const spec = kit.spec;
     const bodyMesh = largestSkinned(body);
-    if (bodyMesh && spec.bodyParts === 'head') bodyMesh.geometry = headOnly(bodyMesh);
+    const wardrobe = spec.wardrobe;
+    // a wardrobe dresses the whole body; outfit models cover all but the head
+    if (bodyMesh && spec.bodyParts === 'head' && !wardrobe) bodyMesh.geometry = headOnly(bodyMesh);
     const skeleton = bodyMesh?.skeleton;
-    const outfit = look.kind === 'villager' ? (spec.outfits.villager ?? spec.outfits.default) : (spec.outfits[look.cls] ?? spec.outfits.default);
+    const skinMaterial = bodyMesh?.material as THREE.MeshStandardMaterial | undefined;
+    const outfit = wardrobe ? undefined : look.kind === 'villager' ? (spec.outfits.villager ?? spec.outfits.default) : (spec.outfits[look.cls] ?? spec.outfits.default);
     const hairs = spec.hair[sex];
     const urls = [outfit?.[sex], hairs.length > 0 ? hairs[look.seed % hairs.length] : undefined, spec.eyebrows?.[sex]];
     const parts = urls.map((u) => (u ? kit.parts.get(u) : undefined));
@@ -470,9 +474,21 @@ class RiggedCharacter implements SandboxCharacter {
       this.#rider.add(part);
       attach(part, skeleton);
     }
-    if (bodyMesh) mergeParts(this.#rider, bodyMesh, `${spec.bodies[sex]}|${urls.join('|')}`);
+    if (bodyMesh) mergeParts(this.#rider, bodyMesh, `${spec.bodies[sex]}|${urls.join('|')}${wardrobe ? `|${wardrobe}` : ''}`);
+    if (wardrobe && skinMaterial && skeleton) {
+      // clothes painted onto the body by region, in this person's colours
+      const dress = dressFor(look, wardrobe);
+      const material = dressedMaterial(skinMaterial, dress, wardrobe);
+      this.#rider.traverse((o) => {
+        const m = o as THREE.SkinnedMesh;
+        if (!m.isSkinnedMesh || m.material !== skinMaterial) return; // the body (merging keeps its material)
+        addDressWeights(m.geometry, m.skeleton.bones);
+        m.material = material;
+      });
+      attachGear(wardrobeGear(look, wardrobe), new Map(skeleton.bones.map((b) => [b.name, b])), this.#rider);
+    }
     // heroes carry their class's gear, hung on bones in the bind pose
-    if (look.kind === 'hero' && skeleton) attachGear(gearFor(look.cls, look.crest), new Map(skeleton.bones.map((b) => [b.name, b])), this.#rider);
+    else if (look.kind === 'hero' && skeleton) attachGear(gearFor(look.cls, look.crest), new Map(skeleton.bones.map((b) => [b.name, b])), this.#rider);
     this.#rider.scale.setScalar(1 / METRES_PER_TILE);
     this.object.add(this.#rider);
 

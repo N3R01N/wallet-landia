@@ -11,7 +11,7 @@
     "extends": "medieval",
     "sky": "day",
     "notes": [
-      "People still wear the medieval kit: modern outfits on the same universal skeleton are needed",
+      "Clothes are made in code (painted on the base body, accessories on bones); real outfit models on the universal skeleton would look better up close",
       "Vehicles are simple models built in code"
     ],
     "materials": {
@@ -106,6 +106,7 @@
       "lamps": "post"
     },
     "characters": {
+      "wardrobe": "modern",
       "mounts": {
         "t2": {
           "vehicle": "bicycle"

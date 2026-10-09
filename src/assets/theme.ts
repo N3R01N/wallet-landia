@@ -102,6 +102,12 @@ export interface CharacterSpec {
   hair: Pair<string[]>;
   eyebrows?: Partial<Pair>;
   mounts: Partial<Record<(typeof MOUNT_TIERS)[number], MountSpec>>;
+  /**
+   * Clothes made in code instead of outfit models: the full body dressed by
+   * region (shirt and trousers, or a jumpsuit with glowing seams) with
+   * accessories on bones. Outfits are ignored when set.
+   */
+  wardrobe?: 'modern' | 'scifi';
 }
 
 export interface BuildingStyle {
@@ -250,7 +256,7 @@ function mount(r: Reader, v: unknown, at: string): MountSpec | null {
 function characters(r: Reader, v: unknown, partial: boolean): Partial<CharacterSpec> | null {
   const at = 'theme.characters';
   if (!isObj(v)) return null;
-  r.known(v, at, ['skeleton', 'animations', 'clips', 'speeds', 'bodies', 'bodyParts', 'outfits', 'hair', 'eyebrows', 'mounts']);
+  r.known(v, at, ['skeleton', 'animations', 'clips', 'speeds', 'bodies', 'bodyParts', 'outfits', 'hair', 'eyebrows', 'mounts', 'wardrobe']);
   if (v.skeleton !== undefined && v.skeleton !== 'ue5-universal') r.problems.push(`${at}.skeleton must be "ue5-universal" (the only rig the game animates so far)`);
   const animations = r.path(v.animations, `${at}.animations`, 'model');
   const bodies = v.bodies === undefined ? null : r.pair(v.bodies, `${at}.bodies`);
@@ -270,6 +276,11 @@ function characters(r: Reader, v: unknown, partial: boolean): Partial<CharacterS
     spec.speeds = { walk: num(s.walk, 0.1, 10) ?? 1.25, run: num(s.run, 0.1, 20) ?? 3 };
   }
   if (bodies) spec.bodies = bodies;
+  if (v.wardrobe !== undefined) {
+    const w = oneOf(v.wardrobe, ['modern', 'scifi'] as const);
+    if (w) spec.wardrobe = w;
+    else r.problems.push(`${at}.wardrobe must be "modern" or "scifi"`);
+  }
   if (v.bodyParts !== undefined || !partial) spec.bodyParts = v.bodyParts === 'full' ? 'full' : 'head';
   if (v.outfits !== undefined || !partial) spec.outfits = {};
   if (v.hair !== undefined || !partial) spec.hair = { male: [], female: [] };

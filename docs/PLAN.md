@@ -332,6 +332,10 @@ Same scope for both: **the Town view only.**
 - **The Ethereum node:** the heartbeat asks once per block, timed to the 12 s slot (a short retry when a block is late, back-off to 2 min when the node fails or rate-limits): ~300–360 requests an hour per open tab, down from ~900; wallet checks add one batch per block for live towns. Players can use their own node (Guild panel), limited to well-known providers listed in both `ALLOWED_RPC_HOSTS` and the CSP's connect-src, so an injected script still could not send the stored key elsewhere.
 - **Privacy:** captured wallets (`fixtures/*.json`) are in development builds only; the public build shows the synthetic demo (`VITE_INCLUDE_CAPTURED=1` builds a private demo with them).
 
+### Clothes made in code; Vercel (2026-10-09)
+- No free modern or sci-fi outfits exist for the universal skeleton (Quaternius' newer releases are under its own licence, QAL: fine for our app, but not to redistribute as packs). So themes can set `characters.wardrobe` (`render/three/wardrobe.ts`): the full base body painted by region from its bone weights (fabric, belt and cuffs at the region borders; glowing seams in sci-fi), colours from the seed, class and crest, accessories on bones. Modern and sci-fi use it. Crest colours are now hex (the 3D library read `hsl(… … …)` as white).
+- Deploy: `vercel.json` (Vite, `npm run build`, `dist`, the cache headers of `public/_headers`); Node ≥ 20.19 pinned in `package.json`.
+
 ### Ideas for what comes next
 - Effects, sky/ground and UI-skin slots; pack previews in the Looks panel.
 - Approvals as a keyring (needs RPC/log reads), and the health factor for lending.

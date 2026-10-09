@@ -27,6 +27,14 @@ Players install packs in **🎨 Looks → Import pack folder…** (pick the fold
 }
 ```
 
+### Bump `version` when you change files
+
+Players' browsers keep a pack's files (art, models, textures) until its
+`version` changes: the version is part of every file's URL. After changing
+any file in the pack's folder, raise `version` (e.g. 0.3.0 → 0.3.1). For the
+packs and themes in this repository, then run
+`npm run assets:versions -- write`; `npm run check` fails until you do.
+
 ## Forms
 
 | Form | Used for | Notes |
@@ -131,6 +139,7 @@ Every part shares one skeleton, so no retargeting is needed. The only rig so far
   "speeds": { "walk": 1.25, "run": 3.0 },              // m/s at normal playback, so feet don't slide
   "bodies": { "male": "base/M.glb", "female": "base/F.glb" },
   "bodyParts": "head",                                 // keep only the head (outfits cover the body) or "full"
+  "wardrobe": "scifi",                                 // optional: clothes made in code ("modern" or "scifi"); outfits ignored
   "outfits": { "default": {"male": "…", "female": "…"}, "villager": {…}, "merchant": {…} },  // per class optional
   "hair": { "male": ["hair/a.glb"], "female": ["hair/b.glb"] },
   "eyebrows": { "male": "…", "female": "…" },
@@ -143,6 +152,7 @@ Every part shares one skeleton, so no retargeting is needed. The only rig so far
   }
 }
 ```
+- `wardrobe` (optional, `"modern"` or `"scifi"`): clothes made in code instead of outfit models. The full base body is dressed by region (shirt, sleeves, trousers, shoes; or a jumpsuit with glowing seams and boots) in colours from each person's seed and a hero's class and crest, with accessories on bones (caps, glasses, headphones, bags; visors, wrist pads, shoulder plates, air packs). `outfits` are ignored when it is set.
 - Instead of a `model`, a mount can be a `vehicle` built in code: `bicycle scooter motorbike helicopter jet hoverboard hoverbike hoverbikeHeavy skiff starship`. Vehicles have their own size and seat; `tint` paints them (default: the hero's crest colour); `pose` (`straddle` or `sit`) overrides how the rider sits.
 - Mount models may be `.glb`, `.gltf` or `.fbx` (many creature kits ship only FBX). Clip names match whole names, also after a `|` (`"Idle"` matches `Armature|Idle`). The first listed clip that exists wins.
 - The rider is seated with the `sit` clip, the legs turned into a straddle, and the pelvis put on the mount's back between the `seat` bones.

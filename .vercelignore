@@ -1,0 +1,11 @@
+# Never upload these with `vercel` from this machine (they are git-ignored too):
+# real wallet captures, raw third-party downloads, secrets, test output.
+fixtures/*.json
+!fixtures/demo/
+assets-src/
+.env
+.env.*
+test-results/
+playwright-report/
+node_modules/
+dist/
