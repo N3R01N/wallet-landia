@@ -18,6 +18,9 @@ export interface LooksContext {
   /** The one in use ('' = built in). */
   theme: string;
   onTheme(id: string): void;
+  /** Sound volume 0..1 (sound itself is the 🔇/🔊 button in the top bar). */
+  volume: number;
+  onVolume(v: number): void;
   /** Fog of war: buildings hidden until a hero visits them in the replay. */
   fog: boolean;
   onFog(on: boolean): void;
@@ -34,6 +37,13 @@ function gameOptions(ctx: LooksContext): HTMLElement {
     el('h4', { class: 'slot-family' }, 'Game'),
     el('label', { class: 'check-row' }, box, el('span', {}, 'Fog of war')),
     el('div', { class: 'muted small' }, 'Buildings stay hidden in mist until a hero first visits them as the replay plays; the map is fully charted when it ends. Drag the timeline back to see it again.'),
+    (() => {
+      const vol = el('input', { type: 'range', min: '0', max: '1', step: '0.05', 'aria-label': 'Sound volume' });
+      vol.value = String(ctx.volume);
+      vol.oninput = () => ctx.onVolume(Number(vol.value));
+      return el('label', { class: 'check-row' }, el('span', {}, 'Volume'), vol);
+    })(),
+    el('div', { class: 'muted small' }, 'Sounds: the tower bell for each block, coins for tolls and trades, keys, the bailiffs’ alarm, rain when the market falls, the crowd at the tower, birds by day and crickets at night. Turn them on with 🔇 in the top bar (or press M).'),
   );
 }
 

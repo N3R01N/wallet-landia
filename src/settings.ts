@@ -39,6 +39,9 @@ export interface Prefs {
   names: Record<string, string>;
   /** ETH prices seen: this session's (`seen`), and the visit before it (`prev`), for "since you were last here". */
   eth: { seen?: { usd: number; at: number }; prev?: { usd: number; at: number } };
+  /** Sound (off until the player turns it on) and its volume 0..1. */
+  sound: boolean;
+  volume: number;
 }
 
 const KEY = 'wallet-landia-v4/prefs/v1';
@@ -61,6 +64,8 @@ const DEFAULTS: Prefs = {
   questlogFolded: false,
   names: {},
   eth: {},
+  sound: false,
+  volume: 0.6,
 };
 
 export function loadPrefs(): Prefs {

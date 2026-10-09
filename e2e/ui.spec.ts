@@ -54,3 +54,23 @@ test('the Chronicle Tower shows how busy the chain is: a beacon on top, a toll b
   }, null, { timeout: 60_000 });
   expect(await look.jsonValue()).toMatchObject({ beacon: true, board: true });
 });
+
+test('sound is off until turned on; then the town plays its sounds, and the choice is kept', async ({ page }) => {
+  await page.goto('/?expose');
+  await page.keyboard.press('t');
+  const btn = page.locator('.btn.sound');
+  await expect(btn).toHaveText('🔇');
+  expect(await page.evaluate(() => (window as unknown as { soundscape: { state: string } }).soundscape.state)).toBe('none');
+  await btn.click();
+  await expect(btn).toHaveText('🔊');
+  await expect.poll(() => page.evaluate(() => (window as unknown as { soundscape: { state: string } }).soundscape.state)).toBe('running');
+  // the replay at speed: tolls and trades jingle
+  await page.locator('.btn', { hasText: '8×' }).click();
+  await expect
+    .poll(() => page.evaluate(() => Object.values((window as unknown as { soundscape: { played: Record<string, number> } }).soundscape.played).reduce((s, n) => s + n, 0)), { timeout: 60_000 })
+    .toBeGreaterThan(0);
+  const kept = await page.evaluate(() => (JSON.parse(localStorage.getItem('wallet-landia-v4/prefs/v1') ?? '{}') as { sound?: boolean }).sound);
+  expect(kept).toBe(true);
+  await page.keyboard.press('m');
+  await expect(btn).toHaveText('🔇');
+});

@@ -24,6 +24,8 @@ import type { Renderer3D } from '../render/three/renderer3d.js';
 import { loadThemeBundles, type ThemeBundle } from '../assets/themeBundles.js';
 import { el, fmtDate } from './dom.js';
 import { setCrests } from '../util/rng.js';
+import { Soundscape } from '../audio/soundscape.js';
+import { nightFactor } from '../render/overlay.js';
 import { priceMove, type PriceMove } from '../domain/risk.js';
 import { ethPriceFrom } from '../world/chain.js';
 import { defaultTitle, earnedMedals, medalById, medalsByJourney, titleOptions, type Earned, type Medal } from '../domain/feats.js';
@@ -40,6 +42,9 @@ export class App {
   #prefs: Prefs;
   #sourceEl = el('span', { class: 'muted' }, 'Loading…');
   #statusEl = el('span', { class: 'status' });
+  /** The town's sounds (off by default). */
+  #sound = new Soundscape();
+  #soundBtn = el('button', { class: 'btn sound', title: 'Sound on / off (m)', 'aria-label': 'Sound', 'aria-pressed': 'false' }, '🔇');
   #inkEl = el('button', { class: 'btn ink', title: 'Zerion requests left today — open the Guild panel' }, '');
   #homeBtn = el('button', { class: 'btn', hidden: '' }, '⌂ Return home');
   #budget: BudgetSnapshot | null = null;
@@ -91,6 +96,11 @@ export class App {
     this.#raws = [];
     this.#prefs = loadPrefs();
     setCrests(this.#prefs.crests);
+    this.#sound.setVolume(this.#prefs.volume);
+    this.#setSound(this.#prefs.sound, false);
+    this.#soundBtn.onclick = () => this.#setSound(!this.#sound.on);
+    // test hook: ?expose puts the soundscape on window
+    if (new URLSearchParams(location.search).has('expose')) (window as unknown as { soundscape: Soundscape }).soundscape = this.#sound;
     this.#busy('town', 'Gathering your heroes…');
     this.#session = new Session(this.#prefs, {
       onTown: (shown) => this.#onTown(shown),
@@ -154,6 +164,7 @@ export class App {
       this.#sim.step(dt);
       this.#renderer.draw();
       this.#tick();
+      this.#sound.update(this.#sim, nightFactor());
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -238,6 +249,17 @@ export class App {
     this.#logCount = -1; // the quest log shows names: redraw it
   }
 
+  /** Sound on or off (from a click: browsers start audio only on a gesture). */
+  #setSound(on: boolean, save = true): void {
+    this.#sound.setOn(on);
+    this.#soundBtn.textContent = on ? '🔊' : '🔇';
+    this.#soundBtn.setAttribute('aria-pressed', String(on));
+    if (save) {
+      this.#prefs.sound = on;
+      savePrefs(this.#prefs);
+    }
+  }
+
   /** Show (text) or clear (null) one reason the town is not ready yet. */
   #busy(reason: string, text: string | null): void {
     if (text === null) this.#loading.delete(reason);
@@ -282,6 +304,7 @@ export class App {
     const toast = el('div', { class: 'toast' }, el('span', { class: 'toast-icon' }, medal.icon), el('div', {}, el('strong', {}, `${hero.name} earned ${medal.name}`), el('div', { class: 'muted' }, `New title: ${medal.title}`)));
     toast.onclick = () => this.#selectHero(address);
     this.#toasts.append(toast);
+    this.#sound.fanfare();
     while (this.#toasts.children.length > 3) this.#toasts.firstElementChild?.remove();
     setTimeout(() => toast.classList.add('leaving'), 5000);
     setTimeout(() => toast.remove(), 5600);
@@ -368,6 +391,12 @@ export class App {
         savePrefs(this.#prefs);
         this.#applyTheme();
         this.#refreshThemePicker();
+      },
+      volume: this.#prefs.volume,
+      onVolume: (v) => {
+        this.#prefs.volume = v;
+        savePrefs(this.#prefs);
+        this.#sound.setVolume(v);
       },
       fog: this.#prefs.fog,
       onFog: (on) => {
@@ -553,6 +582,7 @@ export class App {
       this.#homeBtn,
       this.#statusEl,
       el('div', { class: 'spacer' }),
+      this.#soundBtn,
       this.#inkEl,
       looksBtn,
       guildBtn,
@@ -698,6 +728,7 @@ export class App {
         this.#togglePlay();
       } else if (e.key === 't') void this.#setView('top');
       else if (e.key === 'i') void this.#setView('iso');
+      else if (e.key === 'm') this.#setSound(!this.#sound.on);
       else if (e.key === '3') void this.#setView('3d');
       else if (e.key === 'q') this.#renderer.rotate(-60, 0);
       else if (e.key === 'e') this.#renderer.rotate(60, 0);

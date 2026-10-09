@@ -166,7 +166,7 @@ Same scope for both: **the Town view only.**
 - [ ] Drama-scaled effects, including the tiered liquidation sequence (clerk → bailiffs → siege).
 - [ ] Loadout screen: pick a pack per slot (with at least a second test pack to prove mixing works).
 - [ ] Weather from price, day/night, crowds from global block activity, idle behaviours, dormant cobwebs.
-- [ ] Sound: bell, coins, ambience (optional, muted by default).
+- [x] Sound: bell, coins, ambience (optional, muted by default) — `src/audio/soundscape.ts`, all synthesised with Web Audio (no files): the tower bell per block (fuller blocks ring louder), coins for tolls and trades (dull for seizures), a chime for big trades, keys, a puff for failures, the bailiffs' alarm and thunder, a medal fanfare; rain from the market's gloom, the queue's murmur, birds by day, crickets at night. 🔇/🔊 in the top bar (or M), volume under Looks, kept in preferences; audio starts on the first gesture after a reload.
 - [ ] Town Crier "while you were away" summary.
 
 ### Phase 5: Gamification
