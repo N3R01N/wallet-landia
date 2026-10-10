@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { makeRng } from '../../../util/rng.js';
 import { MeshWriter, type Mat, type V3 } from './meshWriter.js';
+import type { DoorStyle } from '../doors.js';
 
 export const METRES_PER_TILE = 1.8;
 
@@ -59,11 +60,28 @@ export interface StoreyOpts {
   quoins?: boolean;
 }
 
+/** A door opening the builder hangs a moving leaf in (metres): the middle of its sill on the wall's face. */
+export interface DoorSpot {
+  at: V3;
+  rotY: number;
+  w: number;
+  h: number;
+  /** The leaf's inner face, out from the wall. */
+  z0: number;
+  thick: number;
+  style: DoorStyle;
+  hingeRight: boolean;
+}
+
 /** The grammar's parts, writing into one MeshWriter. */
 export class Mason {
   readonly w = new MeshWriter();
   /** Where smoke (or steam) rises, in metres; colour as a hex. */
   readonly smoke: { at: V3; color: string }[] = [];
+  /** Doorways; their leaves move, so they are built apart from the merged mesh. */
+  readonly doors: DoorSpot[] = [];
+  /** How this style's doors look (the builder sets it). */
+  doorStyle: DoorStyle = 'plank';
   readonly rng: () => number;
 
   constructor(seed: number) {
@@ -114,14 +132,17 @@ export class Mason {
   }
 
   door(r: Rect, f: FaceId, s: number, y: number, dw: number, dh: number, frame: Mat): void {
-    this.onFace(r, f, s, y + dh / 2, [dw, dh], 0.05, 'planks');
+    // the leaf (boards and straps, or a glazed door) hangs in the frame and opens: see doors.ts
+    this.doorLeaf(r, f, s, y, dw, dh, 0.02, 0.06, this.doorStyle);
     this.onFace(r, f, s, y + dh + 0.08, [dw + 0.36, 0.16], 0.12, frame);
     for (const side of [-1, 1]) this.onFace(r, f, s + side * (dw / 2 + 0.09), y + dh / 2, [0.18, dh], 0.1, frame);
-    // iron straps and a ring
-    for (const k of [0.25, 0.75]) this.onFace(r, f, s - dw * 0.1, y + dh * k, [dw * 0.7, 0.05], 0.06, 'iron');
-    this.onFace(r, f, s + dw * 0.3, y + dh * 0.5, [0.08, 0.08], 0.08, 'iron');
     // a step
     this.box(facePoint(r, f, s, 0.06, 0.25), [dw + 0.5, 0.12, 0.5], 'stone', FACE_ROT[f]);
+  }
+
+  /** A door that opens, in a frame drawn by the caller: its sill-middle at (s, y) on the face, `z0` out of the wall. */
+  doorLeaf(r: Rect, f: FaceId, s: number, y: number, dw: number, dh: number, z0: number, thick: number, style: DoorStyle): void {
+    this.doors.push({ at: facePoint(r, f, s, y, 0), rotY: FACE_ROT[f], w: dw, h: dh, z0, thick, style, hingeRight: this.rng() < 0.5 });
   }
 
   /**

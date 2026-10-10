@@ -11,6 +11,7 @@ import { hashString } from '../../../util/rng.js';
 import { styleFor } from '../../buildings.js';
 import type { BuildingFactory, BuildingSpec, BuiltBuilding } from '../buildingFactory.js';
 import type { MaterialLibrary } from './materials.js';
+import { makeDoor, type DoorMats } from '../doors.js';
 import { Mason, MEDIEVAL, METRES_PER_TILE, roofTint, WASHES, type Ctx, type RecipeSet } from './medieval.js';
 import { MODERN } from './modern.js';
 import { SCIFI } from './scifi.js';
@@ -36,6 +37,7 @@ export class GrammarBuilder {
     const seed = hashString(`${spec.kind}|${spec.tier}|${spec.roof ?? ''}`);
     const washes = this.#style.washes ?? WASHES;
     const m = new Mason(seed);
+    m.doorStyle = this.#style.style === 'modern' ? 'glass' : this.#style.style === 'scifi' ? 'slide' : 'plank';
     const ctx: Ctx = {
       m,
       roof: roofTint(spec.roof ?? '#a0522d', this.#style.brandRoofs ?? 1),
@@ -57,6 +59,20 @@ export class GrammarBuilder {
     group.add(inner);
 
     const out: BuiltBuilding = { group, top: made.top / METRES_PER_TILE };
+    // doors that open, hung in their frames (in metres, inside the scaled group)
+    if (m.doors.length > 0) {
+      const mats: DoorMats = { leaf: this.lib.get('planks'), trim: this.lib.get('iron'), glass: this.lib.get('glass'), glow: this.lib.get('fire') };
+      if (m.doorStyle === 'glass') mats.trim = this.lib.get('timber');
+      if (m.doorStyle === 'slide') mats.leaf = this.lib.get('plaster');
+      out.doors = m.doors.map((d) => {
+        const { group: door, leaves } = makeDoor(d.style, d.w, d.h, mats, { z0: d.z0, thick: d.thick, u: 1, hingeRight: d.hingeRight, double: d.w >= 1.4 });
+        door.position.set(...d.at);
+        door.rotation.y = d.rotY;
+        inner.add(door);
+        const at = new THREE.Vector3(...d.at).divideScalar(METRES_PER_TILE);
+        return { at, out: new THREE.Vector3(Math.sin(d.rotY), 0, Math.cos(d.rotY)), leaves, open: 0, vel: 0 };
+      });
+    }
     if (made.bell) out.bell = made.bell;
     if (m.smoke.length > 0) out.smoke = m.smoke.map((e) => ({ x: e.at[0] / METRES_PER_TILE, y: e.at[1] / METRES_PER_TILE, z: e.at[2] / METRES_PER_TILE, color: e.color }));
     if (made.sign && spec.kind !== 'home' && spec.kind !== 'tower') {

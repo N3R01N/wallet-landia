@@ -9,6 +9,7 @@
 
 import type * as THREE from 'three';
 import type { HeroClass } from '../../domain/model.js';
+import type { Gesture } from '../../world/sim.js';
 import type { Tier } from '../../domain/tiers.js';
 import type { BuildingSpec, BuiltBuilding } from './buildingFactory.js';
 import { BuildingFactory } from './buildingFactory.js';
@@ -37,8 +38,13 @@ export interface CharacterLook {
 export interface SandboxCharacter {
   readonly object: THREE.Object3D;
   setState(state: AnimState): void;
-  /** `speed` in tiles/s; `heading` is the walking direction in world radians (0 = +x). */
-  update(dt: number, speed: number, heading: number, camera: THREE.Camera): void;
+  /**
+   * `speed` in tiles/s; `heading` is the walking direction in world radians (0 = +x).
+   * `face`: standing still, turn towards this heading (someone to talk to).
+   */
+  update(dt: number, speed: number, heading: number, camera: THREE.Camera, face?: number): void;
+  /** Something done with the hands while standing (null: done). Riders and sprites may ignore it. */
+  gesture?(g: Gesture | null): void;
   dispose(): void;
 }
 

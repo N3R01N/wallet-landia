@@ -131,6 +131,14 @@ describe('theme validation (data only, nothing trusted)', () => {
     expect(problems.join(' ')).toContain('hair.male[0]');
   });
 
+  it('gesture clips are optional, and checked when given', () => {
+    const problems: string[] = [];
+    const clips = { idle: 'I', walk: 'W', run: 'R', sit: 'S', talk: 'Idle_Talking_Loop', pickup: 'PickUp_Table', cheer: 'not a name!' };
+    const spec = validateTheme({ materials: {}, characters: { skeleton: 'ue5-universal', animations: 'a.glb', clips, bodies: { male: 'm.glb', female: 'f.glb' } } }, problems)!;
+    expect(spec.characters?.gestures).toEqual({ talk: 'Idle_Talking_Loop', pickup: 'PickUp_Table' });
+    expect(problems.join(' ')).toContain('clips.cheer');
+  });
+
   it('a theme block needs format 2; format 1 packs still load without it', () => {
     const { manifest, problems } = validatePack({ format: 'wallet-landia-pack/1', id: 'old', name: 'Old', author: 'a', version: '1', theme: { materials: {} } });
     expect(manifest?.theme).toBeUndefined();

@@ -12,7 +12,7 @@ import { buildingArt, caravanArt, heroArt, npcArt, propArt, villagerArt } from '
 import { bakeIsoGround, bakeTopGround, scatterProps, type Ground, type Prop } from './ground.js';
 import type { Sprite } from './pixel.js';
 import { harvestSprite } from './characters.js';
-import { districtLabels, marketBoard, tollBoard, towerBeacon, floatingText, markers, nameTags, route, weather } from './overlay.js';
+import { bubbles, carriedGoods, districtLabels, marketBoard, tollBoard, towerBeacon, floatingText, markers, nameTags, route, transfers, weather } from './overlay.js';
 import type { HitTarget, WorldView } from './view.js';
 
 export type { HitTarget } from './view.js';
@@ -225,6 +225,17 @@ export class Renderer implements WorldView {
     tollBoard(c, sim, this.toScreen(tower.x + tower.w + 0.2, tower.y + tower.h + 0.7), towerSize);
     marketBoard(c, sim, this.toScreen(tower.x - 3, tower.y + tower.h + 0.7), towerSize);
     markers(c, sim, this.#tops);
+    // goods changing hands, and what people carry and say
+    const zoom = Math.max(0.55, Math.min(1.6, this.scale / 2));
+    const lifted = (x: number, y: number, z = 0): [number, number] => {
+      const [sx, sy] = this.toScreen(x, y);
+      return [sx, sy - z * 14 * this.scale];
+    };
+    transfers(c, sim, lifted, zoom);
+    if (this.scale >= 1.4) {
+      carriedGoods(c, sim, (x, y, alt) => lifted(x, y, 2.3 + alt * 0.5), zoom);
+      bubbles(c, sim, (x, y, alt) => lifted(x, y, 1.6 + alt * 0.5), zoom);
+    }
     floatingText(c, sim, (x, y) => {
       const p = this.toScreen(x, y);
       return [p[0], p[1] - 30];
@@ -364,6 +375,7 @@ export class Renderer implements WorldView {
 
   #agentDrawables(a: Agent): Drawable[] {
     const out: Drawable[] = [];
+    if (a.inside) return out; // indoors: out of sight
     const moving = a.path.length > 0;
     const frame = moving ? Math.floor(a.phase) : 0;
     const bob = moving ? 0 : Math.sin(a.phase * 2) * 0.4;

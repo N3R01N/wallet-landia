@@ -19,7 +19,7 @@ import { brandColor } from '../buildings.js';
 import { caravanArt, heroArt, npcArt, villagerArt } from '../../assets/art.js';
 import { BuildingFactory, type BuildingSpec } from './buildingFactory.js';
 import { bakeTopGround, scatterProps, type Prop } from '../ground.js';
-import { districtLabels, marketLines, tollLines, floatingText, markers, nameTags, nightFactor, route, weather, type Project } from '../overlay.js';
+import { bubbles, carriedGoods, districtLabels, marketLines, tollLines, floatingText, markers, nameTags, nightFactor, route, transfers, weather, type Project } from '../overlay.js';
 import { P, type Sprite } from '../pixel.js';
 import { ImagePipeline, type DebugView, type Quality } from './pipeline.js';
 import { buildGrass, buildLamps, buildPropMeshes, placeLamps, type LampSet } from './scenery.js';
@@ -37,6 +37,8 @@ import { tileSurfaces, townSite } from './townSite.js';
 import type { ThemeBundle } from '../../assets/themeBundles.js';
 import { currentHour } from '../overlay.js';
 import { wind } from './wind.js';
+import { doorwayMaterial, moveDoor, type DoorRig } from './doors.js';
+import { Critters } from './critters.js';
 import type { HitTarget, WorldView } from '../view.js';
 
 /** Art pixels per tile, so sprites keep their 2D proportions. */
@@ -80,6 +82,8 @@ interface BuildingInfo {
   sign?: { x: number; y: number; z: number; url: string };
   /** Chimney and stack tops (world tiles). */
   smoke?: Emitter[];
+  /** The door people use (the one nearest the door tile); others stay shut. */
+  door?: DoorRig;
 }
 
 export class Renderer3D implements WorldView {
@@ -152,6 +156,8 @@ export class Renderer3D implements WorldView {
   #env: EnvironmentController | null = null;
   /** Smoke and steam from the town's chimneys and stacks. */
   #smoke: Smoke | null = null;
+  /** Birds, butterflies and fireflies. */
+  #critters: Critters | null = null;
   /** The Chronicle Tower's toll board and beacon: how busy and how dear the chain is. */
   #tollBoard: TollBoard3D | null = null;
   /** ETH since the player's last visit, on a board in the square. */
@@ -185,6 +191,7 @@ export class Renderer3D implements WorldView {
     this.#pipeline.aoExclusions = () => {
       const out: THREE.Object3D[] = [this.#agentShadows];
       if (this.#smoke) out.push(this.#smoke.points);
+      if (this.#critters) out.push(this.#critters.glow);
       for (const p of this.#sprites.values()) out.push(p.body, p.caravan);
       if (this.#lamps) out.push(this.#lamps.pools);
       return out;
@@ -410,6 +417,8 @@ export class Renderer3D implements WorldView {
     this.#mergeBuildings();
     const emitters = this.#buildings.flatMap((b) => b.smoke ?? []);
     this.#smoke = emitters.length > 0 ? new Smoke(emitters) : null;
+    this.#critters = new Critters(plan);
+    this.#world.add(this.#critters.group);
     if (this.#smoke) {
       this.#world.add(this.#smoke.points);
       this.#lastSize = ''; // size the puffs to the viewport
@@ -505,7 +514,7 @@ export class Renderer3D implements WorldView {
       b.group.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh || (mesh as unknown as THREE.SkinnedMesh).isSkinnedMesh || Array.isArray(mesh.material)) return;
-        for (let p: THREE.Object3D | null = o; p; p = p.parent) if (p === bell) return;
+        for (let p: THREE.Object3D | null = o; p; p = p.parent) if (p === bell || p.userData.animated === true) return;
         let geo = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
         const keep = new THREE.BufferGeometry();
         keep.setAttribute('position', geo.getAttribute('position'));
@@ -570,6 +579,21 @@ export class Renderer3D implements WorldView {
     const info: BuildingInfo = { placed: b, group: g, top: built.top };
     if (built.smoke) info.smoke = built.smoke.map((e) => ({ ...e, x: g.position.x + e.x, y: g.position.y + e.y, z: g.position.z + e.z }));
     if (built.sign) info.sign = { ...built.sign, x: g.position.x + built.sign.x, z: g.position.z + built.sign.z };
+    // the door nearest the door tile is the one people use; the sim walks them in through it
+    let door: DoorRig | undefined;
+    let best = Infinity;
+    for (const d of built.doors ?? []) {
+      const dist = Math.hypot(g.position.x + d.at.x - b.doorAt.x, g.position.z + d.at.z - b.doorAt.y);
+      if (dist < best) {
+        best = dist;
+        door = d;
+      }
+    }
+    if (door) {
+      info.door = door;
+      // a step out from the leaf, so whoever goes in vanishes into the open doorway, not the wall
+      sim.setDoorway(b.id, { x: g.position.x + door.at.x + door.out.x * 0.12, y: g.position.z + door.at.z + door.out.z * 0.12 });
+    } else sim.setDoorway(b.id, null);
     return info;
   }
 
@@ -648,10 +672,14 @@ export class Renderer3D implements WorldView {
       // themed towns: a rigged person stands in for the hero's or villager's sprite
       const person = this.#people && a.kind !== 'raven' ? this.#person(a) : null;
       const rigged = person !== null && this.#lod(person, ranks.get(a.id) ?? { dist: Infinity, rank: Infinity });
-      pair.body.visible = !rigged;
-      if (person) this.#movePerson(person, a, dt);
+      pair.body.visible = !rigged && !a.inside;
+      if (person) {
+        // indoors: out of sight (the model keeps its LOD state for when they come out)
+        person.char.object.visible = person.shown && !a.inside;
+        this.#movePerson(person, a, dt);
+      }
       // farther off, the theme's own figure as a sprite (the pixel sprite only until it is baked)
-      if (person && !rigged) this.#impostor(a, person, pair.body);
+      if (person && !rigged && !a.inside) this.#impostor(a, person, pair.body);
       const companions = this.#theme?.companions;
       if (companions && this.#people) {
         if (a.kind === 'raven') {
@@ -828,9 +856,11 @@ export class Renderer3D implements WorldView {
       p.state = state;
       p.char.setState(state);
     }
-    if (!p.shown) return; // a sprite stands in: no need to animate
+    if (!p.shown || a.inside) return; // a sprite stands in (or nobody to see): no need to animate
+    p.char.gesture?.(a.acting?.gesture ?? null);
     p.char.object.position.set(a.x, a.alt + (a.alt > 0.05 ? Math.sin(a.phase) * 0.1 : 0), a.y);
-    p.char.update(dt, p.speed, p.heading, this.#camera);
+    const face = a.face && Math.hypot(a.face.x - a.x, a.face.y - a.y) > 0.05 ? Math.atan2(a.face.y - a.y, a.face.x - a.x) : undefined;
+    p.char.update(dt, p.speed, p.heading, this.#camera, face);
   }
 
   #drawAgent(a: Agent, body: THREE.Sprite, caravan: THREE.Sprite): void {
@@ -838,7 +868,7 @@ export class Renderer3D implements WorldView {
     const frame = moving ? Math.floor(a.phase) : 0;
     // Face the way the agent moves *on screen*: orbiting the camera must not
     // make people walk backwards.
-    const next = a.path[0];
+    const next = a.path[0] ?? (a.face && !moving ? a.face : undefined);
     let flip = this.#facing.get(a.id) ?? a.facing < 0;
     if (next !== undefined) {
       const dx = next.x - a.x;
@@ -847,8 +877,10 @@ export class Renderer3D implements WorldView {
       if (Math.abs(screenRight) > 0.001) flip = screenRight < 0;
       this.#facing.set(a.id, flip);
     }
-    // Height comes from the simulation: flyers cruise above the rooftops.
-    const lift = a.alt + (a.alt > 0.05 ? Math.sin(a.phase) * 0.1 : moving ? 0 : Math.abs(Math.sin(a.phase * 2)) * 0.02);
+    // Height comes from the simulation: flyers cruise above the rooftops. Sprites hop to cheer or catch.
+    const g = a.acting?.gesture;
+    const hop = g === 'cheer' ? Math.abs(Math.sin(this.#sim.elapsed * 9)) * 0.22 : g === 'pickup' ? Math.abs(Math.sin(this.#sim.elapsed * 7)) * 0.08 : g === 'talk' ? Math.abs(Math.sin(this.#sim.elapsed * 5)) * 0.03 : 0;
+    const lift = a.alt + hop + (a.alt > 0.05 ? Math.sin(a.phase) * 0.1 : moving ? 0 : Math.abs(Math.sin(a.phase * 2)) * 0.02);
     let s: Sprite;
     if (a.kind === 'hero' && a.hero) {
       const h = hashString(a.hero.address);
@@ -860,7 +892,7 @@ export class Renderer3D implements WorldView {
     }
     const scale = a.kind === 'hero' ? HERO_SCALE : a.kind === 'villager' ? 1.1 : 1.2;
     this.#placeSprite(body, s, a.x, a.y, lift, flip, scale);
-    this.#shadow(a.x, a.y, a.kind === 'hero' ? (a.hero && a.hero.tier >= 5 ? 1.7 : 1.15) : a.kind === 'raven' ? 0.5 : 0.8, lift);
+    if (!a.inside) this.#shadow(a.x, a.y, a.kind === 'hero' ? (a.hero && a.hero.tier >= 5 ? 1.7 : 1.15) : a.kind === 'raven' ? 0.5 : 0.8, lift);
 
     const back = a.trail[CARAVAN_BACK];
     const cs = a.kind === 'hero' && a.carrying !== null && a.carrying > 0 ? caravanArt(a.carrying, frame, false) : null;
@@ -907,6 +939,7 @@ export class Renderer3D implements WorldView {
     this.#gl.info.reset();
     this.#lighting(dt);
     this.#swingBell(dt);
+    for (const b of this.#buildings) if (b.door) moveDoor(b.door, this.#sim.doorOpen(b.placed.id), dt);
     this.#placeCamera(dt);
     this.#syncAgents(dt);
     this.#highlight();
@@ -955,7 +988,12 @@ export class Renderer3D implements WorldView {
     const windows = this.#theme?.windowMaterial ?? this.#factory.windowMat;
     const fire = this.#theme?.fireMaterial ?? this.#factory.fireMat;
     windows.emissiveIntensity = night * 1.7;
-    fire.emissiveIntensity = 1.4 + night * 2.2;
+    doorwayMaterial.emissiveIntensity = 0.04 + night * 0.7;
+    // flames never burn quite steady
+    const t = sim.elapsed;
+    const flicker = 1 + Math.sin(t * 11) * 0.06 + Math.sin(t * 17.3 + 1.7) * 0.05 + Math.sin(t * 29.1) * 0.03;
+    fire.emissiveIntensity = (1.4 + night * 2.2) * flicker;
+    this.#critters?.update(t, dt, night, gloom);
     // A themed town is lit by its sky (image-based); the fill light steps back.
     if (this.#theme && this.#env) {
       const byHour = skyForHour(currentHour(), gloom > 0.5);
@@ -1031,7 +1069,14 @@ export class Renderer3D implements WorldView {
     }
     this.#signLogos(c);
     markers(c, sim, tops);
+    // goods changing hands, and what people carry and say (sized with the zoom)
+    const zoom = Math.max(0.55, Math.min(1.7, 34 / this.#distance));
+    transfers(c, sim, this.#project, zoom);
     floatingText(c, sim, this.#project, 2.6);
+    if (this.#distance < 45) {
+      carriedGoods(c, sim, (x, y, alt) => this.#project(x, y, 3.05 + alt), zoom);
+      bubbles(c, sim, (x, y, alt) => this.#project(x, y, 2.0 + alt), zoom);
+    }
     if (this.#distance < 55) nameTags(c, sim, (x, y, alt) => this.#project(x, y, 2.6 + alt));
   }
 
@@ -1167,10 +1212,10 @@ export class Renderer3D implements WorldView {
   }
 
   /** Agents and their rigged stand-ins, for tests and tuning tools only. */
-  debugPeople(): { id: string; kind: string; x: number; y: number; alt: number; moving: boolean; shown: boolean | null; state: string | null; ox: number | null; oz: number | null }[] {
+  debugPeople(): { id: string; kind: string; x: number; y: number; alt: number; moving: boolean; shown: boolean | null; state: string | null; ox: number | null; oz: number | null; inside: boolean; doorway: string | null }[] {
     return this.#sim.agents.map((a) => {
       const p = this.#persons.get(a.id);
-      return { id: a.id, kind: a.kind, x: a.x, y: a.y, alt: a.alt, moving: a.path.length > 0, shown: p ? p.shown : null, state: p ? p.state : null, ox: p ? p.char.object.position.x : null, oz: p ? p.char.object.position.z : null };
+      return { id: a.id, kind: a.kind, x: a.x, y: a.y, alt: a.alt, moving: a.path.length > 0, shown: p ? p.shown : null, state: p ? p.state : null, ox: p ? p.char.object.position.x : null, oz: p ? p.char.object.position.z : null, inside: a.inside, doorway: a.doorway };
     });
   }
 
@@ -1212,7 +1257,7 @@ export class Renderer3D implements WorldView {
     const w = this.canvas.clientWidth;
     const h = this.canvas.clientHeight;
     for (const a of this.#sim.agents) {
-      if (a.kind !== 'hero' || !a.hero || (address !== undefined && a.hero.address !== address)) continue;
+      if (a.kind !== 'hero' || !a.hero || a.inside || (address !== undefined && a.hero.address !== address)) continue;
       const p = this.#project(a.x, a.y, a.alt + (a.hero.tier >= 2 ? 0.9 : 0.6));
       if (p && p[0] > 40 && p[1] > 40 && p[0] < w - 40 && p[1] < h - 40) return p;
     }
@@ -1223,7 +1268,7 @@ export class Renderer3D implements WorldView {
     const ndc = new THREE.Vector2((sx / this.canvas.clientWidth) * 2 - 1, -(sy / this.canvas.clientHeight) * 2 + 1);
     this.#raycaster.setFromCamera(ndc, this.#camera);
     const heroes: THREE.Object3D[] = [...this.#sprites.values()].map((p) => p.body).filter((s) => s.visible && s.userData.target !== undefined);
-    for (const p of this.#persons.values()) if (p.proxy && p.shown) heroes.push(p.proxy);
+    for (const p of this.#persons.values()) if (p.proxy && p.shown && p.char.object.visible) heroes.push(p.proxy);
     const hitHero = this.#raycaster.intersectObjects(heroes, false)[0];
     if (hitHero) return hitHero.object.userData.target as HitTarget;
     const hit = this.#raycaster.intersectObjects(this.#buildings.map((b) => b.group), true)[0];

@@ -20,10 +20,12 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { CharacterSpec, MountSpec, VehicleKind } from '../../assets/theme.js';
+import { GESTURE_CLIPS } from '../../assets/theme.js';
 import type { Vehicle } from './grammar/vehicles.js';
 import { attachGear, gearFor } from './gear.js';
 import { addDressWeights, dressedMaterial, dressFor, wardrobeGear } from './wardrobe.js';
 import type { AnimState, CharacterLook, CharacterProvider, SandboxCharacter } from './themes.js';
+import type { Gesture } from '../../world/sim.js';
 
 /** World scale: one tile is this many metres, so a person is about one tile tall. */
 import { METRES_PER_TILE } from './grammar/medieval.js';
@@ -451,6 +453,7 @@ class RiggedCharacter implements SandboxCharacter {
   readonly #posed = new Map<THREE.Bone, { clip: THREE.Quaternion; out: THREE.Quaternion }>();
   #t = 0;
   #speeds = { walk: 1.25, run: 3 };
+  #gesture: Gesture | null = null;
 
   constructor(kit: Kit, look: CharacterLook) {
     const female = look.seed % 2 === 1;
@@ -496,6 +499,17 @@ class RiggedCharacter implements SandboxCharacter {
     for (const state of ['idle', 'walk', 'run', 'sit'] as const) {
       const c = kit.clips.get(spec.clips[state]);
       if (c) this.#actions.set(state, this.#mixer.clipAction(c));
+    }
+    // gestures: talking and cheering loop; handing over and picking up play once and hold
+    for (const g of GESTURE_CLIPS) {
+      const c = kit.clips.get(spec.gestures?.[g] ?? '');
+      if (!c) continue;
+      const action = this.#mixer.clipAction(c);
+      if (g === 'interact' || g === 'pickup') {
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+      }
+      this.#actions.set(`g:${g}`, action);
     }
     this.#speeds = spec.speeds;
 
@@ -659,17 +673,25 @@ class RiggedCharacter implements SandboxCharacter {
     this.#play(state);
   }
 
-  update(dt: number, speed: number, heading: number): void {
+  gesture(g: Gesture | null): void {
+    this.#gesture = g;
+  }
+
+  update(dt: number, speed: number, heading: number, _camera?: THREE.Camera, face?: number): void {
     this.#t += dt;
     const moving = this.#state !== 'idle' && speed > 0.01;
-    if (this.#current === null || (this.#mount === null && this.#current !== this.#actions.get(moving ? this.#state : 'idle'))) this.setState(this.#state);
+    const g = this.#gesture !== null && !moving ? `g:${this.#gesture}` : null;
+    const want = this.#mount ? null : g !== null && this.#actions.has(g) ? g : moving ? this.#state : 'idle';
+    if (this.#current === null) this.setState(this.#state);
+    else if (want !== null && this.#current !== this.#actions.get(want)) this.#play(want);
     // Feet follow the ground: playback rate from real speed (no sliding).
     const metres = speed * METRES_PER_TILE;
     if (this.#current && !this.#mount) this.#current.timeScale = moving ? THREE.MathUtils.clamp(metres / (this.#state === 'run' ? this.#speeds.run : this.#speeds.walk), 0.5, 1.8) : 1;
     if (this.#mount?.current) this.#mount.current.timeScale = moving ? THREE.MathUtils.clamp(metres / (this.#state === 'run' ? this.#mount.speeds.run : this.#mount.speeds.walk), 0.5, 2) : 1;
-    // Turn smoothly towards the direction of travel (models face +z).
-    if (moving) {
-      const target = Math.atan2(Math.cos(heading), Math.sin(heading));
+    // Turn smoothly towards the direction of travel (models face +z), or standing, towards whom they face.
+    const towards = moving ? heading : face;
+    if (towards !== undefined) {
+      const target = Math.atan2(Math.cos(towards), Math.sin(towards));
       let d = target - this.#yaw;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       this.#yaw += d * (1 - Math.exp(-10 * dt));

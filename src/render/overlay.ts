@@ -4,10 +4,10 @@
  * a projector from tile space (plus height in tiles) to CSS pixels.
  */
 
-import { TIER_COLORS, approxUsd } from '../domain/tiers.js';
+import { TIER_COLORS, approxUsd, formatQty } from '../domain/tiers.js';
 import type { District } from '../world/layout.js';
 import { districtName } from '../assets/art.js';
-import type { Route, Sim } from '../world/sim.js';
+import { TRANSFER_FLIGHT, type Agent, type Coin, type Effect, type Route, type Sim } from '../world/sim.js';
 import { formatGwei, formatTransferUsd, heatColor, TOLL_COLORS, tollOf } from '../world/chain.js';
 import { LOAN_COLORS, MOOD_COLORS } from '../domain/risk.js';
 
@@ -106,7 +106,7 @@ export function nameTags(c: CanvasRenderingContext2D, sim: Sim, headOf: (x: numb
   c.font = '600 10px system-ui, sans-serif';
   c.textAlign = 'center';
   for (const a of sim.agents) {
-    if (a.kind !== 'hero' || !a.hero) continue;
+    if (a.kind !== 'hero' || !a.hero || a.inside) continue;
     const p = headOf(a.x, a.y, a.alt);
     if (p === null) continue;
     const label = `${a.hero.name} · ${approxUsd(a.hero.netWorth)}`;
@@ -329,4 +329,206 @@ export function marketBoard(c: CanvasRenderingContext2D, sim: Sim, at: [number, 
   const lines = marketLines(sim);
   if (at === null || lines === null || size < 0.45) return;
   board(c, at, size, lines);
+}
+
+// --- goods changing hands ------------------------------------------------------
+
+/** Token logos and NFT pictures for coins (their hosts send no CORS headers, so the overlay draws them). */
+const coinImages = new Map<string, HTMLImageElement>();
+
+function coinImage(url: string): HTMLImageElement | null {
+  let img = coinImages.get(url);
+  if (img === undefined) {
+    img = new Image();
+    img.referrerPolicy = 'no-referrer';
+    img.decoding = 'async';
+    img.src = url;
+    coinImages.set(url, img);
+  }
+  return img.complete && img.naturalWidth > 0 ? img : null;
+}
+
+/**
+ * One coin: the token's logo in a gold rim, or its letters stamped on gold;
+ * an NFT is its picture in a little frame. `spin` turns it (0..1 a half turn).
+ */
+function drawCoin(c: CanvasRenderingContext2D, coin: Coin, x: number, y: number, r: number, spin: number, rim = '#f5c518'): void {
+  const squash = Math.max(0.18, Math.abs(Math.cos(spin * Math.PI)));
+  c.save();
+  c.translate(x, y);
+  c.scale(squash, 1);
+  const img = coin.icon ? coinImage(coin.icon) : null;
+  if (coin.nft) {
+    c.fillStyle = '#e8d7a8';
+    c.fillRect(-r, -r, 2 * r, 2 * r);
+    c.strokeStyle = '#5a3d1e';
+    c.lineWidth = 1.5;
+    c.strokeRect(-r, -r, 2 * r, 2 * r);
+    if (img) c.drawImage(img, -r + 2, -r + 2, 2 * r - 4, 2 * r - 4);
+    c.restore();
+    return;
+  }
+  c.beginPath();
+  c.arc(0, 0, r, 0, Math.PI * 2);
+  c.fillStyle = rim;
+  c.fill();
+  c.lineWidth = Math.max(1, r * 0.14);
+  c.strokeStyle = 'rgba(110,70,10,0.9)';
+  c.stroke();
+  if (img && squash > 0.45) {
+    c.save();
+    c.beginPath();
+    c.arc(0, 0, r * 0.76, 0, Math.PI * 2);
+    c.clip();
+    c.fillStyle = '#fff';
+    c.fill();
+    c.drawImage(img, -r * 0.76, -r * 0.76, r * 1.52, r * 1.52);
+    c.restore();
+  } else if (coin.symbol !== '' && squash > 0.45 && r >= 6) {
+    c.fillStyle = 'rgba(90,55,5,0.95)';
+    c.font = `bold ${Math.round(r * (coin.symbol.length > 3 ? 0.62 : 0.8))}px system-ui, sans-serif`;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText(coin.symbol.slice(0, 4), 0, r * 0.05);
+    c.textBaseline = 'alphabetic';
+  } else {
+    // a shine
+    c.fillStyle = 'rgba(255,250,210,0.8)';
+    c.fillRect(-r * 0.45, -r * 0.45, r * 0.3, r * 0.3);
+  }
+  c.restore();
+}
+
+/** "−0.42 ETH · −1 Pudgy" style: what changed hands, at a glance. */
+function amounts(coins: Coin[], sign: string): string {
+  return coins
+    .filter((k) => k.symbol !== '')
+    .slice(0, 2)
+    .map((k) => (k.nft ? `${sign}${k.symbol.slice(0, 16)}` : `${sign}${formatQty(k.quantity)} ${k.symbol.slice(0, 8)}`))
+    .join(' · ');
+}
+
+/** How high (tiles) someone holds things: on foot, or up in the saddle. */
+function handHeight(a: Agent): number {
+  return a.alt + (a.kind === 'hero' && a.hero && a.hero.tier >= 2 ? 1.5 : a.kind === 'raven' ? 0.4 : 0.9);
+}
+
+/**
+ * Coins in flight between a hand and a door: tossed in an arc, spinning, a few
+ * after each other (more for bigger moves), landing on whoever they are for as
+ * they walk. The amount shows where they leave (handed over) or land (received).
+ */
+export function transfers(c: CanvasRenderingContext2D, sim: Sim, project: Project, zoom: number): void {
+  for (const e of sim.effects) {
+    if (e.kind !== 'transfer' || !e.coins || !e.to) continue;
+    const t = e.age - (e.delay ?? 0);
+    if (t < 0) continue;
+    const src = e.fromAgent !== undefined ? sim.findAgent(e.fromAgent) : undefined;
+    const dst = e.toAgent !== undefined ? sim.findAgent(e.toAgent) : undefined;
+    const fromH = src ? handHeight(src) : 0.9;
+    const to = dst && !dst.inside ? { x: dst.x, y: dst.y, h: handHeight(dst) } : { x: e.to.x, y: e.to.y, h: 0.9 };
+    const n = Math.min(8, 2 + e.drama * 2);
+    const r = (6 + e.drama) * zoom;
+    const rim = e.color === '#ff5e5e' ? '#d9a441' : '#f5c518';
+    let landed = false;
+    for (let i = 0; i < n; i++) {
+      const k = (t - i * 0.07) / TRANSFER_FLIGHT;
+      if (k < 0) continue;
+      if (k > 1) {
+        if (i === n - 1) landed = true;
+        continue;
+      }
+      const ease = k * k * (3 - 2 * k);
+      const arc = Math.sin(Math.PI * k) * (0.9 + e.drama * 0.2);
+      const spread = ((i % 3) - 1) * 0.08;
+      const p = project(e.x + (to.x - e.x) * ease + spread, e.y + (to.y - e.y) * ease, fromH + (to.h - fromH) * ease + arc);
+      if (p === null) continue;
+      drawCoin(c, e.coins[i % e.coins.length]!, p[0], p[1], r, k * 2.5 + i * 0.3, rim);
+    }
+    // a glint where they land
+    const after = t - TRANSFER_FLIGHT - (n - 1) * 0.07;
+    if (landed && after < 0.3) {
+      const p = project(to.x, to.y, to.h);
+      if (p) {
+        c.strokeStyle = `rgba(255,236,150,${1 - after / 0.3})`;
+        c.lineWidth = 2;
+        c.beginPath();
+        c.arc(p[0], p[1], (6 + after * 40) * zoom, 0, Math.PI * 2);
+        c.stroke();
+      }
+    }
+    // (over a person, above their name tag)
+    const at = e.dir === 'out' ? to : { x: e.x, y: e.y, h: fromH };
+    const overPerson = e.dir === 'out' ? dst !== undefined && !dst.inside : src !== undefined;
+    label(c, e, t, { ...at, h: at.h + (overPerson ? 1.9 : 0.5) }, project, zoom);
+  }
+}
+
+function label(c: CanvasRenderingContext2D, e: Effect, t: number, at: { x: number; y: number; h: number }, project: Project, zoom: number): void {
+  const text = amounts(e.coins ?? [], e.dir === 'out' ? '+' : '−');
+  if (text === '' || zoom < 0.7) return;
+  // received: shown as they land; handed over: as they leave
+  const start = e.dir === 'out' ? TRANSFER_FLIGHT * 0.8 : 0;
+  const k = (t - start) / 1.3;
+  if (k < 0 || k > 1) return;
+  const p = project(at.x, at.y, at.h + k * 0.6);
+  if (p === null) return;
+  const size = Math.round(10 + e.drama);
+  c.font = `bold ${size}px "Trebuchet MS", system-ui, sans-serif`;
+  c.textAlign = 'center';
+  c.globalAlpha = Math.min(1, (1 - k) * 2.5);
+  const w = c.measureText(text).width + 8;
+  c.fillStyle = 'rgba(43,29,20,0.72)';
+  c.fillRect(p[0] - w / 2, p[1] - size, w, size + 5);
+  c.fillStyle = e.color === '#ff5e5e' ? '#ff9a8a' : e.dir === 'out' ? '#b9f5a0' : '#ffd29a';
+  c.fillText(text, p[0], p[1]);
+  c.globalAlpha = 1;
+}
+
+/** What someone carries, as coins bobbing over their head (heroes, couriers, bailiffs with their loot). */
+export function carriedGoods(c: CanvasRenderingContext2D, sim: Sim, headOf: (x: number, y: number, alt: number) => [number, number] | null, zoom: number): void {
+  for (const a of sim.agents) {
+    if (a.goods.length === 0 || a.inside || a.acting !== null || a.kind === 'villager') continue;
+    // just over a raven's back; over a rider's head (mounted, they sit higher)
+    const p = headOf(a.x, a.y, a.alt + (a.kind === 'raven' ? -1.6 : a.kind === 'hero' && a.hero && a.hero.tier >= 2 ? 0.6 : 0));
+    if (p === null) continue;
+    const r = 6.5 * zoom;
+    const bob = Math.sin(sim.elapsed * 3 + a.phase) * 2;
+    const n = Math.min(3, a.goods.length);
+    for (let i = n - 1; i >= 0; i--) drawCoin(c, a.goods[i]!, p[0] + (i - (n - 1) / 2) * r * 1.3, p[1] + bob, r, Math.sin(sim.elapsed * 1.5 + i) * 0.25, a.kind === 'bailiff' ? '#d9a441' : '#f5c518');
+  }
+}
+
+/** Speech bubbles over people chatting; the two take turns. */
+export function bubbles(c: CanvasRenderingContext2D, sim: Sim, headOf: (x: number, y: number, alt: number) => [number, number] | null, zoom: number): void {
+  for (const e of sim.effects) {
+    if (e.kind !== 'bubble' || e.fromAgent === undefined) continue;
+    const t = e.age - (e.delay ?? 0);
+    if (t < 0 || t % 2 > 1.2) continue;
+    const a = sim.findAgent(e.fromAgent);
+    if (!a || a.inside) continue;
+    const p = headOf(a.x, a.y, a.alt);
+    if (p === null) continue;
+    const s = 9 * zoom;
+    const x = p[0] + s * 0.8;
+    const y = p[1] - s * 0.4;
+    c.fillStyle = 'rgba(255,252,240,0.95)';
+    c.strokeStyle = 'rgba(60,40,25,0.8)';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.ellipse(x, y, s * 1.25, s * 0.95, 0, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    c.beginPath();
+    c.moveTo(x - s * 0.6, y + s * 0.6);
+    c.lineTo(x - s * 1.1, y + s * 1.4);
+    c.lineTo(x - s * 0.15, y + s * 0.85);
+    c.fill();
+    c.fillStyle = '#3c2819';
+    c.font = `bold ${Math.round(s * 1.1)}px system-ui, sans-serif`;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText(e.text ?? '…', x, y + 1);
+    c.textBaseline = 'alphabetic';
+  }
 }

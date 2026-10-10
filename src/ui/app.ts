@@ -106,8 +106,11 @@ export class App {
     this.#setSound(this.#prefs.sound, false);
     this.#soundBtn.onclick = () => this.#setSound(!this.#sound.on);
     this.#tourBtn.onclick = () => this.#startTour();
-    // test hook: ?expose puts the soundscape on window
-    if (new URLSearchParams(location.search).has('expose')) (window as unknown as { soundscape: Soundscape }).soundscape = this.#sound;
+    // test hook: ?expose puts the soundscape (and the living town) on window
+    if (new URLSearchParams(location.search).has('expose')) {
+      (window as unknown as { soundscape: Soundscape }).soundscape = this.#sound;
+      Object.defineProperty(window, 'townSim', { get: () => this.#sim, configurable: true });
+    }
     this.#busy('town', 'Gathering your heroes…');
     this.#session = new Session(this.#prefs, {
       onTown: (shown) => this.#onTown(shown),

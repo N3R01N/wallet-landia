@@ -88,11 +88,17 @@ export interface MountSpec {
   format?: 'fbx' | 'gltf';
 }
 
+/** Gestures a theme can give clips for, named in `characters.clips` beside idle, walk, run and sit. */
+export const GESTURE_CLIPS = ['talk', 'interact', 'pickup', 'cheer', 'push'] as const;
+export type GestureClip = (typeof GESTURE_CLIPS)[number];
+
 export interface CharacterSpec {
   /** The bone naming and bind pose every part shares. */
   skeleton: 'ue5-universal';
   animations: string;
   clips: { idle: string; walk: string; run: string; sit: string };
+  /** Optional clips for what people do with their hands (chatting, handing over, picking up, cheering, pushing). */
+  gestures?: Partial<Record<GestureClip, string>>;
   speeds: { walk: number; run: number };
   bodies: Pair;
   /** Keep only the body's head (outfits cover the rest) or the full body. */
@@ -271,6 +277,14 @@ function characters(r: Reader, v: unknown, partial: boolean): Partial<CharacterS
   if (v.skeleton === 'ue5-universal') spec.skeleton = 'ue5-universal';
   if (animations) spec.animations = animations;
   if (clips.idle && clips.walk && clips.run && clips.sit) spec.clips = { idle: clips.idle, walk: clips.walk, run: clips.run, sit: clips.sit };
+  const gestures: Partial<Record<GestureClip, string>> = {};
+  for (const g of GESTURE_CLIPS) {
+    if (c[g] === undefined) continue;
+    const n = name(c[g]);
+    if (n) gestures[g] = n;
+    else r.problems.push(`${at}.clips.${g} must be a clip name`);
+  }
+  if (Object.keys(gestures).length > 0) spec.gestures = gestures;
   if (isObj(v.speeds) || !partial) {
     const s = isObj(v.speeds) ? v.speeds : {};
     spec.speeds = { walk: num(s.walk, 0.1, 10) ?? 1.25, run: num(s.run, 0.1, 20) ?? 3 };
