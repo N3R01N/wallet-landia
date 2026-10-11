@@ -1161,3 +1161,145 @@ select {
     transition: none;
   }
 }
+
+/* --- the Realm Map (Phase 6) --------------------------------------------- */
+
+.realm-map {
+  position: absolute;
+  inset: 12px;
+  z-index: 6; /* over the town and the panels */
+  display: flex;
+  flex-direction: column;
+  background: var(--parchment);
+  border: 3px solid var(--wood);
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--wood-dark), 6px 8px 0 rgba(0, 0, 0, 0.3);
+  cursor: default;
+  overflow: hidden;
+}
+
+.realm-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 14px 8px;
+  border-bottom: 2px solid var(--parchment-dark);
+}
+
+.realm-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.realm-head .close {
+  margin-left: auto;
+}
+
+.realm-sea {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.realm-sea-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.realm-isle {
+  position: absolute;
+  transform: translate(-50%, 0);
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 1px 6px;
+  align-items: center;
+  max-width: 200px;
+  padding: 5px 9px;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  color: var(--ink);
+  background: var(--parchment);
+  border: 2px solid var(--wood-dark);
+  border-radius: 5px;
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+
+.realm-isle:hover,
+.realm-isle:focus-visible {
+  background: #fff6dc;
+  outline: 2px solid var(--gold);
+}
+
+.realm-isle.here {
+  border-color: var(--gold);
+}
+
+.realm-isle.quiet {
+  opacity: 0.75;
+}
+
+.realm-isle strong {
+  font-size: 14px;
+}
+
+.realm-flag {
+  grid-row: span 2;
+  width: 12px;
+  height: 28px;
+  border: 1px solid var(--wood-dark);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+}
+
+.realm-kind,
+.realm-facts {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.realm-kind {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.realm-facts {
+  grid-column: 1 / span 2;
+}
+
+.realm-here {
+  grid-column: 1 / span 2;
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--wood);
+}
+
+.crossing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 6px 8px;
+  background: #e4f1f8;
+  border: 1px solid #9fc4d8;
+  border-radius: 4px;
+}
+
+@media (max-width: 600px) {
+  .realm-map {
+    inset: 4px;
+  }
+
+  .realm-isle {
+    max-width: 130px;
+    padding: 3px 6px;
+  }
+
+  .realm-head .muted {
+    display: none;
+  }
+}

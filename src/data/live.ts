@@ -15,6 +15,7 @@
 import { ZerionClient } from './zerion/client.js';
 import type { DailyBudget } from './zerion/budget.js';
 import {
+  currentChains,
   fetchRawWallet,
   getNftPositions,
   getPortfolio,
@@ -48,7 +49,15 @@ interface Entry {
 const plainOnly = (fresh: readonly TransactionResource[]): boolean =>
   fresh.every((t) => ['send', 'receive', 'approve', 'revoke'].includes(t.attributes.operation_type) && !t.relationships?.dapp);
 
-const key = (address: string): string => `wallet:${address.toLowerCase()}`;
+/**
+ * Cached per realm: a wallet fetched for other chains has a different history
+ * (the tail is only ever fetched forward, so older history of a newly added
+ * chain would otherwise never arrive). Ethereum alone keeps its old key.
+ */
+const key = (address: string): string => {
+  const chains = currentChains();
+  return chains.length === 1 && chains[0] === 'ethereum' ? `wallet:${address.toLowerCase()}` : `wallet:${chains.join('+')}:${address.toLowerCase()}`;
+};
 
 function txKey(t: TransactionResource): string {
   return t.attributes.hash === '' ? t.id : `${t.relationships?.chain?.data.id ?? '?'}:${t.attributes.hash}`;

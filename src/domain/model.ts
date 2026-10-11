@@ -169,6 +169,8 @@ export interface Journey {
   /** Guild member on the other end of a send, if any. */
   counterpartyHero: string | null;
   label: string;
+  /** A crossing between realms (chains): set on both sides when the arrival is found (`pair`: the other side's key). */
+  bridge?: { from: string; to: string | null; pair: string | null };
 }
 
 export interface Guild {

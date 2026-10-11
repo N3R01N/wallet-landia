@@ -3,6 +3,7 @@
  * building's interior. Approximate values live in the world; exact ones here.
  */
 
+import { realmOf } from '../domain/realms.js';
 import { CATEGORY_LABEL } from '../domain/catalog.js';
 import { buildingName, districtName, heroArt, itemArt } from '../assets/art.js';
 import { CLASS_LABEL, type Stash, type Goods, type Guild, type Hero, type HeroClass, type Item, type Journey, type Target, type Verb } from '../domain/model.js';
@@ -58,6 +59,29 @@ export interface PanelContext {
   bornName: (address: string) => string;
   /** A portrait in the chosen theme's look (an image URL), if it has one. */
   portraitOf?: (address: string, cls: HeroClass) => string | null;
+  /** Go to another realm's town, and open that quest there (the far side of a crossing). */
+  onCrossing?: (realm: string, key: string) => void;
+}
+
+/** A crossing between realms: where it went (or came from), and a way to follow it there. */
+function crossingRow(j: Journey, ctx: PanelContext): HTMLElement | null {
+  const b = j.bridge;
+  if (b === undefined) return null;
+  const outbound = b.from === j.chainId;
+  const other = outbound ? b.to : b.from;
+  const text = outbound
+    ? other === null
+      ? 'Sent across a bridge; its arrival is not among the loaded quests yet.'
+      : `Sent across a bridge to ${realmOf(other).name}.`
+    : `Arrived across a bridge from ${realmOf(b.from).name}.`;
+  const row = el('div', { class: 'crossing' }, el('span', {}, `⛵ ${text}`));
+  if (other !== null && b.pair !== null && ctx.onCrossing) {
+    const go = el('button', { class: 'btn' }, outbound ? `Follow it to ${realmOf(other).name} →` : `← Back to where it left, in ${realmOf(other).name}`);
+    const pair = b.pair;
+    go.onclick = () => ctx.onCrossing?.(other, pair);
+    row.append(go);
+  }
+  return row;
 }
 
 /** A hero's name with a ✎ to rename them in place (Enter saves, Escape cancels, empty restores). */
@@ -531,6 +555,7 @@ export function questPanel(j: Journey, ctx: PanelContext): HTMLElement {
     j.counterparty !== null ? el('div', { class: 'stat-row' }, el('span', {}, 'Other party'), el('span', { class: 'mono' }, ctx.guild.heroes.find((h) => h.address === j.counterparty)?.name ?? shortAddr(j.counterparty))) : null,
     j.method !== null ? el('div', { class: 'stat-row' }, el('span', {}, 'Contract method'), el('span', { class: 'mono' }, j.method)) : null,
     j.block !== null ? el('div', { class: 'stat-row' }, el('span', {}, 'Page of the Chronicle (block)'), el('span', { class: 'mono' }, `#${j.block.toLocaleString('en-US')}`)) : null,
+    crossingRow(j, ctx),
     el('div', { class: 'form-row' }, replay, link),
     el('h3', {}, j.steps.length > 1 ? `Expedition: ${j.steps.length} stops` : 'The journey'),
     el('ol', { class: 'quest-steps' }, ...steps),

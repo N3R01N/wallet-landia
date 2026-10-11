@@ -10,6 +10,7 @@ import { districtName } from '../assets/art.js';
 import { TRANSFER_FLIGHT, type Agent, type Coin, type Effect, type Route, type Sim } from '../world/sim.js';
 import { formatGwei, formatTransferUsd, heatColor, TOLL_COLORS, tollOf } from '../world/chain.js';
 import { LOAN_COLORS, MOOD_COLORS } from '../domain/risk.js';
+import { realmOf } from '../domain/realms.js';
 
 export type Project = (x: number, y: number, z?: number) => [number, number] | null;
 
@@ -233,6 +234,8 @@ export function route(c: CanvasRenderingContext2D, r: Route, project: Project, e
 
 /** The three lines on the toll board: a heading, the base fee with its trend, and a plain transfer's cost. */
 export function tollLines(sim: Sim): { head: string; fee: string; sub: string; color: string } {
+  // a province's tower keeps its own records; its bell is not heard here yet
+  if (sim.realm !== 'ethereum') return { head: realmOf(sim.realm).name.toUpperCase(), fee: 'L2 province', sub: 'settles on Ethereum', color: '#9fd8ff' };
   const toll = tollOf(sim.chain, sim.ethUsd);
   if (toll.gwei === null) return { head: 'TOLL', fee: '…', sub: 'listening for the bell', color: '#d8d0c0' };
   const arrow = toll.trend > 0 ? ' ▲' : toll.trend < 0 ? ' ▼' : ' ▶';

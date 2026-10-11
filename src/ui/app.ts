@@ -6,7 +6,9 @@
 import { buildGuild, type HistoryWindow } from '../domain/mappers.js';
 import { CLASS_LABEL, type Guild, type HeroClass, type Journey } from '../domain/model.js';
 import { TIER_COLORS, TIER_FLOORS, TIER_NAMES, approxUsd } from '../domain/tiers.js';
-import type { RawWallet } from '../data/zerion/endpoints.js';
+import { setRealmChains, type RawWallet } from '../data/zerion/endpoints.js';
+import { realmGuild, realmOf, realmSummaries } from '../domain/realms.js';
+import { realmMap } from './realmMap.js';
 import { Session, type Shown } from '../data/session.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { guildPanel } from './guildPanel.js';
@@ -59,8 +61,13 @@ export class App {
   #looksOpen = false;
   /** Theme bundles for the 3D view (bundled, and imported packs that carry one). */
   #themes: ThemeBundle[] = [];
+  /** The whole guild, every realm (medals, the ETH price, the Realm Map). */
+  #world!: Guild;
+  /** The guild as it stands in the realm on show (its town). */
   #guild!: Guild;
   #sim!: Sim;
+  #realmBtn = el('button', { class: 'btn realm-btn', title: 'The Realm Map: Ethereum and its L2 provinces' }, '🗺');
+  #realmMap: HTMLElement | null = null;
   /** The view currently on screen. */
   #renderer: WorldView;
   #r2d: Renderer;
@@ -102,6 +109,10 @@ export class App {
     this.#prefs = loadPrefs();
     setCrests(this.#prefs.crests);
     if (this.#prefs.rpcUrl !== '' && validRpcUrl(this.#prefs.rpcUrl)) setRpcUrl(this.#prefs.rpcUrl);
+    // the realm's chains, for every request from here on; ?realm= opens a province's town (links, tests)
+    setRealmChains(this.#prefs.chains);
+    const realmParam = new URLSearchParams(location.search).get('realm');
+    if (realmParam !== null && /^[a-z0-9-]{2,40}$/.test(realmParam)) this.#prefs.realm = realmParam;
     this.#sound.setVolume(this.#prefs.volume);
     this.#setSound(this.#prefs.sound, false);
     this.#soundBtn.onclick = () => this.#setSound(!this.#sound.on);
@@ -133,7 +144,7 @@ export class App {
     void this.#setView(this.#prefs.view, false);
     startHeartbeat((beat) => {
       this.#beat = beat;
-      this.#sim.bell(beat);
+      this.#bell();
       void this.#session.onBlock();
       this.#beatLabel.textContent = `🔔 block #${beat.number.toLocaleString('en-US')} · ${beat.txCount} txs · base toll ${beat.baseFeeGwei?.toFixed(2) ?? '?'} gwei`;
     });
@@ -196,6 +207,55 @@ export class App {
     return bundle !== null;
   }
 
+  /** The bell rings with Ethereum's blocks, in the kingdom's town (a province's tower has no feed yet). */
+  #bell(): void {
+    if (this.#beat && this.#prefs.realm === 'ethereum') this.#sim.bell(this.#beat);
+  }
+
+  #openRealmMap(): void {
+    this.#closeRealmMap();
+    const map = realmMap({
+      summaries: realmSummaries(this.#world, this.#prefs.chains),
+      current: this.#prefs.realm,
+      onEnter: (id) => this.#enterRealm(id),
+      onClose: () => this.#closeRealmMap(),
+    });
+    this.#realmMap = map.element;
+    this.#realmMap.addEventListener('realm-dispose', () => map.dispose(), { once: true });
+    this.#stage.append(map.element);
+    map.element.querySelector<HTMLElement>('.realm-isle.here')?.focus();
+  }
+
+  #closeRealmMap(): void {
+    if (!this.#realmMap) return;
+    this.#realmMap.dispatchEvent(new Event('realm-dispose'));
+    this.#realmMap.remove();
+    this.#realmMap = null;
+  }
+
+  /** Go to a realm's town (a chain id); `then`: open that quest there (the far side of a crossing). */
+  #enterRealm(id: string, then?: string): void {
+    this.#closeRealmMap();
+    const changed = id !== this.#prefs.realm;
+    this.#prefs.realm = id;
+    savePrefs(this.#prefs);
+    if (changed) {
+      this.#rebuild();
+      this.#r2d.setSim(this.#sim);
+      this.#r3d?.setSim(this.#sim);
+      this.#bell();
+      this.#closeInspector();
+      const realm = realmOf(id);
+      const toast = el('div', { class: 'toast' }, el('span', { class: 'toast-icon' }, realm.kind === 'kingdom' ? '🏰' : '⛵'), el('div', {}, el('strong', {}, realm.title), el('div', { class: 'muted' }, realm.about)));
+      this.#toasts.append(toast);
+      setTimeout(() => toast.remove(), 5600);
+    }
+    if (then !== undefined) {
+      const j = this.#guild.journeys.find((x) => x.key === then);
+      if (j) this.#openJourney(j);
+    }
+  }
+
   #classOf(address: string): HeroClass {
     const override = this.#prefs.classOverrides[address];
     if (override !== undefined) return override;
@@ -203,10 +263,13 @@ export class App {
   }
 
   #rebuild(): void {
-    this.#guild = buildGuild(this.#raws, this.#prefs.window, { names: this.#names });
+    this.#world = buildGuild(this.#raws, this.#prefs.window, { names: this.#names });
     this.#nameHeroes();
+    this.#guild = realmGuild(this.#world, this.#prefs.realm);
     const plan = planTown(this.#guild);
     this.#sim = new Sim(this.#guild, plan);
+    this.#sim.realm = this.#prefs.realm;
+    this.#realmBtn.textContent = `🗺 ${realmOf(this.#prefs.realm).name}`;
     this.#sim.speed = this.#prefs.speed;
     this.#sim.fog = this.#prefs.fog;
     this.#sim.setPriceMove(this.#priceMove);
@@ -224,7 +287,7 @@ export class App {
    */
   #settlePrice(): void {
     if (this.#priceSettled || this.#shown?.visiting) return;
-    const now = ethPriceFrom(this.#guild.heroes.flatMap((h) => h.items));
+    const now = ethPriceFrom(this.#world.heroes.flatMap((h) => h.items));
     if (now === null) return;
     this.#priceSettled = true;
     const eth = this.#prefs.eth;
@@ -241,7 +304,7 @@ export class App {
 
   /** Heroes wear the names the player gave them. */
   #nameHeroes(): void {
-    for (const h of this.#guild.heroes) {
+    for (const h of this.#world.heroes) {
       this.#bornNames.set(h.address, h.name);
       const mine = this.#prefs.names[h.address.toLowerCase()];
       if (mine !== undefined && mine.trim() !== '') h.name = mine;
@@ -254,8 +317,10 @@ export class App {
     if (clean === '' || clean === this.#bornNames.get(address)) delete this.#prefs.names[key];
     else this.#prefs.names[key] = clean;
     savePrefs(this.#prefs);
-    const hero = this.#guild.heroes.find((h) => h.address === address);
-    if (hero) hero.name = this.#prefs.names[key] ?? this.#bornNames.get(address) ?? hero.name;
+    for (const g of [this.#world, this.#guild]) {
+      const hero = g.heroes.find((h) => h.address === address);
+      if (hero) hero.name = this.#prefs.names[key] ?? this.#bornNames.get(address) ?? hero.name;
+    }
     this.#logCount = -1; // the quest log shows names: redraw it
   }
 
@@ -358,8 +423,8 @@ export class App {
   #countMedals(): void {
     this.#medals.clear();
     let changed = false;
-    for (const hero of this.#guild.heroes) {
-      const earned = earnedMedals(hero, this.#guild);
+    for (const hero of this.#world.heroes) {
+      const earned = earnedMedals(hero, this.#world);
       const kept = (this.#prefs.medals[hero.address] ??= {});
       for (const [id, e] of earned) {
         if (!(id in kept) || (kept[id] === null && e.at !== null)) {
@@ -371,7 +436,7 @@ export class App {
       this.#medals.set(hero.address, earned);
     }
     if (changed) savePrefs(this.#prefs);
-    this.#medalJourneys = medalsByJourney(this.#guild);
+    this.#medalJourneys = medalsByJourney(this.#world);
   }
 
   #titleOf(address: string): string {
@@ -417,7 +482,9 @@ export class App {
     if (at > 0) this.#sim.seek(at);
     this.#r2d.setSim(this.#sim);
     this.#r3d?.setSim(this.#sim);
-    if (this.#beat) this.#sim.bell(this.#beat);
+    this.#bell();
+    // an open Realm Map shows what just arrived
+    if (this.#realmMap) this.#openRealmMap();
     if (this.#guildOpen) {
       // Refresh the Guild panel for the new town, unless the player is typing
       // in it: replacing the form would throw away what they typed.
@@ -453,6 +520,7 @@ export class App {
     this.#r3d?.setSim(this.#sim);
     this.#sim.goLive();
     for (const j of this.#guild.journeys) if (!before.has(j.key)) this.#sim.playNow(j);
+    if (this.#realmMap) this.#openRealmMap();
   }
 
   /** Is the player mid-edit in the inspector (focused field, or text not yet submitted)? */
@@ -533,6 +601,14 @@ export class App {
           savePrefs(this.#prefs);
           setRpcUrl(url);
         },
+        onChains: (chains) => {
+          this.#prefs.chains = chains;
+          if (!chains.includes(this.#prefs.realm)) this.#prefs.realm = 'ethereum';
+          savePrefs(this.#prefs);
+          setRealmChains(chains);
+          this.#busy('town', 'Charting the realm…');
+          void this.#session.home();
+        },
         refresh: () => this.#openGuild(),
         heroes: this.#guild.heroes,
         classOf: (a) => this.#classOf(a),
@@ -557,7 +633,7 @@ export class App {
     if (at > 0) this.#sim.seek(at);
     this.#r2d.setSim(this.#sim);
     this.#r3d?.setSim(this.#sim);
-    if (this.#beat) this.#sim.bell(this.#beat);
+    this.#bell();
     this.#closeInspector();
   }
 
@@ -678,6 +754,7 @@ export class App {
     const guildBtn = el('button', { class: 'btn' }, '⚙ Guild');
     guildBtn.onclick = () => (this.#guildOpen ? this.#closeInspector() : this.#openGuild());
     this.#inkEl.onclick = () => this.#openGuild();
+    this.#realmBtn.onclick = () => (this.#realmMap ? this.#closeRealmMap() : this.#openRealmMap());
     this.#homeBtn.onclick = () => {
       this.#busy('town', 'Heading home…');
       void this.#session.home();
@@ -689,6 +766,7 @@ export class App {
       views,
       windowSel,
       qualitySel,
+      this.#realmBtn,
       this.#homeBtn,
       this.#statusEl,
       el('div', { class: 'spacer' }),
@@ -892,6 +970,7 @@ export class App {
 
   #ctx(): PanelContext {
     return {
+      onCrossing: (realm, key) => this.#enterRealm(realm, key),
       guild: this.#guild,
       classOf: (a) => this.#classOf(a),
       setClass: (a, cls) => {

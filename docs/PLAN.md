@@ -180,6 +180,14 @@ Same scope for both: **the Town view only.**
 ### Phase 6: Multi-chain realms
 - Realm Map (L0), with L2s as vassal provinces with their own Chronicle towers.
 - Harbour and portals for bridges. Journeys can cross realms (two linked transactions).
+- First slice (2026-10-11, branch `phase-6-realms`). Decisions: Ethereum plus Base, Arbitrum and Optimism by default; a Realm Map with a town per chain; province towers decorative for now (Ethereum's heartbeat only).
+  - **Data:** every Zerion request covers the realm's chains in one comma-joined `filter[chain_ids]` (confirmed in Zerion's docs), so the cost stays ~5 requests per wallet; the chains share the one page of 100 transactions. The cache is keyed by the chain set (Ethereum alone keeps the old key), so changing realms loads each wallet afresh once instead of missing older L2 history. `npm run capture` now records all four chains.
+  - **Domain** (`domain/realms.ts`): realm lore and colours; `realmGuild` (every hero, same tier, mount and home everywhere; only that chain's tokens, NFTs, positions, quests and the protocols they touch); `realmSummaries` for the map; `linkBridges` pairs a bridge crossing with its arrival on another chain (same hero, same asset under its usual bridged name, 85–101% of the amount, within 6 h), set on both sides as `Journey.bridge`.
+  - **Realm Map** (🗺 in the top bar, `ui/realmMap.ts`): the kingdom in the middle of an animated sea, provinces round it sized by what the guild keeps there, sea lanes with ships for crossings; islands are buttons (value kept, quests, crossings, "uncharted" when empty). The realm on show is remembered; `?realm=` opens one.
+  - **Province towns:** the tower's board reads "BASE · L2 province · settles on Ethereum"; the bell rings only in the kingdom. Medals and the ETH price still come from the whole guild.
+  - **Bridges in town:** a crossing sails from the harbour ("⛵ sails for Base"); goods that crossed arrive from the harbour ("⛵ from Ethereum"). The Quest Replay says where it went and offers "Follow it to Base →" (opens the arrival in that town) and back.
+  - **Guild panel → Realms (chains):** pick which provinces load with Ethereum.
+  - Open: live L2 towers (their own block feeds); a portal for crossings whose other side is unknown; L2 activity reaches a town only through the 15-minute catch-up (the wallet check watches Ethereum's nonce and balance); the bundled captured wallets are Ethereum-only until recaptured.
 
 ### Phase 7: Interaction (write path)
 - Walk to a building and open its counter UI → build an **intent** (swap, stake, supply…).

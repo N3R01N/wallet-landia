@@ -8,6 +8,7 @@
  * - nothing historical is invented (no balance-at-block reconstruction).
  */
 
+import { linkBridges } from './realms.js';
 import type { RawWallet } from '../data/zerion/endpoints.js';
 import type { PositionResource, TransactionResource, TransferResource } from '../data/zerion/types.js';
 import { BUILDING_FOR, KNOWN_CONTRACTS, PASS_THROUGH, classifyAsset, classifyProtocol, type ProtocolCategory } from './catalog.js';
@@ -806,6 +807,8 @@ export function buildGuild(raws: readonly RawWallet[], window: HistoryWindow = D
 
   const journeys = [...byKey.values()].sort((x, y) => x.time - y.time);
   consolidateMysteries(book, journeys);
+  // crossings between realms: each side of a bridge knows the other
+  linkBridges(journeys);
   const first = journeys[0];
   return {
     heroes,

@@ -3,6 +3,7 @@
  * follow, and the day's ink (request budget).
  */
 
+import { realmOf } from '../domain/realms.js';
 import { isEnsName, resolveName } from '../data/ens.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { untilReset } from '../data/zerion/budget.js';
@@ -24,6 +25,8 @@ export interface GuildPanelContext {
   onClearCache(): Promise<void>;
   /** Use another Ethereum node ('' for the free public one). */
   onRpc(url: string): void;
+  /** The realm's chains changed (Ethereum is always in): load them. */
+  onChains(chains: string[]): void;
   /** Fetch what changed for the town on show now (null: not a live town). */
   onRefresh: (() => Promise<void>) | null;
   /** Re-render the panel (after a local change). */
@@ -215,6 +218,24 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
     rpcMsg.textContent = 'Using the free public node.';
   };
 
+  // --- the realm: which L2 provinces load with Ethereum
+  const chainBoxes = ['base', 'arbitrum', 'optimism'].map((id) => {
+    const box = el('input', { type: 'checkbox', 'data-chain': id });
+    box.checked = p.chains.includes(id);
+    return { id, box, row: el('label', { class: 'check-row' }, box, ` ${realmOf(id).name}`) };
+  });
+  const chainsMsg = el('div', { class: 'form-msg' });
+  const chainsSave = el('button', { class: 'btn' }, 'Load these realms');
+  chainsSave.onclick = () => {
+    const chains = ['ethereum', ...chainBoxes.filter((c) => c.box.checked).map((c) => c.id)];
+    if (chains.join() === p.chains.join()) {
+      chainsMsg.textContent = 'Already loaded.';
+      return;
+    }
+    ctx.onChains(chains);
+    chainsMsg.textContent = 'Loading the realm afresh…';
+  };
+
   // --- ink
   const b = ctx.budget;
   const clear = el('button', { class: 'btn' }, 'Clear cached data');
@@ -271,6 +292,12 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
     p.followed.length === 0 ? el('p', { class: 'muted' }, 'Follow any address to visit its town.') : null,
     ...followed,
     addFollowed,
+
+    el('h3', {}, 'Realms (chains)'),
+    el('p', { class: 'muted small' }, 'Ethereum is the kingdom; these L2 provinces load with it, each a town of its own on the 🗺 Realm Map. More realms cost no more requests, but they share the 100 most recent transactions. Changing them loads every wallet afresh once (about 5 requests each).'),
+    ...chainBoxes.map((c) => c.row),
+    el('div', { class: 'form-row' }, chainsSave),
+    chainsMsg,
 
     el('h3', {}, 'Ethereum node'),
     el('p', { class: 'muted small' }, 'The bell, the tower queue and the check for wallet changes ask an Ethereum node about once a block (12 s) while the town is open. The free public node is shared by everyone; with many players it may slow down or refuse, so you can use your own (e.g. a free Alchemy, Infura or Ankr address).'),

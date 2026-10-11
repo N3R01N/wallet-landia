@@ -11,6 +11,7 @@ import { MAP_W, type Placed, type Pt, type TownPlan } from './layout.js';
 import { harvestOf, harvestOfUsd, loanHealth, type Harvest, type LoanHealth, type PriceMove } from '../domain/risk.js';
 import { ethPriceFrom, initialChain, nextChain, type BlockInfo, type ChainState } from './chain.js';
 import { doorSlot, flightRoute, walkRoute } from './route.js';
+import { realmOf } from '../domain/realms.js';
 
 // --- schedule ----------------------------------------------------------------
 
@@ -77,6 +78,8 @@ interface ActTask {
   face?: Pt;
   /** Goods handed out of this building's door to the agent. */
   pickup?: { coins: Coin[]; from: Placed };
+  /** Seeing a crossing off from the harbour, bound for this realm (a chain id, '?' unknown). */
+  sail?: string;
 }
 
 type Task =
@@ -207,6 +210,8 @@ export class Sim {
   #mood = 0;
   /** The real chain, as of the last bell: the queue, the toll board and the beacon read it. */
   chain: ChainState = initialChain();
+  /** Which realm (chain id) this town is: Ethereum's rings with real blocks; a province's tower has no feed yet. */
+  realm = 'ethereum';
   /** ETH in USD, from what the guild holds (for the toll in dollars), or null. */
   readonly ethUsd: number | null;
   /** The line at the tower door, front first. */
@@ -568,7 +573,11 @@ export class Sim {
       // Herald for gifts, flies in from wherever it came from.
       const first = j.steps[0];
       const from = first ? this.#targetPoint(first.target, j.hero) : this.plan.gate.doorAt;
-      const start = first?.target.kind === 'home' ? this.plan.gate.doorAt : from;
+      // goods that crossed from another realm come ashore at the harbour
+      const harbour = this.#harbour();
+      const crossed = j.bridge !== undefined && j.bridge.to === j.chainId && harbour !== undefined;
+      const start = crossed ? harbour.doorAt : first?.target.kind === 'home' ? this.plan.gate.doorAt : from;
+      if (crossed) this.effects.push({ kind: 'float', x: start.x, y: start.y - 0.5, age: 0, ttl: 3.5, drama: 1, text: `⛵ from ${realmOf(j.bridge!.from).name}`, color: '#9fd8ff' });
       const kind: AgentKind = j.verb === 'airdrop' ? 'herald' : 'raven';
       const courier = this.#makeAgent(kind, start.x, start.y);
       courier.flying = kind === 'raven';
@@ -609,6 +618,15 @@ export class Sim {
         tasks.push({ type: 'act', verb: step.verb, seconds, journey: j, step, door: place, gesture: 'interact' });
       }
       if (!failed && step.get.length > 0) brought = true;
+    }
+    // a crossing to another realm: what was handed in sails from the harbour
+    if (j.bridge !== undefined && j.bridge.from === j.chainId) {
+      const harbour = this.#harbour();
+      if (harbour !== undefined && tasks.at(-1)?.type === 'act') {
+        const last = tasks.at(-1) as ActTask;
+        if (last.door?.id !== harbour.id) tasks.push(this.#toDoor(harbour));
+        tasks.push({ type: 'act', verb: 'wait', seconds: 1, sail: j.bridge.to ?? '?', door: harbour });
+      }
     }
     tasks.push(this.#toDoor(home));
     // and what was brought home goes inside
@@ -656,6 +674,11 @@ export class Sim {
 
   #targetPoint(target: Target, hero: string): Pt {
     return this.#targetPlace(target, hero).doorAt;
+  }
+
+  /** The harbour, where ships cross to other realms (bridges' building), if the town has one. */
+  #harbour(): Placed | undefined {
+    return this.plan.buildings.find((b) => b.kind === 'harbour');
   }
 
   /** Walk (or fly) to a building's door and wait at a free spot there. */
@@ -760,6 +783,11 @@ export class Sim {
         if (task.gesture) a.acting.gesture = task.gesture;
         if (task.face) a.face = task.face;
         this.#exchange(a, task);
+        if (task.sail !== undefined) {
+          const to = task.sail === '?' ? 'another realm' : realmOf(task.sail).name;
+          this.effects.push({ kind: 'float', x: a.x, y: a.y - 0.5, age: 0, ttl: 3.5, drama: 1, text: `⛵ sails for ${to}`, color: '#9fd8ff' });
+          this.effects.push({ kind: 'sparkle', x: a.x, y: a.y - 0.5, age: 0, ttl: 1.6, drama: 1 });
+        }
         if (task.journey) this.#actEffects(a, task.verb, task.journey, task.step);
         break;
       case 'enter': {

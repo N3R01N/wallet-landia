@@ -17,15 +17,30 @@ import type {
 
 export const TX_PAGE_SIZE = 100;
 
-/** L1 only for now. Widening this is how other chains plug in later. */
-export const DEFAULT_CHAINS = ['ethereum'];
+/**
+ * The realm: Ethereum and the L2 provinces it rules (Phase 6). Zerion takes
+ * them all in one comma-joined filter, so more chains cost no more requests
+ * (they share the one page of transactions, though).
+ */
+export const DEFAULT_CHAINS: readonly string[] = ['ethereum', 'base', 'arbitrum', 'optimism'];
+
+let realmChains: readonly string[] = DEFAULT_CHAINS;
+
+/** The chains every request covers from now on (the player's realm). */
+export function setRealmChains(chains: readonly string[]): void {
+  realmChains = chains.length > 0 ? [...chains] : DEFAULT_CHAINS;
+}
+
+export function currentChains(): readonly string[] {
+  return realmChains;
+}
 
 export interface ChainScope {
   chains?: readonly string[];
 }
 
 function chainFilter(scope: ChainScope): string {
-  return (scope.chains ?? DEFAULT_CHAINS).join(',');
+  return (scope.chains ?? realmChains).join(',');
 }
 
 export function getPortfolio(

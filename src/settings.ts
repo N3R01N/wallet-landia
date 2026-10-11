@@ -48,6 +48,10 @@ export interface Prefs {
   volume: number;
   /** The player's own Ethereum node ('' = the free public one). */
   rpcUrl: string;
+  /** The chains of the realm: Ethereum and the provinces loaded with it (Phase 6). */
+  chains: string[];
+  /** The realm whose town is shown (a chain id). */
+  realm: string;
 }
 
 const KEY = 'wallet-landia-v4/prefs/v1';
@@ -75,6 +79,8 @@ const DEFAULTS: Prefs = {
   sound: false,
   volume: 0.6,
   rpcUrl: '',
+  chains: ['ethereum', 'base', 'arbitrum', 'optimism'],
+  realm: 'ethereum',
 };
 
 export function loadPrefs(): Prefs {
