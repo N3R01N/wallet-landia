@@ -37,7 +37,8 @@ async function fakeNetwork(page: Page, o: { refuseOlder?: boolean } = {}): Promi
         const at = Date.parse(t.attributes.mined_at);
         return at >= since && at <= until;
       }).sort((a, b) => Date.parse(b.attributes.mined_at) - Date.parse(a.attributes.mined_at));
-      return json({ data: rows.slice(0, 100), links: {} });
+      // like Zerion: a next link while more follow (the only sign of the end)
+      return json({ data: rows.slice(0, 100), links: rows.length > 100 ? { next: `https://api.zerion.io/v1${url.pathname.replace(/^.*\/v1/, '')}?page[after]=more` } : {} });
     }
     return json({ data: [], links: {} });
   });

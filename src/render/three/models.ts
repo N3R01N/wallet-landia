@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { assets, type LoadedPack } from '../../assets/registry.js';
+import { keep } from './dispose.js';
 
 const cache = new Map<string, THREE.Group | 'loading' | 'failed'>();
 
@@ -39,6 +40,9 @@ export function packModel(chain: readonly string[]): { scene: THREE.Group; scale
           mesh.receiveShadow = true;
           // glTF lets normals be omitted; compute them rather than render black.
           if (!mesh.geometry.getAttribute('normal')) mesh.geometry.computeVertexNormals();
+          // every clone shares these: a town rebuilt must not free them
+          keep(mesh.geometry);
+          for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) keep(m);
         });
         cache.set(m.url, gltf.scene);
         assets.notify();

@@ -6,14 +6,24 @@
   Cache-Control: public, max-age=31536000, immutable
 
 # Skies, theme and pack files: requested with ?v=<version>, so a new release
-# gets a new URL; the lists themselves (index.json, pack.json) are re-checked
-# hourly.
+# gets a new URL. The lists themselves (index.json, pack.json) are re-checked
+# every time (cheap 304s): they name the versions, so a stale one would keep
+# players on old files. Where two rules match, hosts join the values, and
+# no-cache wins over max-age.
 /env/*
   Cache-Control: public, max-age=31536000, immutable
 /themes/*
   Cache-Control: public, max-age=3600
 /packs/*
   Cache-Control: public, max-age=3600
+/themes/index.json
+  Cache-Control: no-cache
+/themes/:id/pack.json
+  Cache-Control: no-cache
+/packs/index.json
+  Cache-Control: no-cache
+/packs/:id/pack.json
+  Cache-Control: no-cache
 
 # The page and the service worker are always re-checked (cheap 304s), so a
 # deploy shows up on the next visit.

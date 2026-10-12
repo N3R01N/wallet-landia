@@ -15,8 +15,13 @@ function tx(i: number, at: number, status = 'confirmed', chain = 'ethereum'): Tr
   } as unknown as TransactionResource;
 }
 
-/** A pretend Zerion: newest first, inclusive time filters, 100 a page; counts requests (pages). */
-function fakeZerion(history: TransactionResource[]): { fetch: TxFetcher; requests: () => number; history: TransactionResource[] } {
+/**
+ * A pretend Zerion: newest first, inclusive time filters, 100 a page, and a
+ * next link while more follow; counts requests (pages). `short`: each page
+ * comes back cut to this many (as when spam is dropped from a page already
+ * cut at 100), though more follow.
+ */
+function fakeZerion(history: TransactionResource[], short?: number): { fetch: TxFetcher; requests: () => number; history: TransactionResource[] } {
   let requests = 0;
   const at = (t: TransactionResource): number => Date.parse(t.attributes.mined_at);
   const fetch: TxFetcher = async (_address, o) => {
@@ -24,12 +29,17 @@ function fakeZerion(history: TransactionResource[]): { fetch: TxFetcher; request
       .filter((t) => (o.since === undefined || at(t) >= o.since) && (o.until === undefined || at(t) <= o.until))
       .sort((a, b) => at(b) - at(a));
     const out: TransactionResource[] = [];
-    for (let p = 0; p < o.pages && p * 100 < rows.length; p++) {
+    let p = 0;
+    let reached = 0;
+    for (; p < o.pages && p * 100 < rows.length; p++) {
       requests++;
-      out.push(...rows.slice(p * 100, p * 100 + 100));
+      const page = rows.slice(p * 100, p * 100 + (short ?? 100));
+      out.push(...page);
+      reached = p * 100 + page.length;
     }
     if (rows.length === 0) requests++;
-    return out;
+    // a next link whenever anything is left beyond what came back
+    return { txs: out, more: reached < rows.length };
   };
   return { fetch, requests: () => requests, history };
 }
@@ -172,7 +182,7 @@ describe('very busy wallets and saved histories', () => {
     const kv = new MemoryKV();
     const ledger = new Ledger(kv, z.fetch);
     await ledger.head(ADDR); // 100 kept
-    await ledger.replace(ADDR, [...z.history, z.history[0]!, tx(77_777, T0, 'pending')], true);
+    await ledger.merge(ADDR, [...z.history, z.history[0]!, tx(77_777, T0, 'pending')], true);
     const s = (await ledger.status(ADDR))!;
     expect(s).toMatchObject({ count: 250, complete: true, oldest: T0 });
     expect(new Set((await ledger.all(ADDR)).map(txKey)).size).toBe(250);
@@ -182,3 +192,94 @@ describe('very busy wallets and saved histories', () => {
     expect(z.requests() - before).toBe(1);
   });
 });
+
+describe('the end of a history', () => {
+  it('is when Zerion has no next page, not when a page comes back short', async () => {
+    // every page cut to 54 (spam dropped after paging), the way a wallet once stopped at 854 of 1,441
+    const z = fakeZerion(decade(1441), 54);
+    const ledger = new Ledger(new MemoryKV(), z.fetch);
+    await ledger.head(ADDR);
+    await fill(ledger);
+    const s = (await ledger.status(ADDR))!;
+    expect(s.complete).toBe(true);
+    expect(s.oldest).toBe(T0); // all the way back
+  });
+
+  it('a history marked complete by the old rule is walked again', async () => {
+    const z = fakeZerion(decade(400));
+    const kv = new MemoryKV();
+    const ledger = new Ledger(kv, z.fetch);
+    await ledger.head(ADDR);
+    await ledger.backfill(ADDR);
+    // as the first version left it: "complete" after a short page, part way back
+    const key = 'ledger:ethereum:0xabc:state';
+    const st = (await kv.get<Record<string, unknown>>(key))!;
+    await kv.put(key, { ...st, v: 1, complete: true, spam: undefined });
+    expect((await ledger.status(ADDR))!.complete).toBe(false);
+    await fill(ledger);
+    expect((await ledger.status(ADDR))!).toMatchObject({ complete: true, count: 400, oldest: T0 });
+  });
+
+  it('counts spam apart', async () => {
+    const h = decade(10);
+    (h[3]!.attributes as { flags?: object }).flags = { is_trash: true };
+    const ledger = new Ledger(new MemoryKV(), fakeZerion(h).fetch);
+    await ledger.head(ADDR);
+    expect((await ledger.status(ADDR))!).toMatchObject({ count: 10, spam: 1 });
+  });
+});
+
+describe('keeping the history whole', () => {
+  it('after an absence longer than head walks, notes the gap and fills it before going further back', async () => {
+    const z = fakeZerion(decade(150));
+    const ledger = new Ledger(new MemoryKV(), z.fetch);
+    await ledger.head(ADDR);
+    await fill(ledger);
+    const last = Date.parse(z.history.at(-1)!.attributes.mined_at);
+    // more than 50 pages arrived while the player was away
+    for (let i = 0; i < 5_250; i++) z.history.push(tx(10_000 + i, last + (i + 1) * 60_000));
+    await ledger.head(ADDR);
+    const mid = (await ledger.status(ADDR))!;
+    expect(mid).toMatchObject({ gap: true, complete: false, count: 150 + 5_000 });
+    await fill(ledger);
+    const s = (await ledger.status(ADDR))!;
+    expect(s).toMatchObject({ gap: false, complete: true, count: 5_400 });
+    const all = await ledger.all(ADDR);
+    expect(new Set(all.map(txKey)).size).toBe(5_400);
+    expect(all.map((t) => Date.parse(t.attributes.mined_at))).toEqual([...all.map((t) => Date.parse(t.attributes.mined_at))].sort((a, b) => b - a));
+    // and the newest are still read from the newest chunks
+    expect((await ledger.recent(ADDR, 1))[0]!.id).toBe('id-15249');
+  });
+
+  it('a saved file is merged: an older file does not undo what was gathered since', async () => {
+    const z = fakeZerion(decade(300));
+    const ledger = new Ledger(new MemoryKV(), z.fetch);
+    await ledger.head(ADDR);
+    await fill(ledger);
+    await ledger.merge(ADDR, z.history.slice(0, 120), false);
+    expect((await ledger.status(ADDR))!).toMatchObject({ count: 300, complete: true });
+  });
+
+  it('a large file does not overflow the call stack', async () => {
+    const many = Array.from({ length: 150_000 }, (_, i) => tx(i, T0 + i * 1000));
+    const ledger = new Ledger(new MemoryKV(), fakeZerion([]).fetch);
+    await ledger.merge(ADDR, many, true);
+    expect((await ledger.status(ADDR))!).toMatchObject({ count: 150_000, oldest: T0 });
+  }, 60_000);
+
+  it('new arrivals do not move the walk back off a crowded second it stepped past', async () => {
+    const crowd = Array.from({ length: 250 }, (_, i) => tx(i, T0 + 10_000_000));
+    const older = Array.from({ length: 40 }, (_, i) => tx(1000 + i, T0 + i * 1000));
+    const z = fakeZerion([...older, ...crowd]);
+    const kv = new MemoryKV();
+    const ledger = new Ledger(kv, z.fetch);
+    await ledger.head(ADDR);
+    await ledger.backfill(ADDR); // the same second again: steps back past it
+    const cursor = (await kv.get<{ cursor: number }>('ledger:ethereum:0xabc:state'))!.cursor;
+    expect(cursor).toBeLessThan(T0 + 10_000_000);
+    z.history.push(tx(9_999, T0 + 20_000_000));
+    await ledger.head(ADDR);
+    expect((await kv.get<{ cursor: number }>('ledger:ethereum:0xabc:state'))!.cursor).toBe(cursor);
+  });
+});
+

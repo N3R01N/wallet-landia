@@ -16,6 +16,7 @@ import { MOUNT_NAMES } from '../render/characters.js';
 import { bornCrest, crestColors, hashString, TINCTURES } from '../util/rng.js';
 import type { Placed } from '../world/layout.js';
 import type { BlockBeat } from '../data/rpc.js';
+import { formatGwei } from '../world/chain.js';
 import { el, fmtDate, safeHref, shortAddr } from './dom.js';
 
 const EXPLAIN: Record<string, string> = {
@@ -45,6 +46,7 @@ export interface PanelContext {
   onSelectHero: (address: string) => void;
   onJourney: (j: Journey) => void;
   onReplay: (j: Journey) => void;
+  /** The latest block of the realm on show (a province's own chain in its town). */
   beat: BlockBeat | null;
   /** The badges this wallet earned first (badges belong to the player: see the player sheet). */
   medalsOf: (address: string) => Map<string, Earned>;
@@ -176,7 +178,7 @@ function itemSlot(item: Item | null, opts: { pouch?: { count: number; usd: numbe
     }
     slot.append(el('span', { class: 'slot-qty' }, item.category === 'nft' ? '' : formatQty(item.quantity)));
     slot.title = `${item.name} (${item.symbol})\n${formatQty(item.quantity)} · ${exactUsd(item.usd)}\n${TIER_NAMES[item.tier]} · ${item.category}`;
-    slot.append(el('span', { class: 'slot-name' }, item.category === 'nft' ? item.symbol : item.symbol));
+    slot.append(el('span', { class: 'slot-name' }, item.symbol));
   } else if (opts.pouch) {
     slot.title = `A pouch of odds and ends: ${opts.pouch.count} tiny holdings worth ${exactUsd(opts.pouch.usd)} together`;
     slot.append(el('span', { class: 'slot-qty' }, `×${opts.pouch.count}`));
@@ -374,7 +376,7 @@ export function buildingPanel(b: Placed, ctx: PanelContext): HTMLElement {
               el('div', { class: 'stat-row' }, el('span', {}, 'Latest page (block)'), el('strong', {}, `#${beat.number.toLocaleString('en-US')}`)),
               el('div', { class: 'stat-row' }, el('span', {}, 'Entries on it (transactions)'), el('strong', {}, String(beat.txCount))),
               el('div', { class: 'stat-row' }, el('span', {}, 'Crowd at the gate (block fullness)'), el('strong', {}, `${Math.round(beat.busy * 100)}%`)),
-              el('div', { class: 'stat-row' }, el('span', {}, 'Base toll (base fee)'), el('strong', {}, beat.baseFeeGwei === null ? '?' : `${beat.baseFeeGwei.toFixed(2)} gwei`)),
+              el('div', { class: 'stat-row' }, el('span', {}, 'Base toll (base fee)'), el('strong', {}, beat.baseFeeGwei === null ? '?' : `${formatGwei(beat.baseFeeGwei)} gwei`)),
             ),
       );
     }

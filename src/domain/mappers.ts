@@ -11,6 +11,7 @@
 import { linkBridges } from './realms.js';
 import type { RawWallet } from '../data/zerion/endpoints.js';
 import type { PositionResource, TransactionResource, TransferResource } from '../data/zerion/types.js';
+import { txKey } from '../data/zerion/tx.js';
 import { BUILDING_FOR, KNOWN_CONTRACTS, PASS_THROUGH, classifyAsset, classifyProtocol, type ProtocolCategory } from './catalog.js';
 import type {
   Goods,
@@ -153,7 +154,8 @@ function mapItems(raw: RawWallet): { items: Item[]; spam: number } {
     const existing = byId.get(id);
     if (existing !== undefined) {
       existing.quantity += attrs.quantity.float;
-      existing.usd = (existing.usd ?? 0) + (usd ?? 0);
+      // unpriced + unpriced stays unpriced (null), not $0
+      existing.usd = existing.usd === null && usd === null ? null : (existing.usd ?? 0) + (usd ?? 0);
       existing.tier = tierOf(existing.usd);
       continue;
     }
@@ -162,7 +164,7 @@ function mapItems(raw: RawWallet): { items: Item[]; spam: number } {
       chainId,
       name: f.name,
       symbol: f.symbol,
-      category: classifyAsset(f.symbol, f.name, chainId, isNative),
+      category: classifyAsset(f.symbol, f.name, isNative),
       quantity: attrs.quantity.float,
       usd,
       tier: tierOf(usd),
@@ -607,6 +609,7 @@ function mapJourney(raw: TransactionResource, hero: Hero, ctx: BuildCtx): Journe
       const actTransfers = a.transfers.filter((t) => t.act_id === act.id);
       const actName = act.application_metadata?.name;
       let actTarget = target;
+      let actProtocol = protocol;
       if (actName !== undefined && actName !== '') {
         const p = ctx.book.touch(slugify(actName), actName, { iconUrl: act.application_metadata?.icon?.url });
         if (p.category === 'unknown') {
@@ -614,11 +617,13 @@ function mapJourney(raw: TransactionResource, hero: Hero, ctx: BuildCtx): Journe
           p.building = BUILDING_FOR[p.category];
         }
         actTarget = { kind: 'building', protocolId: p.id };
+        actProtocol = p;
       }
       steps.push({
+        // the act's own protocol decides its verb (an aggregator-routed Aave deposit is a supply)
         verb: refineVerb(act.type ?? a.operation_type, {
           wallet,
-          category: protocol?.category ?? null,
+          category: actProtocol?.category ?? null,
           initiated,
           ins: actTransfers.filter((t) => t.direction === 'in'),
           outs: actTransfers.filter((t) => t.direction === 'out'),
@@ -670,7 +675,7 @@ function mapJourney(raw: TransactionResource, hero: Hero, ctx: BuildCtx): Journe
   if (valueUsd > 0) label += ` (${approxUsd(valueUsd)})`;
 
   return {
-    key: a.hash === '' ? raw.id : `${chainId}:${a.hash}`,
+    key: txKey(raw),
     hash: a.hash,
     chainId,
     hero: wallet,

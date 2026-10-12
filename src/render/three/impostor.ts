@@ -64,6 +64,17 @@ export class ImpostorStudio {
     return null;
   }
 
+  /**
+   * Forget every shot (a new theme, new figures). The studio itself stays: a
+   * new one would open another WebGL context, and browsers drop the oldest
+   * (the town's) past about sixteen.
+   */
+  reset(): void {
+    this.#done.clear();
+    this.#queue.length = 0;
+    this.#waiting.clear();
+  }
+
   /** Photograph the next waiting look (call once a frame, so it never stalls the town). */
   bakeNext(): void {
     const job = this.#queue.shift();

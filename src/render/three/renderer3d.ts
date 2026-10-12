@@ -40,6 +40,8 @@ import { wind } from './wind.js';
 import { doorwayMaterial, moveDoor, type DoorRig } from './doors.js';
 import { Critters } from './critters.js';
 import type { HitTarget, WorldView } from '../view.js';
+import { disposeTree, keep, resourceMark, type ResourceMark } from './dispose.js';
+import { spriteCharacters } from './spriteCharacters.js';
 
 /** Art pixels per tile, so sprites keep their 2D proportions. */
 const ART_PER_TILE = 16;
@@ -72,6 +74,12 @@ const RUN_FROM = 1.7;
  * nearest cast shadows. The gap between show and hide stops flicker.
  */
 const RIG = { show: 70, hide: 78, max: 20, shadow: 42, shadowMax: 8 };
+
+/** A courier or caravan gone: its own geometries freed (theme materials are shared and stay). */
+function dropCompanion(c: Companion): void {
+  c.object.removeFromParent();
+  disposeTree(c.object);
+}
 
 interface BuildingInfo {
   placed: Placed;
@@ -107,7 +115,7 @@ export class Renderer3D implements WorldView {
   #textures = new WeakMap<HTMLCanvasElement, [THREE.CanvasTexture, THREE.CanvasTexture]>();
   #spriteMats = new Map<THREE.Texture, THREE.SpriteMaterial>();
   #factory = new BuildingFactory();
-  #waterMat = new THREE.MeshStandardMaterial({ color: '#4a90c8', transparent: true, opacity: 0.85, roughness: 0.15, metalness: 0.1 });
+  #waterMat = keep(new THREE.MeshStandardMaterial({ color: '#4a90c8', transparent: true, opacity: 0.85, roughness: 0.15, metalness: 0.1 }));
   #ring: THREE.Mesh;
   #raycaster = new THREE.Raycaster();
   /**
@@ -151,8 +159,8 @@ export class Renderer3D implements WorldView {
   /** Themed towns: 3D couriers and caravans in place of their sprites. */
   #couriers = new Map<string, { c: Companion; x: number; y: number; yaw: number }>();
   #caravans = new Map<string, { c: Companion; tier: number; x: number; y: number }>();
-  #proxyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.8, 8).translate(0, 0.9, 0);
-  #proxyMat = new THREE.MeshBasicMaterial({ visible: false });
+  #proxyGeo = keep(new THREE.CylinderGeometry(0.4, 0.4, 1.8, 8).translate(0, 0.9, 0));
+  #proxyMat = keep(new THREE.MeshBasicMaterial({ visible: false }));
   #env: EnvironmentController | null = null;
   /** Smoke and steam from the town's chimneys and stacks. */
   #smoke: Smoke | null = null;
@@ -169,7 +177,24 @@ export class Renderer3D implements WorldView {
   #fog: FogBank | null = null;
   #fogged: Placed[] = [];
   /** Deep, glossy water that mirrors the sky (themed towns are lit by an HDRI). */
-  #themedWater = rippling(new THREE.MeshStandardMaterial({ color: '#27506a', roughness: 0.05, metalness: 0.15, transparent: true, opacity: 0.9 }));
+  #themedWater = keep(rippling(new THREE.MeshStandardMaterial({ color: '#27506a', roughness: 0.05, metalness: 0.15, transparent: true, opacity: 0.9 })));
+  /** When the town now standing began to be built: what it made since is its own, freed on the next build. */
+  #builtFrom: ResourceMark | undefined;
+  /** The theme's assets are in (its people, 3D couriers and caravans may come out). */
+  #themeReady = false;
+  /** Impostor sprites (smoothly filtered) for the current theme's figures: freed with the theme. */
+  #impostorMats = new Set<THREE.SpriteMaterial>();
+  // scratch for the per-frame paths (lighting, projection, picking): no garbage every frame
+  #dayColour = new THREE.Color('#9fd3f0');
+  #duskColour = new THREE.Color('#1c2450');
+  #stormColour = new THREE.Color('#3a3e48');
+  #flashColour = new THREE.Color('#e8ecff');
+  #nightTint = new THREE.Color('#7f88b8');
+  #gloomTint = new THREE.Color('#9a9aa6');
+  #projected = new THREE.Vector3();
+  #ndc = new THREE.Vector2();
+  #pickList: THREE.Object3D[] = [];
+  #buildingGroups: THREE.Object3D[] = [];
 
   constructor(sim: Sim, quality: Quality = 'medium') {
     this.#sim = sim;
@@ -198,7 +223,9 @@ export class Renderer3D implements WorldView {
     };
 
     this.#scene.background = this.#sky;
-    this.#scene.fog = new THREE.Fog(this.#sky, 110, 230);
+    const fog = new THREE.Fog(this.#sky, 110, 230);
+    fog.color = this.#sky; // shared, not copied: the fog follows the sky through night and storm
+    this.#scene.fog = fog;
     this.#scene.add(this.#hemi, this.#sun, this.#sun.target, this.#world);
     this.#sun.position.set(MAP_W / 2 - 22, 42, MAP_H / 2 + 26);
     this.#sun.target.position.set(MAP_W / 2, 0, MAP_H / 2);
@@ -224,6 +251,8 @@ export class Renderer3D implements WorldView {
     this.#scene.add(this.#ring);
 
     this.#shadowGeo.rotateX(-Math.PI / 2);
+    // instances move every frame but the bounds are computed once: never cull on them
+    this.#agentShadows.frustumCulled = false;
     this.#scene.add(this.#agentShadows);
 
     this.#build();
@@ -245,9 +274,18 @@ export class Renderer3D implements WorldView {
    */
   async setTheme(bundle: ThemeBundle | null): Promise<void> {
     const theme = bundle ? bundleTheme(bundle) : null;
+    const old = this.#theme;
     this.#theme = theme;
     this.#people = null;
-    this.#studio3 = null; // a new theme, new figures
+    this.#themeReady = false;
+    // a new theme, new figures: one studio (one WebGL context) for good, its shots and their textures dropped
+    this.#studio3?.reset();
+    for (const m of this.#impostorMats) {
+      if (m.map) this.#spriteMats.delete(m.map);
+      m.map?.dispose();
+      m.dispose();
+    }
+    this.#impostorMats.clear();
     // for tests and debugging: which theme draws the town, and whether its people are in
     this.element.dataset.theme = theme?.id ?? '';
     this.element.dataset.people = 'sprites';
@@ -259,11 +297,15 @@ export class Renderer3D implements WorldView {
       this.#scene.background = this.#sky;
     }
     this.#build();
+    // nothing draws with the old theme now (its town and people are gone): free its materials and textures
+    old?.dispose?.();
     if (theme?.prepare) {
       await theme.prepare();
       if (this.#theme !== theme) return; // switched again meanwhile
     }
-    if (theme) {
+    this.#themeReady = theme !== null;
+    // a theme without characters keeps the town's own sprites (tinted at night, one contact shadow)
+    if (theme && theme.characters !== spriteCharacters) {
       this.#people = theme.characters;
       this.element.dataset.people = 'rigged';
     }
@@ -272,9 +314,9 @@ export class Renderer3D implements WorldView {
   #clearPersons(): void {
     for (const p of this.#persons.values()) p.char.dispose();
     this.#persons.clear();
-    for (const c of this.#couriers.values()) c.c.object.removeFromParent();
+    for (const c of this.#couriers.values()) dropCompanion(c.c);
     this.#couriers.clear();
-    for (const c of this.#caravans.values()) c.c.object.removeFromParent();
+    for (const c of this.#caravans.values()) dropCompanion(c.c);
     this.#caravans.clear();
   }
 
@@ -395,7 +437,10 @@ export class Renderer3D implements WorldView {
   // --- scene -----------------------------------------------------------------
 
   #build(): void {
+    // free what the last build made (detaching frees nothing on the GPU); the caches it drew on stay
+    disposeTree(this.#world, this.#builtFrom);
     this.#world.clear();
+    this.#builtFrom = resourceMark();
     this.#buildings = [];
     for (const s of this.#sprites.values()) {
       s.body.removeFromParent();
@@ -415,6 +460,7 @@ export class Renderer3D implements WorldView {
     const towerInfo = this.#buildings.find((b) => b.placed.kind === 'tower');
     const towerTip = towerInfo ? new THREE.Box3().setFromObject(towerInfo.group).max.y : 0;
     this.#mergeBuildings();
+    this.#buildingGroups = this.#buildings.map((b) => b.group);
     const emitters = this.#buildings.flatMap((b) => b.smoke ?? []);
     this.#smoke = emitters.length > 0 ? new Smoke(emitters) : null;
     this.#critters = new Critters(plan);
@@ -506,45 +552,47 @@ export class Renderer3D implements WorldView {
    * invisible footprint box for hover, click and sign occlusion.
    */
   #mergeBuildings(): void {
-    const buckets = new Map<string, { mat: THREE.Material; cast: boolean; geos: THREE.BufferGeometry[] }>();
+    const buckets = new Map<string, { mat: THREE.Material; cast: boolean; geos: THREE.BufferGeometry[]; sources: THREE.Mesh[] }>();
     const bell = this.#bell;
     for (const b of this.#buildings) {
       b.group.updateMatrixWorld(true);
-      const merged: THREE.Mesh[] = [];
       b.group.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh || (mesh as unknown as THREE.SkinnedMesh).isSkinnedMesh || Array.isArray(mesh.material)) return;
         for (let p: THREE.Object3D | null = o; p; p = p.parent) if (p === bell || p.userData.animated === true) return;
-        let geo = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
-        const keep = new THREE.BufferGeometry();
-        keep.setAttribute('position', geo.getAttribute('position'));
-        if (!geo.getAttribute('normal')) geo.computeVertexNormals();
-        keep.setAttribute('normal', geo.getAttribute('normal'));
-        const uv = geo.getAttribute('uv') ?? new THREE.Float32BufferAttribute(new Float32Array(geo.getAttribute('position').count * 2), 2);
-        keep.setAttribute('uv', uv);
-        keep.applyMatrix4(mesh.matrixWorld);
-        geo = keep;
+        const src = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+        if (!src.getAttribute('normal')) src.computeVertexNormals();
+        // plain floats, whatever a pack's glTF stored (quantised, normalised, interleaved), so every part merges
+        const geo = new THREE.BufferGeometry();
+        for (const [name, size] of [['position', 3], ['normal', 3], ['uv', 2]] as const) {
+          const a = src.getAttribute(name);
+          const out = new Float32Array(src.getAttribute('position').count * size);
+          if (a) for (let v = 0; v < a.count; v++) for (let k = 0; k < size; k++) out[v * size + k] = a.getComponent(v, k);
+          geo.setAttribute(name, new THREE.Float32BufferAttribute(out, size));
+        }
+        geo.applyMatrix4(mesh.matrixWorld);
         const mat = mesh.material;
         const key = `${mat.uuid}|${mesh.castShadow ? 1 : 0}`;
         let bucket = buckets.get(key);
         if (!bucket) {
-          bucket = { mat, cast: mesh.castShadow, geos: [] };
+          bucket = { mat, cast: mesh.castShadow, geos: [], sources: [] };
           buckets.set(key, bucket);
         }
         bucket.geos.push(geo);
-        merged.push(mesh);
+        bucket.sources.push(mesh);
       });
-      for (const m of merged) m.removeFromParent();
       // the stand-in the pointer and the sign rays hit
       const proxy = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.5, b.placed.w - 0.4), Math.max(0.5, b.top), Math.max(0.5, b.placed.h - 0.4)), this.#proxyMat);
       proxy.position.set(0, Math.max(0.5, b.top) / 2, 0);
       proxy.userData.target = { kind: 'building', placed: b.placed } satisfies HitTarget;
       b.group.add(proxy);
     }
-    for (const { mat, cast, geos } of buckets.values()) {
+    for (const { mat, cast, geos, sources } of buckets.values()) {
       const geo = mergeGeometries(geos, false);
       for (const g of geos) g.dispose();
-      if (!geo) continue;
+      if (!geo) continue; // the parts stay as they are rather than vanish
+      // merged: the parts give way to the one mesh (never drawn, so they hold nothing on the GPU)
+      for (const m of sources) m.removeFromParent();
       geo.computeBoundingSphere();
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = cast;
@@ -626,6 +674,8 @@ export class Renderer3D implements WorldView {
     if (mat === undefined) {
       mat = new THREE.SpriteMaterial({ map: tex, alphaTest: 0.5, transparent: false, color: this.#spriteTint.clone() });
       this.#spriteMats.set(tex, mat);
+      // pixel art is a fixed, small set; impostors come and go with the theme
+      if (smooth) this.#impostorMats.add(mat);
     }
     return mat;
   }
@@ -681,7 +731,7 @@ export class Renderer3D implements WorldView {
       // farther off, the theme's own figure as a sprite (the pixel sprite only until it is baked)
       if (person && !rigged && !a.inside) this.#impostor(a, person, pair.body);
       const companions = this.#theme?.companions;
-      if (companions && this.#people) {
+      if (companions && this.#themeReady) {
         if (a.kind === 'raven') {
           this.#moveCourier(a, dt, companions.courier);
           pair.body.visible = false;
@@ -704,12 +754,12 @@ export class Renderer3D implements WorldView {
     }
     for (const [id, c] of this.#couriers) {
       if (seen.has(id)) continue;
-      c.c.object.removeFromParent();
+      dropCompanion(c.c);
       this.#couriers.delete(id);
     }
     for (const [id, c] of this.#caravans) {
       if (seen.has(id)) continue;
-      c.c.object.removeFromParent();
+      dropCompanion(c.c);
       this.#caravans.delete(id);
     }
   }
@@ -804,7 +854,7 @@ export class Renderer3D implements WorldView {
       return false;
     }
     if (!c || c.tier !== tier) {
-      c?.c.object.removeFromParent();
+      if (c) dropCompanion(c.c);
       c = { c: make(tier as Tier, a.hero ? crestColors(a.hero.address)[0] : '#a0522d'), tier, x: back.x, y: back.y };
       this.#scene.add(c.c.object);
       this.#caravans.set(a.id, c);
@@ -971,17 +1021,15 @@ export class Renderer3D implements WorldView {
     const sim = this.#sim;
     const night = nightFactor();
     const gloom = sim.gloom;
-    const day = new THREE.Color('#9fd3f0');
-    const dusk = new THREE.Color('#1c2450');
     // A siege brings lightning: brief flashes while the storm is at its height.
     if (gloom > 0.6 && Math.random() < dt * 0.6) this.#flash = 1;
     this.#flash = Math.max(0, this.#flash - dt * 5);
-    this.#sky.copy(day).lerp(dusk, night).lerp(new THREE.Color('#3a3e48'), gloom * 0.8).lerp(new THREE.Color('#e8ecff'), this.#flash * 0.6);
+    this.#sky.copy(this.#dayColour).lerp(this.#duskColour, night).lerp(this.#stormColour, gloom * 0.8).lerp(this.#flashColour, this.#flash * 0.6);
     // a rising market brings a brighter day (a falling one brings rain: the sim's gloom)
     const mood = sim.priceMove?.mood;
     const shine = mood === 'boom' ? 1.18 : mood === 'up' ? 1.08 : 1;
     this.#sun.intensity = 2.2 * shine * (1 - night * 0.8) * (1 - gloom * 0.6) + this.#flash * 2;
-    this.#sun.color.set(night > 0.5 ? '#9fb0ff' : '#fff1d6');
+    this.#sun.color.setHex(night > 0.5 ? 0x9fb0ff : 0xfff1d6);
     this.#hemi.intensity = 1.1 * (1 - night * 0.55) * (1 - gloom * 0.4) + this.#flash;
     // Emissive hierarchy (bloom skill): fire > lamp bulbs > windows > lit walls.
     // Only the first three exceed the HDR bloom threshold, and only at night.
@@ -1002,7 +1050,7 @@ export class Renderer3D implements WorldView {
       if (this.#env.active) this.#hemi.intensity *= 0.3;
     }
     // Billboards are unlit; tint them so people do not glow at midnight.
-    this.#spriteTint.setRGB(1, 1, 1).lerp(new THREE.Color('#7f88b8'), night * 0.85).lerp(new THREE.Color('#9a9aa6'), gloom * 0.5);
+    this.#spriteTint.setRGB(1, 1, 1).lerp(this.#nightTint, night * 0.85).lerp(this.#gloomTint, gloom * 0.5);
     for (const m of this.#spriteMats.values()) m.color.copy(this.#spriteTint);
     this.#lamps?.setNight(night);
     this.#smoke?.setNight(night);
@@ -1047,7 +1095,7 @@ export class Renderer3D implements WorldView {
   }
 
   #project: Project = (x, y, z = 0) => {
-    const v = new THREE.Vector3(x, z, y).project(this.#camera);
+    const v = this.#projected.set(x, z, y).project(this.#camera);
     if (v.z > 1) return null;
     return [((v.x + 1) / 2) * this.canvas.clientWidth, ((1 - v.y) / 2) * this.canvas.clientHeight];
   };
@@ -1088,7 +1136,7 @@ export class Renderer3D implements WorldView {
   #occludeSigns(): void {
     this.#hiddenSigns.clear();
     const origin = this.#camera.position;
-    const groups = this.#buildings.map((b) => b.group);
+    const groups = this.#buildingGroups;
     for (const b of this.#buildings) {
       const s = b.sign;
       if (s === undefined) continue;
@@ -1219,6 +1267,11 @@ export class Renderer3D implements WorldView {
     });
   }
 
+  /** Build the town again as a live update would (tests only: GPU resources must not grow with rebuilds). */
+  debugRebuild(): void {
+    this.#build();
+  }
+
   /** The scene, for tests and tuning tools only. */
   debugScene(): THREE.Scene {
     return this.#scene;
@@ -1265,13 +1318,16 @@ export class Renderer3D implements WorldView {
   }
 
   hitTest(sx: number, sy: number): HitTarget | null {
-    const ndc = new THREE.Vector2((sx / this.canvas.clientWidth) * 2 - 1, -(sy / this.canvas.clientHeight) * 2 + 1);
-    this.#raycaster.setFromCamera(ndc, this.#camera);
-    const heroes: THREE.Object3D[] = [...this.#sprites.values()].map((p) => p.body).filter((s) => s.visible && s.userData.target !== undefined);
+    // runs on every pointer move: scratch vector and list, no garbage
+    this.#raycaster.setFromCamera(this.#ndc.set((sx / this.canvas.clientWidth) * 2 - 1, -(sy / this.canvas.clientHeight) * 2 + 1), this.#camera);
+    const heroes = this.#pickList;
+    heroes.length = 0;
+    for (const p of this.#sprites.values()) if (p.body.visible && p.body.userData.target !== undefined) heroes.push(p.body);
     for (const p of this.#persons.values()) if (p.proxy && p.shown && p.char.object.visible) heroes.push(p.proxy);
     const hitHero = this.#raycaster.intersectObjects(heroes, false)[0];
+    heroes.length = 0;
     if (hitHero) return hitHero.object.userData.target as HitTarget;
-    const hit = this.#raycaster.intersectObjects(this.#buildings.map((b) => b.group), true)[0];
+    const hit = this.#raycaster.intersectObjects(this.#buildingGroups, true)[0];
     return hit ? ((hit.object.userData.target as HitTarget | undefined) ?? null) : null;
   }
 }

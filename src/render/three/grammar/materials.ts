@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import type { MaterialRole, MaterialSpec } from '../../../assets/theme.js';
+import { keep } from '../dispose.js';
 
 export type MatKey = MaterialRole;
 
@@ -51,8 +52,8 @@ export class MaterialLibrary {
   /** `specs` hold URLs (a resolved theme). */
   constructor(specs: Partial<Record<MatKey, MaterialSpec>>) {
     this.#specs = specs;
-    this.glass = new THREE.MeshStandardMaterial({ color: specs.glass?.tint ?? FALLBACK.glass, emissive: new THREE.Color('#ffc870'), emissiveIntensity: 0, roughness: 0.12, metalness: 0.3 });
-    this.fire = new THREE.MeshStandardMaterial({ color: specs.fire?.tint ?? FALLBACK.fire, emissive: new THREE.Color(specs.fire?.tint ?? '#ff7a1a'), emissiveIntensity: 1.4 });
+    this.glass = keep(new THREE.MeshStandardMaterial({ color: specs.glass?.tint ?? FALLBACK.glass, emissive: new THREE.Color('#ffc870'), emissiveIntensity: 0, roughness: 0.12, metalness: 0.3 }));
+    this.fire = keep(new THREE.MeshStandardMaterial({ color: specs.fire?.tint ?? FALLBACK.fire, emissive: new THREE.Color(specs.fire?.tint ?? '#ff7a1a'), emissiveIntensity: 1.4 }));
   }
 
   /** Metres covered by one repeat of a role's textures. */
@@ -66,7 +67,8 @@ export class MaterialLibrary {
    */
   tex(key: MatKey, map: 'color' | 'normal' | 'roughness'): THREE.Texture {
     const url = this.#specs[key]?.[map];
-    const id = url ?? `solid:${key}/${map}`;
+    // the repeat belongs to the role's size: two roles sharing a file at different sizes need their own
+    const id = `${url ?? `solid:${key}/${map}`}|${this.size(key)}`;
     let t = this.#textures.get(id);
     if (t === undefined) {
       if (url) t = this.#loader.load(url);
@@ -80,7 +82,7 @@ export class MaterialLibrary {
       t.anisotropy = 8;
       t.repeat.setScalar(1 / this.size(key));
       if (map === 'color') t.colorSpace = THREE.SRGBColorSpace;
-      this.#textures.set(id, t);
+      this.#textures.set(id, keep(t));
     }
     return t;
   }
@@ -119,8 +121,18 @@ export class MaterialLibrary {
           roughness: spec?.roughnessValue ?? (key === 'gold' ? 0.35 : metal ? 0.5 : 0.9),
         });
       }
-      this.#mats.set(id, m);
+      this.#mats.set(id, keep(m));
     }
     return m;
+  }
+
+  /** Free every texture and material handed out (the theme is gone). */
+  dispose(): void {
+    for (const t of this.#textures.values()) t.dispose();
+    for (const m of this.#mats.values()) m.dispose();
+    this.glass.dispose();
+    this.fire.dispose();
+    this.#textures.clear();
+    this.#mats.clear();
   }
 }

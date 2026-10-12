@@ -78,6 +78,17 @@ describe('realms', () => {
     expect(tooMuch.bridge).toBeUndefined();
   });
 
+  it('takes a plausible arrival, the closest in time, never a later swap', () => {
+    const out = journey({ key: 'ethereum:0x1', chainId: 'ethereum', time: 1_000_000, verb: 'bridge' }, [coin('ETH', 1)], []);
+    const swap = journey({ key: 'base:0x2', chainId: 'base', time: 1_100_000, verb: 'swap' }, [coin('USDC', 10)], [coin('ETH', 0.99)]);
+    const later = journey({ key: 'base:0x3', chainId: 'base', time: 1_900_000, verb: 'receive' }, [], [coin('ETH', 0.99)]);
+    const closest = journey({ key: 'base:0x4', chainId: 'base', time: 1_300_000, verb: 'receive' }, [], [coin('ETH', 0.995)]);
+    linkBridges([out, swap, later, closest]);
+    expect(out.bridge?.pair).toBe('base:0x4');
+    expect(swap.bridge).toBeUndefined();
+    expect(later.bridge).toBeUndefined();
+  });
+
   it('a crossing whose arrival is not in sight still says it crossed', () => {
     const out = journey({ key: 'base:0x9', chainId: 'base', time: 5, verb: 'bridge' }, [coin('USDC', 500)], []);
     const late = journey({ key: 'ethereum:0xa', chainId: 'ethereum', time: 5 + 7 * 3_600_000, verb: 'receive' }, [], [coin('USDC', 499)]);

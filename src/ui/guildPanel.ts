@@ -124,10 +124,16 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
   const hasKey = loadApiKey() !== null;
   const keyInput = el('input', { type: 'password', placeholder: hasKey ? '•••••••• (saved)' : 'zk_…', autocomplete: 'off', 'aria-label': 'Zerion API key' });
   const saveKey = el('button', { class: 'btn' }, 'Save');
+  const keyMsg = el('div', { class: 'form-msg' });
   saveKey.onclick = () => {
     const v = keyInput.value.trim();
     if (v === '') return;
-    saveApiKey(v);
+    // a refused key (a stray character pasted with it) is not kept: say why
+    const problem = saveApiKey(v);
+    if (problem !== null) {
+      keyMsg.textContent = problem;
+      return;
+    }
     ctx.onKeyChanged();
     ctx.refresh();
   };
@@ -247,8 +253,12 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
   const b = ctx.budget;
   const clear = el('button', { class: 'btn' }, 'Clear cached data');
   clear.onclick = async () => {
-    await ctx.onClearCache();
-    clear.textContent = 'Cleared';
+    try {
+      await ctx.onClearCache();
+      clear.textContent = 'Cleared';
+    } catch {
+      clear.textContent = 'Could not clear';
+    }
   };
 
   const refresh = ctx.onRefresh
@@ -287,6 +297,7 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
       el('a', { href: 'https://dashboard.zerion.io', target: '_blank', rel: 'noopener noreferrer' }, 'Get a free key ↗'),
     ),
     el('div', { class: 'form-row' }, keyInput, saveKey, hasKey ? clearKey : null),
+    keyMsg,
     el('p', { class: 'muted small' }, 'The key is sent only to api.zerion.io. It is visible in this browser’s devtools — use a free key.'),
 
     el('h3', {}, `Your wallets (${p.owned.length})`),
@@ -331,32 +342,51 @@ const RESTING: Record<string, string> = {
   budget: 'resting: the rest of today’s requests are kept for the town',
   error: 'resting after an error; trying again soon',
   auth: 'stopped: Zerion did not accept the key',
+  done: 'up to date',
   stopped: 'not running',
 };
+
+/**
+ * How far back each wallet's history reaches. Its own element: while history
+ * arrives the app replaces just this (every 2 s), keeping the rest of the
+ * panel and its messages ("Saved.", an import's result) as they are.
+ */
+export function historyRows(ctx: Pick<GuildPanelContext, 'history' | 'prefs'>): HTMLElement {
+  const h = ctx.history;
+  // null: the walk back is not running (a null pause, by contrast, means it is reaching back now)
+  const paused = h === null ? 'stopped' : h.paused;
+  return el(
+    'div',
+    { class: 'history-rows' },
+    ...(h?.statuses ?? []).map((s) => {
+      const name = ctx.prefs.ens[s.address] || shortAddr(s.address);
+      const reach = s.oldest !== null ? ` · back to ${new Date(s.oldest).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : '';
+      const state = s.complete ? '✓ all of it, from the very first' : s.capped ? 'partial: a very busy wallet, kept to the newest 50,000' : paused === null ? 'reaching back…' : (RESTING[paused] ?? 'resting');
+      return el(
+        'div',
+        { class: `history-row${s.complete ? ' done' : ''}`, 'data-address': s.address },
+        el('strong', {}, name),
+        el('span', {}, `${s.count.toLocaleString('en-US')} transactions${s.spam > 0 ? ` (${s.spam.toLocaleString('en-US')} spam)` : ''}${reach}`),
+        el('span', { class: 'muted small' }, `${state} · ${s.backfillRequests} request${s.backfillRequests === 1 ? '' : 's'} so far`),
+      );
+    }),
+  );
+}
 
 /** Lifetime history: every transaction your wallets ever made, gathered once and kept in this browser. */
 function historySection(ctx: GuildPanelContext): (HTMLElement | null)[] {
   const h = ctx.history;
   const live = loadApiKey() !== null && ctx.prefs.owned.length > 0;
   if (!live && (h === null || h.statuses.length === 0)) return [];
-  const rows = (h?.statuses ?? []).map((s) => {
-    const name = ctx.prefs.ens[s.address] || shortAddr(s.address);
-    const reach = s.oldest !== null ? ` · back to ${new Date(s.oldest).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : '';
-    const paused = h?.paused ?? 'stopped';
-    const state = s.complete ? '✓ all of it, from the very first' : s.capped ? 'partial: a very busy wallet, kept to the newest 50,000' : paused === null ? 'reaching back…' : (RESTING[paused] ?? 'resting');
-    return el(
-      'div',
-      { class: `history-row${s.complete ? ' done' : ''}`, 'data-address': s.address },
-      el('strong', {}, name),
-      el('span', {}, `${s.count.toLocaleString('en-US')} transactions${reach}`),
-      el('span', { class: 'muted small' }, `${state} · ${s.backfillRequests} request${s.backfillRequests === 1 ? '' : 's'} so far`),
-    );
-  });
   // save and load: the history survives a new browser without asking Zerion again
   const msg = el('div', { class: 'form-msg' });
   const save = el('button', { class: 'btn' }, '⬇ Save to a file');
   save.onclick = async () => {
-    msg.textContent = (await ctx.onExportHistory()) ? 'Saved.' : 'Nothing gathered yet to save.';
+    try {
+      msg.textContent = (await ctx.onExportHistory()) ? 'Saved.' : 'Nothing gathered yet to save.';
+    } catch (e) {
+      msg.textContent = `Could not save: ${e instanceof Error ? e.message : String(e)}`;
+    }
   };
   const file = el('input', { type: 'file', accept: '.gz,.json,application/gzip,application/json', 'aria-label': 'History file to load', hidden: '' });
   const load = el('button', { class: 'btn' }, '⬆ Load from a file');
@@ -375,7 +405,7 @@ function historySection(ctx: GuildPanelContext): (HTMLElement | null)[] {
   return [
     el('h3', {}, 'Lifetime history'),
     el('p', { class: 'muted small' }, 'Every transaction your wallets ever made, gathered once (a request per hundred) and kept in this browser; afterwards only what is new is asked for. It walks back a page at a time while the tab is open, leaving 40% of each day’s requests for the town. Save it to a file to take it to another browser.'),
-    ...rows,
+    historyRows(ctx),
     el('div', { class: 'form-row' }, save, load, file),
     msg,
   ];

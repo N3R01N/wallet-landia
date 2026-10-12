@@ -75,14 +75,24 @@ export function validRpcUrl(url: string): boolean {
   }
 }
 
-export async function rpcCall<T>(method: string, params: unknown[]): Promise<T> {
-  const res = await fetch(rpcUrl, {
+/** How long a node may take to answer: a hung request must not stall the heartbeat or a block check. */
+const RPC_TIMEOUT_MS = 10_000;
+
+/** One JSON-RPC POST; a node that refuses (429, 5xx) or does not answer throws. */
+async function rpcPost(url: string, body: unknown): Promise<unknown> {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: nextId++, method, params }),
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
   });
-  const body = (await res.json()) as { result?: T; error?: { message?: string } };
-  if (body.error !== undefined || body.result === undefined) throw new Error(`rpc ${method}: ${body.error?.message ?? 'no result'}`);
+  if (!res.ok) throw new Error(`rpc ${res.status}`); // 429: rate-limited
+  return res.json();
+}
+
+export async function rpcCall<T>(method: string, params: unknown[]): Promise<T> {
+  const body = (await rpcPost(rpcUrl, { jsonrpc: '2.0', id: nextId++, method, params })) as { result?: T; error?: { message?: string } } | null;
+  if (body === null || body.error !== undefined || body.result === undefined) throw new Error(`rpc ${method}: ${body?.error?.message ?? 'no result'}`);
   return body.result;
 }
 
@@ -91,13 +101,13 @@ export async function rpcBatch(calls: { method: string; params: unknown[] }[]): 
   if (calls.length === 0) return [];
   const base = nextId;
   nextId += calls.length;
-  const res = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(calls.map((c, i) => ({ jsonrpc: '2.0', id: base + i, method: c.method, params: c.params }))),
-  });
-  const body = (await res.json()) as { id: number; result?: string }[];
-  const byId = new Map(body.map((r) => [r.id, r.result ?? null]));
+  const body = await rpcPost(
+    rpcUrl,
+    calls.map((c, i) => ({ jsonrpc: '2.0', id: base + i, method: c.method, params: c.params })),
+  );
+  // a node without batches (or limiting us) answers with one error object
+  if (!Array.isArray(body)) throw new Error('rpc: no batch answer');
+  const byId = new Map((body as { id: number; result?: string }[]).map((r) => [r.id, r.result ?? null]));
   return calls.map((_, i) => byId.get(base + i) ?? null);
 }
 
@@ -173,15 +183,11 @@ export function startHeartbeat(onBeat: (beat: BlockBeat) => void, opts: { chain?
     if (stopped) return;
     try {
       if (document.visibilityState === 'visible') {
-        const res = await fetch(opts.url ?? rpcUrl, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['latest', false] }),
-        });
-        if (!res.ok) throw new Error(`rpc ${res.status}`); // 429: rate-limited
-        const body = (await res.json()) as { result?: RpcBlock };
-        const b = body.result;
-        if (b === undefined) throw new Error('rpc: no block');
+        const body = (await rpcPost(opts.url ?? rpcUrl, { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['latest', false] })) as { result?: RpcBlock } | null;
+        // stopped while it was asking (a realm switch): no last beat for the old town
+        if (stopped) return;
+        const b = body?.result;
+        if (b === undefined || b === null) throw new Error('rpc: no block');
         failures = 0;
         const number = parseInt(b.number, 16);
         if (number !== last) {
@@ -201,6 +207,7 @@ export function startHeartbeat(onBeat: (beat: BlockBeat) => void, opts: { chain?
       // offline, or the node is limiting us: back off
       failures++;
     }
+    if (stopped) return;
     // a hidden tab asks nothing; look again every so often to see if it is back
     const delay = document.visibilityState === 'visible' ? nextPollDelay({ lastBlockMs, now: Date.now(), misses, failures, ...(opts.every !== undefined ? { every: opts.every } : {}) }) : 5_000;
     timer = setTimeout(() => void tick(), delay);

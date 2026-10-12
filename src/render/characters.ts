@@ -134,7 +134,7 @@ function wings(c: Ctx, x: number, y: number, color: string, span: number, frame:
   const up = frame % 2 === 0;
   for (let i = 0; i < span; i++) {
     const h = up ? span - i : Math.floor(i / 2) + 1;
-    px(c, x - i, y - (up ? h : 0), 1, up ? h : h, i % 3 === 0 ? shade(color, -0.2) : color);
+    px(c, x - i, y - (up ? h : 0), 1, h, i % 3 === 0 ? shade(color, -0.2) : color);
   }
 }
 

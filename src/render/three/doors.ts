@@ -10,6 +10,7 @@
  */
 
 import * as THREE from 'three';
+import { keep } from './dispose.js';
 
 /** plank: boards and iron straps · glass: a framed pane · slide: two panels that part · plain: one flat leaf. */
 export type DoorStyle = 'plank' | 'glass' | 'slide' | 'plain';
@@ -55,7 +56,7 @@ export interface DoorOpts {
 }
 
 /** The room behind every doorway (shared, so the renderer can light it at night). */
-export const doorwayMaterial = new THREE.MeshStandardMaterial({ color: '#1e150e', emissive: new THREE.Color('#ffa24a'), emissiveIntensity: 0, roughness: 1 });
+export const doorwayMaterial = keep(new THREE.MeshStandardMaterial({ color: '#1e150e', emissive: new THREE.Color('#ffa24a'), emissiveIntensity: 0, roughness: 1 }));
 
 /** How far a swinging leaf opens (a little past square). */
 const SWING = 1.7;

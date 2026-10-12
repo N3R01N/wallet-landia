@@ -94,7 +94,8 @@ export interface TownPlan {
 }
 
 export function tileAt(plan: TownPlan, x: number, y: number): TileKind {
-  return plan.tiles[y * MAP_W + x] ?? 'grass';
+  // x is bounded too: x = MAP_W would otherwise read the next row's first tile
+  return x >= 0 && x < MAP_W ? (plan.tiles[y * MAP_W + x] ?? 'grass') : 'grass';
 }
 
 function baseTiles(): TileKind[] {
@@ -166,8 +167,9 @@ export function planTown(guild: Guild): TownPlan {
     for (const d of OVERFLOW) {
       if (slot !== null) break;
       slot = claim(SLOTS[d], protocol.id, used);
-      placedIn = d;
+      if (slot !== null) placedIn = d;
     }
+    // a spare edge plot belongs to no district: it keeps its own, not the last full one tried
     slot ??= claimAny(used);
     if (slot === null) {
       unplaced.push(protocol.id);

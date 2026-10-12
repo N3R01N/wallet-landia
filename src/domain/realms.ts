@@ -120,12 +120,17 @@ export function linkBridges(journeys: Journey[]): void {
   for (const j of journeys) {
     if (j.verb !== 'bridge' || !j.initiated || j.bridge !== undefined) continue;
     const out = sent(j);
-    const arrival = journeys.find((r) => {
-      if (r === j || r.chainId === j.chainId || r.hero !== j.hero || taken.has(r.key) || r.bridge !== undefined) return false;
-      if (r.time < j.time - 60_000 || r.time > j.time + CROSSING_MS) return false;
+    // an arrival is something that came in (a receive, or the bridge's own landing), not a later
+    // swap of the same coin by the same hero; of those, the one closest in time
+    let arrival: Journey | undefined;
+    for (const r of journeys) {
+      if (r === j || r.chainId === j.chainId || r.hero !== j.hero || taken.has(r.key) || r.bridge !== undefined) continue;
+      if (r.initiated && r.verb !== 'bridge' && r.verb !== 'receive') continue;
+      if (r.time < j.time - 60_000 || r.time > j.time + CROSSING_MS) continue;
+      if (arrival && Math.abs(r.time - j.time) >= Math.abs(arrival.time - j.time)) continue;
       const got = r.steps.flatMap((s) => s.get).filter((g) => !g.isNft);
-      return out.some((g) => got.some((x) => canonical(x.symbol) === canonical(g.symbol) && x.quantity <= g.quantity * 1.01 && x.quantity >= g.quantity * 0.85));
-    });
+      if (out.some((g) => got.some((x) => canonical(x.symbol) === canonical(g.symbol) && x.quantity <= g.quantity * 1.01 && x.quantity >= g.quantity * 0.85))) arrival = r;
+    }
     if (arrival) {
       taken.add(arrival.key);
       j.bridge = { from: j.chainId, to: arrival.chainId, pair: arrival.key };

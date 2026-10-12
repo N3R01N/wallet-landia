@@ -14,7 +14,7 @@ function fakeLedger(pages: Record<string, number>, fail?: (address: string) => E
   const done = new Map(Object.keys(pages).map((a) => [a, 0]));
   const steps: string[] = [];
   const status = (a: string): LedgerStatus | null =>
-    done.has(a) ? { address: a, count: done.get(a)! * 100, newest: 0, oldest: 0, complete: done.get(a)! >= pages[a]!, capped: false, backfillRequests: done.get(a)! } : null;
+    done.has(a) ? { address: a, count: done.get(a)! * 100, newest: 0, oldest: 0, complete: done.get(a)! >= pages[a]!, gap: false, capped: false, spam: 0, backfillRequests: done.get(a)! } : null;
   const ledger = {
     status: async (a: string) => status(a),
     backfill: async (a: string) => {

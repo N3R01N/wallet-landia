@@ -273,10 +273,8 @@ export const ALL_MEDALS: readonly Medal[] = MEDALS;
 
 /** The rule behind each medal, for the player's lifetime badges (`player.ts`). */
 export function medalRules(): { medal: Medal; journey?: JourneyRule; holding?: HoldingRule }[] {
-  return MEDALS.map((m) => {
-    const medal: Medal = { id: m.id, name: m.name, icon: m.icon, hint: m.hint, lesson: m.lesson, title: m.title };
-    return { medal: ALL_MEDALS.find((x) => x.id === m.id) ?? medal, ...(m.journey ? { journey: m.journey } : {}), ...(m.holding ? { holding: m.holding } : {}) };
-  });
+  // ALL_MEDALS is MEDALS, so each rule's medal is simply its own entry
+  return MEDALS.map((m) => ({ medal: m, ...(m.journey ? { journey: m.journey } : {}), ...(m.holding ? { holding: m.holding } : {}) }));
 }
 
 /** A hero's journeys (theirs, or a guild-mate's send to them), oldest first. */

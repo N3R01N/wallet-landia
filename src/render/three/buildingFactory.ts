@@ -13,6 +13,7 @@ import { buildingChain } from '../../assets/art.js';
 import { packModel } from './models.js';
 import { makeDoor, type DoorRig } from './doors.js';
 import { hashString } from '../../util/rng.js';
+import { keep } from './dispose.js';
 
 /** 2D wall/roof heights are in art px; this turns them into tiles. */
 export const HEIGHT_SCALE = 1 / 12;
@@ -47,15 +48,15 @@ export interface BuiltBuilding {
 }
 
 export class BuildingFactory {
-  readonly windowMat = new THREE.MeshStandardMaterial({ color: P.glass, emissive: new THREE.Color(P.glassLit), emissiveIntensity: 0, roughness: 0.3 });
-  readonly fireMat = new THREE.MeshStandardMaterial({ color: '#ff8a2a', emissive: new THREE.Color('#ff7a1a'), emissiveIntensity: 1.2 });
+  readonly windowMat = keep(new THREE.MeshStandardMaterial({ color: P.glass, emissive: new THREE.Color(P.glassLit), emissiveIntensity: 0, roughness: 0.3 }));
+  readonly fireMat = keep(new THREE.MeshStandardMaterial({ color: '#ff8a2a', emissive: new THREE.Color('#ff7a1a'), emissiveIntensity: 1.2 }));
   #mats = new Map<string, THREE.MeshStandardMaterial>();
 
   mat(color: string, opts: { emissive?: string; emissiveIntensity?: number; transparent?: boolean; opacity?: number } = {}): THREE.MeshStandardMaterial {
     const key = `${color}|${opts.emissive ?? ''}|${opts.opacity ?? 1}`;
     let m = this.#mats.get(key);
     if (m === undefined) {
-      m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true });
+      m = keep(new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true }));
       if (opts.emissive) {
         m.emissive = new THREE.Color(opts.emissive);
         m.emissiveIntensity = opts.emissiveIntensity ?? 0.4;
@@ -67,6 +68,14 @@ export class BuildingFactory {
       this.#mats.set(key, m);
     }
     return m;
+  }
+
+  /** Free the shared materials (the theme using this factory is gone). */
+  dispose(): void {
+    for (const m of this.#mats.values()) m.dispose();
+    this.#mats.clear();
+    this.windowMat.dispose();
+    this.fireMat.dispose();
   }
 
   build(b: BuildingSpec): BuiltBuilding {

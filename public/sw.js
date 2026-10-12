@@ -13,7 +13,7 @@
  * Bump VERSION to drop everything stored by an older worker.
  */
 
-const VERSION = 'wl-2';
+const VERSION = 'wl-3';
 const KEEP = `${VERSION}-keep`;
 const PAGES = `${VERSION}-pages`;
 
@@ -50,19 +50,25 @@ async function fromDevice(req) {
   const hit = await cache.match(req);
   if (hit) return hit;
   const res = await fetch(req);
-  if (res.ok) await cache.put(req, res.clone());
+  // only whole answers: a 206 (a range of a video, say) makes cache.put throw
+  if (res.status === 200) await cache.put(req, res.clone());
   return res;
 }
 
-/** Fresh from the network, keeping a copy for when there is none. */
+/**
+ * Fresh from the network, keeping a copy for when there is none. A page is
+ * kept under its path alone: ?wallet=…, ?realm=… and the like are the same
+ * page, so one copy serves them all offline instead of one per link.
+ */
 async function fromNetwork(req) {
   const cache = await caches.open(PAGES);
+  const key = req.mode === 'navigate' ? new URL(req.url).pathname : req;
   try {
     const res = await fetch(req);
-    if (res.ok) await cache.put(req, res.clone());
+    if (res.status === 200) await cache.put(key, res.clone());
     return res;
   } catch (error) {
-    const hit = await cache.match(req);
+    const hit = await cache.match(key);
     if (hit) return hit;
     throw error;
   }

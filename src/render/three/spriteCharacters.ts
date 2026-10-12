@@ -88,6 +88,9 @@ class SpriteCharacter implements SandboxCharacter {
 
   dispose(): void {
     this.object.removeFromParent();
+    // its own contact shadow (the sprite's materials are shared per art frame)
+    this.#shadow.geometry.dispose();
+    (this.#shadow.material as THREE.Material).dispose();
   }
 }
 

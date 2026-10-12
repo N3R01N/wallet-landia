@@ -14,6 +14,8 @@ export const LEDGER_FILE_FORMAT = 'wallet-landia-ledger/1';
 /** Far beyond any real history (and a wallet stops walking back at 50,000). */
 const MAX_PER_WALLET = 200_000;
 const MAX_WALLETS = 50;
+/** Unpacked, a file may be at most this big (~2 KB a transaction is plenty): a small gzip can unpack to gigabytes. */
+const MAX_BYTES = 512 * 1024 * 1024;
 
 export interface LedgerFile {
   format: typeof LEDGER_FILE_FORMAT;
@@ -35,8 +37,9 @@ export async function decodeLedgerFile(data: ArrayBuffer): Promise<LedgerFile> {
   let text: string;
   try {
     const gz = bytes[0] === 0x1f && bytes[1] === 0x8b;
-    text = gz ? await new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip'))).text() : new TextDecoder().decode(bytes);
-  } catch {
+    text = gz ? await gunzipCapped(bytes, MAX_BYTES) : new TextDecoder().decode(bytes);
+  } catch (error) {
+    if (error instanceof TooBig) throw new Error('That file is far too big to be a history file.');
     throw new Error('That file could not be read (not a history file, or damaged).');
   }
   let raw: unknown;
@@ -46,6 +49,26 @@ export async function decodeLedgerFile(data: ArrayBuffer): Promise<LedgerFile> {
     throw new Error('That file is not a history file.');
   }
   return validate(raw);
+}
+
+class TooBig extends Error {}
+
+/** Unzip, counting as it goes, and stop past `max` bytes. */
+async function gunzipCapped(bytes: Uint8Array, max: number): Promise<string> {
+  const reader = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let out = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return out + decoder.decode();
+    total += value.byteLength;
+    if (total > max) {
+      void reader.cancel();
+      throw new TooBig();
+    }
+    out += decoder.decode(value, { stream: true });
+  }
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -66,5 +89,9 @@ function validate(raw: unknown): LedgerFile {
 function looksLikeTx(t: unknown): t is TransactionResource {
   if (!isObj(t) || typeof t.id !== 'string' || !isObj(t.attributes)) return false;
   const a = t.attributes;
+  // the chain is read as relationships.chain.data.id: a chain without data would throw there
+  const chain = isObj(t.relationships) ? t.relationships.chain : undefined;
+  if (chain !== undefined && !(isObj(chain) && isObj(chain.data) && typeof chain.data.id === 'string')) return false;
+  if (t.relationships !== undefined && !isObj(t.relationships)) return false;
   return typeof a.hash === 'string' && typeof a.mined_at === 'string' && !Number.isNaN(Date.parse(a.mined_at)) && typeof a.operation_type === 'string' && typeof a.status === 'string' && (a.transfers === undefined || Array.isArray(a.transfers));
 }

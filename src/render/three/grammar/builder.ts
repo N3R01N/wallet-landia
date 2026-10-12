@@ -11,6 +11,7 @@ import { hashString } from '../../../util/rng.js';
 import { styleFor } from '../../buildings.js';
 import type { BuildingFactory, BuildingSpec, BuiltBuilding } from '../buildingFactory.js';
 import type { MaterialLibrary } from './materials.js';
+import { keep } from '../dispose.js';
 import { makeDoor, type DoorMats } from '../doors.js';
 import { Mason, MEDIEVAL, METRES_PER_TILE, roofTint, WASHES, type Ctx, type RecipeSet } from './medieval.js';
 import { MODERN } from './modern.js';
@@ -98,11 +99,20 @@ export class GrammarBuilder {
     return out;
   }
 
+  /** Free the emblem plates (the theme is gone). */
+  dispose(): void {
+    for (const m of this.#emblems.values()) {
+      (m as THREE.MeshStandardMaterial).map?.dispose();
+      m.dispose();
+    }
+    this.#emblems.clear();
+  }
+
   #emblem(spec: BuildingSpec): THREE.Material {
     const st = styleFor(spec.kind, spec.tier);
     let mat = this.#emblems.get(st.emblem);
     if (!mat) {
-      mat = new THREE.MeshStandardMaterial({ map: this.#factory.emblemTexture(st), roughness: 0.8 });
+      mat = keep(new THREE.MeshStandardMaterial({ map: this.#factory.emblemTexture(st), roughness: 0.8 }));
       this.#emblems.set(st.emblem, mat);
     }
     return mat;

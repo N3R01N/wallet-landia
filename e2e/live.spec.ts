@@ -105,7 +105,7 @@ test('the Guild panel adds a wallet and rejects nonsense', async ({ page }) => {
   const follow = page.locator('.inspector input[aria-label="0x… or name.eth"]').nth(1);
   await follow.fill('not an address');
   await page.locator('.inspector .btn', { hasText: 'Follow' }).click();
-  await expect(page.locator('.inspector .form-msg').nth(1)).toContainText('0x… address or an ENS name');
+  await expect(page.locator('.inspector .form-msg').nth(2)).toContainText('0x… address or an ENS name');
   await follow.fill('0x1111111111111111111111111111111111111111');
   await page.locator('.inspector .btn', { hasText: 'Follow' }).click();
   await expect(page.locator('.inspector')).toContainText('Followed towns (1)');

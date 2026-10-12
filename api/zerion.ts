@@ -16,6 +16,8 @@ export const config = { runtime: 'edge' };
 const UPSTREAM = 'https://api.zerion.io';
 /** Headers the app reads from Zerion's answers. */
 const PASS = /^(content-type|retry-after|ratelimit-.*)$/i;
+/** Under the edge's own limit (25 s to start answering), so the player gets a clear 504 rather than a dropped request. */
+const UPSTREAM_TIMEOUT_MS = 20_000;
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'GET') return new Response('Only GET', { status: 405, headers: { allow: 'GET' } });
@@ -28,9 +30,18 @@ export default async function handler(req: Request): Promise<Response> {
   if (!auth || !/^Basic [A-Za-z0-9+/=]+$/.test(auth)) return new Response('A Zerion key is needed', { status: 401 });
 
   const query = url.searchParams.toString();
-  const upstream = await fetch(`${UPSTREAM}/${path}${query ? `?${query}` : ''}`, {
-    headers: { authorization: auth, accept: 'application/json' },
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${UPSTREAM}/${path}${query ? `?${query}` : ''}`, {
+      headers: { authorization: auth, accept: 'application/json' },
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+  } catch (error) {
+    // Zerion unreachable or too slow: a gateway answer (the app retries 502/504 once)
+    // instead of the function dying with an unhandled error
+    const timedOut = error instanceof DOMException && error.name === 'TimeoutError';
+    return new Response(timedOut ? 'Zerion took too long' : 'Zerion is unreachable', { status: timedOut ? 504 : 502, headers: { 'cache-control': 'no-store' } });
+  }
   const headers = new Headers({ 'cache-control': 'no-store' });
   upstream.headers.forEach((value, key) => {
     if (PASS.test(key)) headers.set(key, value);

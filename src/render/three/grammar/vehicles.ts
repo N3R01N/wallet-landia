@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import type { VehicleKind } from '../../../assets/theme.js';
 import type { MaterialLibrary } from './materials.js';
 import { METRES_PER_TILE } from './medieval.js';
+import { keep } from '../dispose.js';
 
 export interface Vehicle {
   /** In tiles; origin on the ground, +z forward. */
@@ -32,7 +33,7 @@ export function paint(color: string, metal = 0.35, rough = 0.32): THREE.MeshStan
   const key = `${color}|${metal}|${rough}`;
   let m = paints.get(key);
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ color, metalness: metal, roughness: rough });
+    m = keep(new THREE.MeshStandardMaterial({ color, metalness: metal, roughness: rough }));
     paints.set(key, m);
   }
   return m;
@@ -41,7 +42,7 @@ export const glow = (color: string): THREE.MeshStandardMaterial => {
   const key = `glow|${color}`;
   let m = paints.get(key);
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ color, emissive: new THREE.Color(color), emissiveIntensity: 2.2 });
+    m = keep(new THREE.MeshStandardMaterial({ color, emissive: new THREE.Color(color), emissiveIntensity: 2.2 }));
     paints.set(key, m);
   }
   return m;

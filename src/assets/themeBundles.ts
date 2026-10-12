@@ -35,7 +35,9 @@ export function linkBundles(raws: Raw[]): ThemeBundle[] {
   const byId = new Map(raws.map((r) => [r.manifest.id, r]));
   const flat = (r: Raw, seen: string[]): ThemeSpec => {
     const parentId = r.resolved.extends;
-    if (!parentId) return r.resolved;
+    // a copy: the caller mutates the result (resolveUses, charactersPatch), and the parent's own
+    // spec must stay as loaded, or a child's result would depend on the order in index.json
+    if (!parentId) return structuredClone(r.resolved);
     const parent = byId.get(parentId);
     if (!parent || seen.includes(parentId) || seen.length > 4) {
       r.problems.push(parent ? `theme.extends "${parentId}" makes a loop (ignored)` : `theme.extends "${parentId}": no such theme (ignored)`);
@@ -72,22 +74,33 @@ export function rawBundle(manifest: PackManifest, url: (path: string) => string,
 
 export async function loadThemeBundles(base = '/themes', imported: Iterable<LoadedPack> = []): Promise<ThemeBundle[]> {
   const raws: Raw[] = [];
+  let ids: unknown = [];
   try {
-    const res = await fetch(`${base}/index.json`);
-    const ids = res.ok ? ((await res.json()) as unknown) : [];
-    for (const id of Array.isArray(ids) ? ids : []) {
-      if (typeof id !== 'string' || !/^[a-z0-9-]+$/.test(id)) continue;
-      const r = await fetch(`${base}/${id}/pack.json`);
-      if (!r.ok) continue;
-      const { manifest, problems } = validatePack(await r.json());
-      // files carry the theme's version, so caches keep them until a new release
-      const raw = manifest ? rawBundle(manifest, (p) => versioned(`${base}/${id}/${p}`, manifest.version), 'bundled', problems) : null;
-      if (raw) raws.push(raw);
-      else console.warn(`theme ${id}:`, problems);
-    }
+    // the lists name each pack's version: always re-checked (a 304 when unchanged), never stale
+    const res = await fetch(`${base}/index.json`, { cache: 'no-cache' });
+    if (res.ok) ids = await res.json();
   } catch (error) {
     console.warn('bundled themes unavailable', error);
   }
+  // each theme on its own (in parallel): one broken pack.json never keeps the others out
+  const wanted = (Array.isArray(ids) ? ids : []).filter((id): id is string => typeof id === 'string' && /^[a-z0-9-]+$/.test(id));
+  const loaded = await Promise.allSettled(
+    wanted.map(async (id) => {
+      const r = await fetch(`${base}/${id}/pack.json`, { cache: 'no-cache' });
+      if (!r.ok) return null;
+      const { manifest, problems } = validatePack(await r.json());
+      // files carry the theme's version, so caches keep them until a new release
+      const raw = manifest ? rawBundle(manifest, (p) => versioned(`${base}/${id}/${p}`, manifest.version), 'bundled', problems) : null;
+      if (!raw) console.warn(`theme ${id}:`, problems);
+      return raw;
+    }),
+  );
+  // in index.json's order, whatever order they arrived in
+  loaded.forEach((r, i) => {
+    if (r.status === 'fulfilled') {
+      if (r.value) raws.push(r.value);
+    } else console.warn(`theme ${wanted[i]} unavailable`, r.reason);
+  });
   for (const pack of imported) {
     if (raws.some((r) => r.manifest.id === pack.manifest.id)) continue;
     const raw = rawBundle(pack.manifest, (p) => pack.url(p), 'imported');

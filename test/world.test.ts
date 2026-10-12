@@ -123,8 +123,13 @@ describe('Quest Replay', () => {
     const { Sim } = await import('../src/world/sim.js');
     const sim = new Sim(guild, plan);
     const j = guild.journeys.find((x) => x.initiated)!;
+    const played = sim.played;
+    const logged = sim.log.length;
     sim.solo(j);
     expect(sim.soloing).toBe(true);
+    // a replay is not logged again (its badge toasts would show twice)
+    expect(sim.played).toBe(played);
+    expect(sim.log.length).toBe(logged);
     const t0 = sim.t;
     for (let i = 0; i < 20; i++) sim.step(0.1);
     expect(sim.t).toBeCloseTo(t0, 5);

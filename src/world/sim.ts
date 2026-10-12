@@ -7,10 +7,10 @@
 import type { Goods, Guild, Hero, HeroClass, Journey, JourneyStep, Target, Verb } from '../domain/model.js';
 import type { Tier } from '../domain/tiers.js';
 import { makeRng } from '../util/rng.js';
-import { MAP_W, type Placed, type Pt, type TownPlan } from './layout.js';
+import { type Placed, type Pt, type TownPlan } from './layout.js';
 import { harvestOf, harvestOfUsd, loanHealth, type Harvest, type LoanHealth, type PriceMove } from '../domain/risk.js';
 import { ethPriceFrom, initialChain, nextChain, type BlockInfo, type ChainState } from './chain.js';
-import { doorSlot, flightRoute, walkRoute } from './route.js';
+import { doorSlot, flightRoute, walkableAt, walkRoute } from './route.js';
 import { realmOf } from '../domain/realms.js';
 
 // --- schedule ----------------------------------------------------------------
@@ -461,7 +461,8 @@ export class Sim {
       this.#releaseSlot(hero);
     }
     const before = new Set(this.agents);
-    this.#dispatch(j);
+    // a replay is not news: it stays out of the log and `played`, so its badges don't toast again
+    this.#dispatch(j, false);
     // Whoever carries it out: the hero, or a courier for things that arrive.
     const actor = j.initiated ? (hero ?? null) : (this.agents.find((a) => !before.has(a)) ?? null);
     this.#solo = { journey: j, agent: actor };
@@ -552,10 +553,12 @@ export class Sim {
 
   // --- dispatch --------------------------------------------------------------
 
-  #dispatch(j: Journey): void {
-    this.log.push({ journey: j, at: this.t });
-    this.played++;
-    if (this.log.length > 40) this.log.shift();
+  #dispatch(j: Journey, record = true): void {
+    if (record) {
+      this.log.push({ journey: j, at: this.t });
+      this.played++;
+      if (this.log.length > 40) this.log.shift();
+    }
     const hero = this.#heroAgents.get(j.hero);
     if (hero === undefined || hero.hero === undefined) return;
     const home = this.plan.homes.get(hero.hero.address);
@@ -1092,9 +1095,7 @@ export class Sim {
     const d = Math.hypot(a.x - mate.x, a.y - mate.y);
     if (d < 0.1) return false;
     const spot = { x: mate.x + ((a.x - mate.x) / d) * 0.5, y: mate.y + ((a.y - mate.y) / d) * 0.5 };
-    const tx = Math.floor(spot.x);
-    const ty = Math.floor(spot.y);
-    if (tx < 0 || ty < 0 || this.plan.walkable[ty * MAP_W + tx] !== 1) return false;
+    if (!walkableAt(this.plan, spot)) return false;
     const talk = 3 + this.#rng() * 4;
     const travel = d / a.speed + 0.6;
     this.#releaseSlot(mate);

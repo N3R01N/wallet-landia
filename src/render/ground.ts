@@ -139,7 +139,9 @@ export function scatterProps(plan: TownPlan): Prop[] {
       for (let dy = -1; dy <= 1; dy++)
         for (let dx = -1; dx <= 1; dx++) {
           const n = tileAt(plan, x + dx, y + dy);
-          if (n === 'road' || n === 'plaza' || n === 'path' || plan.walkable[(y + dy) * MAP_W + x + dx] === 0) nearRoad = true;
+          // (off the map's side is not the next row's other end)
+          const inside = x + dx >= 0 && x + dx < MAP_W;
+          if (n === 'road' || n === 'plaza' || n === 'path' || (inside && plan.walkable[(y + dy) * MAP_W + x + dx] === 0)) nearRoad = true;
         }
       if (nearRoad) continue;
       const r = rng();

@@ -40,6 +40,8 @@ export class Backfill {
   #run = 0;
   /** The wallet served last: the next turn goes to the next unfinished one after it. */
   #last: string | null = null;
+  /** Errors in a row, for the back-off. */
+  #failures = 0;
   /** Why it is not walking right now (for the Guild panel), or null while it is. */
   paused: 'hidden' | 'budget' | 'error' | 'auth' | 'done' | 'stopped' | null = 'stopped';
 
@@ -80,15 +82,19 @@ export class Backfill {
     o.onProgress(await this.statuses());
     while (run === this.#run) {
       const statuses = await this.statuses();
-      // wallets the town has not loaded yet have no ledger: nothing to walk back from
-      const open = statuses.filter((s) => !s.complete && !s.capped);
+      // wallets the town has not loaded yet have no ledger, and one with nothing kept yet
+      // (its first page was all pending) has nothing to walk back from: the next head starts it
+      const open = statuses.filter((s) => !s.complete && !s.capped && s.oldest !== null);
       if (open.length === 0) {
         this.paused = 'done';
         o.onProgress(statuses);
         return;
       }
       if (!o.visible()) {
-        this.paused = 'hidden';
+        if (this.paused !== 'hidden') {
+          this.paused = 'hidden';
+          o.onProgress(statuses);
+        }
         await o.sleep(o.idleMs / 6);
         continue;
       }
@@ -106,15 +112,21 @@ export class Backfill {
         await o.ledger.backfill(s.address);
         if (run !== this.#run) return;
         o.onProgress(await this.statuses());
-        await o.sleep(o.gapMs);
       } catch (error) {
         if (error instanceof ZerionError && error.kind === 'auth') {
           this.paused = 'auth';
+          o.onProgress(await this.statuses());
           return;
         }
+        // offline or failing: look again less and less often (up to ~10 minutes)
+        this.#failures++;
         this.paused = 'error';
-        await o.sleep(o.idleMs * 2);
+        o.onProgress(await this.statuses());
+        await o.sleep(Math.min(o.idleMs * 2 ** this.#failures, 20 * o.idleMs));
+        continue;
       }
+      this.#failures = 0;
+      await o.sleep(o.gapMs);
     }
   }
 }

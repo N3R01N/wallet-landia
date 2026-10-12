@@ -29,6 +29,7 @@ import type { Gesture } from '../../world/sim.js';
 
 /** World scale: one tile is this many metres, so a person is about one tile tall. */
 import { METRES_PER_TILE } from './grammar/medieval.js';
+import { disposeTree, keep as shared, resourceMark, type ResourceMark } from './dispose.js';
 export { METRES_PER_TILE };
 const FADE = 0.3;
 
@@ -214,7 +215,7 @@ function headOnly(mesh: THREE.SkinnedMesh): THREE.BufferGeometry {
   }
   const head = geo.clone();
   head.setIndex(out);
-  headCache.set(geo, head);
+  headCache.set(geo, shared(head));
   return head;
 }
 
@@ -355,7 +356,7 @@ function mergeParts(rider: THREE.Object3D, body: THREE.SkinnedMesh, key: string)
     merged = [];
     for (const b of buckets.values()) {
       const geometry = b.geos.length === 1 ? b.geos[0]! : mergeGeometries(b.geos, false);
-      if (geometry) merged.push({ material: b.material, geometry, group: b.group, names: b.names });
+      if (geometry) merged.push({ material: b.material, geometry: shared(geometry), group: b.group, names: b.names });
     }
     mergedCache.set(key, merged);
   }
@@ -434,6 +435,8 @@ interface Mount {
 }
 
 class RiggedCharacter implements SandboxCharacter {
+  /** Resources newer than this are this person's own (the kit's are older); freed with it. */
+  readonly #born: ResourceMark = resourceMark();
   readonly object = new THREE.Group();
   readonly #rider = new THREE.Group();
   readonly #mixer: THREE.AnimationMixer;
@@ -721,8 +724,13 @@ class RiggedCharacter implements SandboxCharacter {
 
   dispose(): void {
     this.#mixer.stopAllAction();
-    this.#mount?.mixer?.stopAllAction();
+    this.#mixer.uncacheRoot(this.#rider);
+    const mm = this.#mount?.mixer;
+    mm?.stopAllAction();
+    mm?.uncacheRoot(mm.getRoot());
     this.object.removeFromParent();
+    // wings, gear, a vehicle, a tinted mount, the dressed skin: made for this person alone
+    disposeTree(this.object, this.#born);
   }
 }
 

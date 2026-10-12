@@ -12,7 +12,7 @@ import { realmMap } from './realmMap.js';
 import type { LedgerStatus } from '../data/ledger.js';
 import { Session, type Shown } from '../data/session.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
-import { guildPanel } from './guildPanel.js';
+import { guildPanel, historyRows } from './guildPanel.js';
 import { looksPanel, themePicker, type LooksContext } from './looksPanel.js';
 import { assets } from '../assets/registry.js';
 import { loadBundledPacks, loadImportedPacks } from '../assets/packs.js';
@@ -25,7 +25,7 @@ import type { HitTarget, ViewKind, WorldView } from '../render/view.js';
 import { loadPrefs, savePrefs, type Prefs } from '../settings.js';
 import type { Renderer3D } from '../render/three/renderer3d.js';
 import { loadThemeBundles, type ThemeBundle } from '../assets/themeBundles.js';
-import { el, fmtDate } from './dom.js';
+import { el, fmtDate, shortAddr } from './dom.js';
 import { setCrests } from '../util/rng.js';
 import { Soundscape } from '../audio/soundscape.js';
 import { Tour, type TourStep } from './tour.js';
@@ -69,7 +69,7 @@ export class App {
   #guild!: Guild;
   #sim!: Sim;
   #realmBtn = el('button', { class: 'btn realm-btn', title: 'The Realm Map: Ethereum and its L2 provinces' }, '🗺');
-  #realmMap: HTMLElement | null = null;
+  #realmMap: { element: HTMLElement; dispose: () => void } | null = null;
   /** Your wallets' lifetime history, as the walk back last reported it. */
   #history: { statuses: LedgerStatus[]; paused: string | null } | null = null;
   #historyRedraw: ReturnType<typeof setTimeout> | null = null;
@@ -103,6 +103,9 @@ export class App {
   #playerBtn = el('button', { class: 'btn player-btn', title: 'You: your level and badges, from all your wallets' }, '🛡 Lv 1');
   /** When the player was last worked out (the walk back through history updates it now and then). */
   #playerAt = 0;
+  /** What the player was last worked out from, and how long that took (ms). */
+  #playerFrom: { raws: RawWallet[]; names: Map<string, string>; at: number } | null = null;
+  #playerCost = 0;
   #playerTimer: ReturnType<typeof setTimeout> | null = null;
   #toasts = el('div', { class: 'toasts', 'aria-live': 'polite' });
   /** What is still loading (reason → what to tell the player); the veil shows while any is. */
@@ -122,7 +125,8 @@ export class App {
     // the realm's chains, for every request from here on; ?realm= opens a province's town (links, tests)
     setRealmChains(this.#prefs.chains);
     const realmParam = new URLSearchParams(location.search).get('realm');
-    if (realmParam !== null && /^[a-z0-9-]{2,40}$/.test(realmParam)) this.#prefs.realm = realmParam;
+    // only a realm that is loaded: an unknown one would be saved as the default town, an empty one
+    if (realmParam !== null && this.#prefs.chains.includes(realmParam)) this.#prefs.realm = realmParam;
     this.#sound.setVolume(this.#prefs.volume);
     this.#setSound(this.#prefs.sound, false);
     this.#soundBtn.onclick = () => this.#setSound(!this.#sound.on);
@@ -147,11 +151,15 @@ export class App {
         const before = this.#history?.statuses.reduce((n, x) => n + x.count, 0) ?? 0;
         this.#history = { statuses, paused };
         if (statuses.reduce((n, x) => n + x.count, 0) !== before) this.#playerSoon();
-        // the open Guild panel follows along: at most every 2 s, always ending on the latest (not while the player types in it)
+        // the open Guild panel follows along: at most every 2 s, always ending on the latest
         if (this.#historyRedraw !== null) return;
         this.#historyRedraw = setTimeout(() => {
           this.#historyRedraw = null;
-          if (this.#guildOpen && !this.#editingInspector()) this.#openGuild();
+          if (!this.#guildOpen) return;
+          // just the history rows: a whole new panel would wipe its messages ("Saved.", an import's result)
+          const rows = this.#inspectorBody.querySelector('.history-rows');
+          if (rows) rows.replaceWith(historyRows({ history: this.#history, prefs: this.#prefs }));
+          else if ((this.#history?.statuses.length ?? 0) > 0 && !this.#editingInspector()) this.#openGuild(); // no section yet: it appears with the first rows
         }, 2000);
       },
     });
@@ -199,6 +207,11 @@ export class App {
         this.#themes = themes;
         if (!this.#applyTheme()) this.#busy('theme', null);
         this.#refreshThemePicker();
+      })
+      .catch((e: unknown) => {
+        // no themes: the plain look, never a town stuck behind the veil
+        console.warn('themes', e);
+        this.#busy('theme', null);
       });
     if (new URLSearchParams(location.search).has('freeze')) this.#sim.playing = false;
     let last = performance.now();
@@ -232,8 +245,14 @@ export class App {
 
   /** The town's bell rings with its own chain's blocks: Ethereum's in the kingdom, a province's from its own node. */
   #bell(): void {
-    const beat = this.#prefs.realm === 'ethereum' ? this.#beat : this.#province?.chain === this.#prefs.realm ? this.#province.beat : null;
+    const beat = this.#realmBeat();
     if (beat) this.#sim.bell(beat);
+  }
+
+  /** The latest block of the realm on show (null: none heard yet, or a province with no node to ask). */
+  #realmBeat(): BlockBeat | null {
+    const realm = this.#prefs.realm;
+    return realm === 'ethereum' ? this.#beat : this.#province?.chain === realm ? this.#province.beat : null;
   }
 
   /** A province's feed, while its town is open (Ethereum's runs always: it also checks the wallets). */
@@ -265,7 +284,7 @@ export class App {
   /** The bar's bell line: the latest block of the realm on show. */
   #showBeat(): void {
     const realm = this.#prefs.realm;
-    const beat = realm === 'ethereum' ? this.#beat : this.#province?.chain === realm ? this.#province.beat : null;
+    const beat = this.#realmBeat();
     const name = realmOf(realm).name;
     if (beat === null) {
       this.#beatLabel.textContent = realm === 'ethereum' || PROVINCE_RPC[realm] !== undefined ? `listening for ${name}'s bell…` : `${name}: no bell to listen to yet`;
@@ -283,16 +302,15 @@ export class App {
       onEnter: (id) => this.#enterRealm(id),
       onClose: () => this.#closeRealmMap(),
     });
-    this.#realmMap = map.element;
-    this.#realmMap.addEventListener('realm-dispose', () => map.dispose(), { once: true });
+    this.#realmMap = map;
     this.#stage.append(map.element);
     map.element.querySelector<HTMLElement>('.realm-isle.here')?.focus();
   }
 
   #closeRealmMap(): void {
     if (!this.#realmMap) return;
-    this.#realmMap.dispatchEvent(new Event('realm-dispose'));
-    this.#realmMap.remove();
+    this.#realmMap.dispose();
+    this.#realmMap.element.remove();
     this.#realmMap = null;
   }
 
@@ -494,6 +512,10 @@ export class App {
     this.#playerAt = Date.now();
     const raws = await this.#session.lifetime(shown).catch(() => shown.raws);
     if (this.#shown !== shown) return;
+    // nothing new kept, and the same names: the player is the same (but for time itself, so not for long)
+    const from = this.#playerFrom;
+    if (from !== null && raws === from.raws && this.#names === from.names && Date.now() - from.at < 60 * 60_000) return;
+    const started = performance.now();
     const life = buildGuild(raws, { kind: 'count', count: Number.MAX_SAFE_INTEGER }, { names: this.#names });
     // badges seen before that the kept history no longer shows (prefs.medals, by wallet) are kept
     const remembered = new Map<string, Provenance>();
@@ -515,15 +537,21 @@ export class App {
     this.#playerBtn.textContent = `🛡 Lv ${player.level}`;
     this.#playerBtn.title = `You: level ${player.level} ${player.rank} · ${player.badges.size} badges — open your sheet`;
     if (this.#playerOpen && !this.#editingInspector()) this.#openPlayer();
+    this.#playerFrom = { raws, names: this.#names, at: Date.now() };
+    this.#playerCost = performance.now() - started;
   }
 
-  /** Work the player out again soon (history arriving), at most every 15 s. */
+  /**
+   * Work the player out again soon (history arriving), at most every 15 s,
+   * and less often when it is costly (a very long history): at most a
+   * twentieth of the time on the main thread.
+   */
   #playerSoon(): void {
     if (this.#playerTimer !== null) return;
     this.#playerTimer = setTimeout(() => {
       this.#playerTimer = null;
       void this.#refreshPlayer();
-    }, Math.max(1500, 15_000 - (Date.now() - this.#playerAt)));
+    }, Math.max(1500, Math.max(15_000, this.#playerCost * 20) - (Date.now() - this.#playerAt)));
   }
 
   /** Badges this wallet earned first (for its hero's sheet). */
@@ -544,7 +572,7 @@ export class App {
     const reach = walking.length > 0 && walking.some((s) => s.oldest !== null) ? `back to ${new Date(Math.min(...walking.map((s) => s.oldest ?? Infinity))).getFullYear()} so far` : null;
     this.#openInspector(
       playerPanel(p, {
-        walletName: (a) => this.#world.heroes.find((h) => h.address === a)?.name ?? `${a.slice(0, 6)}…${a.slice(-4)}`,
+        walletName: (a) => this.#world.heroes.find((h) => h.address === a)?.name ?? shortAddr(a),
         openQuest: (key) => {
           const j = this.#guild.journeys.find((x) => x.key === key) ?? this.#world.journeys.find((x) => x.key === key);
           if (!j) return false;
@@ -798,6 +826,12 @@ export class App {
           if (cam === 'near' || cam === 'design' || cam === 'far') this.#bookmark = () => r.bookmark(cam);
         } catch (error) {
           console.error('3D view unavailable', error);
+          // most often a tab older than the latest deploy: its 3D file (named by content) is gone from the server
+          const reload = el('button', { class: 'btn small' }, 'Reload');
+          reload.onclick = () => location.reload();
+          const toast = el('div', { class: 'toast' }, el('span', { class: 'toast-icon' }, '⚠'), el('div', {}, el('strong', {}, 'The 3D view could not load'), el('div', { class: 'muted' }, 'The town may have been updated since this tab opened. '), reload));
+          this.#toasts.append(toast);
+          setTimeout(() => toast.remove(), 12_000);
           return;
         } finally {
           this.#busy('3d', null);
@@ -810,6 +844,8 @@ export class App {
     }
     this.#renderer.selected = null;
     this.#renderer.hover = null;
+    // the Realm Map lives in the stage too: close it properly (replacing it away would leave its animation running)
+    this.#closeRealmMap();
     this.#stage.replaceChildren(this.#renderer.element);
     if (save) {
       this.#prefs.view = v;
@@ -962,12 +998,22 @@ export class App {
     this.#playBtn.textContent = this.#sim.playing ? '❚❚' : '▶';
   }
 
+  /** Was the timeline last shown live (null: not shown yet)? */
+  #wasLive: boolean | null = null;
+
   #tick(): void {
     const sim = this.#sim;
-    if (!this.#scrubbing) this.#scrub.value = String(Math.min(100, (sim.t / sim.duration) * 100));
-    this.#dateLabel.textContent = fmtDate(sim.realTime());
-    this.#modeLabel.textContent = sim.live ? '● LIVE' : 'replaying';
-    this.#modeLabel.classList.toggle('live', sim.live);
+    // every frame: touch the DOM only when something shown changed (each write costs a style recalc)
+    // (to the slider's own step: it would snap the value anyway, so a raw one always looks changed)
+    const pos = (Math.round(Math.min(100, (sim.t / sim.duration) * 100) * 20) / 20).toString();
+    if (!this.#scrubbing && this.#scrub.value !== pos) this.#scrub.value = pos;
+    const date = fmtDate(sim.realTime());
+    if (this.#dateLabel.textContent !== date) this.#dateLabel.textContent = date;
+    if (this.#wasLive !== sim.live) {
+      this.#wasLive = sim.live;
+      this.#modeLabel.textContent = sim.live ? '● LIVE' : 'replaying';
+      this.#modeLabel.classList.toggle('live', sim.live);
+    }
     if (sim.played !== this.#logCount || sim.log.at(-1)?.journey.key !== this.#selectedKey) {
       // medals for journeys just played (not for a jump along the timeline)
       const fresh = sim.played - this.#logCount;
@@ -982,7 +1028,9 @@ export class App {
 
   #bindInput(): void {
     const stage = this.#stage;
-    const onStage = (e: Event): boolean => e.target instanceof Node && stage.contains(e.target);
+    // the Realm Map sits over the town inside the stage: its clicks, wheel and keys are its own
+    const inMap = (e: Event): boolean => e.target instanceof Element && e.target.closest('.realm-map') !== null;
+    const onStage = (e: Event): boolean => e.target instanceof Node && stage.contains(e.target) && !inMap(e);
     // Left-drag pans; right-drag or shift-drag orbits (3D only).
     let drag: { x: number; y: number; moved: boolean; orbit: boolean } | null = null;
     // Touch: two fingers pinch to zoom and twist to orbit.
@@ -994,6 +1042,7 @@ export class App {
       return { dist: Math.hypot(b.x - a.x, b.y - a.y), angle: Math.atan2(b.y - a.y, b.x - a.x), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
     };
     stage.addEventListener('pointerdown', (e) => {
+      if (inMap(e)) return;
       if (e.pointerType === 'touch') touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (touches.size >= 2) {
         drag = null;
@@ -1021,6 +1070,8 @@ export class App {
       }
     });
     stage.addEventListener('contextmenu', (e) => e.preventDefault());
+    let hoverAt: PointerEvent | null = null;
+    let hoverQueued = false;
     window.addEventListener('pointermove', (e) => {
       if (drag !== null) {
         const dx = e.clientX - drag.x;
@@ -1033,7 +1084,19 @@ export class App {
           drag.y = e.clientY;
         }
       }
-      if (onStage(e)) this.#hover(e);
+      // hover at most once a frame: a hit test, a layout read and a tooltip rebuild per pointer event add up
+      hoverAt = onStage(e) ? e : null;
+      if (!hoverQueued) {
+        hoverQueued = true;
+        requestAnimationFrame(() => {
+          hoverQueued = false;
+          if (hoverAt !== null) this.#hover(hoverAt);
+          else if (this.#renderer.hover !== null || !this.#tooltip.hidden) {
+            this.#tooltip.hidden = true;
+            this.#renderer.hover = null;
+          }
+        });
+      }
     });
     window.addEventListener('pointerup', (e) => {
       if (drag !== null && !drag.moved && !drag.orbit && onStage(e)) this.#click(e);
@@ -1043,6 +1106,7 @@ export class App {
     stage.addEventListener(
       'wheel',
       (e) => {
+        if (inMap(e)) return;
         e.preventDefault();
         const r = stage.getBoundingClientRect();
         this.#renderer.zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15);
@@ -1053,8 +1117,20 @@ export class App {
       this.#tooltip.hidden = true;
       this.#renderer.hover = null;
     });
+    // the control last pressed with the mouse: it keeps focus, but Space should still play and pause
+    const CONTROL = 'button, a[href], summary, [role="button"]';
+    let clicked: Element | null = null;
+    window.addEventListener('pointerdown', (e) => (clicked = e.target instanceof Element ? e.target.closest(CONTROL) : null), true);
+    window.addEventListener('focusin', (e) => {
+      if (e.target !== clicked) clicked = null;
+    });
     window.addEventListener('keydown', (e) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      // not while typing, not shortcuts of the browser or system (ctrl/cmd/alt), and the Realm Map has its own keys
+      if (e.ctrlKey || e.metaKey || e.altKey || inMap(e)) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || t.matches('input, select, textarea'))) return;
+      // Space and Enter press a button or follow a link reached with the keyboard
+      if ((e.key === ' ' || e.key === 'Enter') && t instanceof HTMLElement && t !== clicked && t.matches(CONTROL)) return;
       if (e.key === ' ') {
         e.preventDefault();
         this.#togglePlay();
@@ -1123,7 +1199,7 @@ export class App {
       onSelectHero: (a) => this.#selectHero(a),
       onJourney: (j) => this.#openJourney(j),
       onReplay: (j) => this.#replay(j),
-      beat: this.#beat,
+      beat: this.#realmBeat(),
       medalsOf: (a) => this.#firstEarnedBy(a),
       playerBadges: () => [...(this.#player?.badges.keys() ?? [])],
       onPlayer: () => this.#openPlayer(),

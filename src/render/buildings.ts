@@ -63,16 +63,16 @@ const KNOWN_BRANDS: [RegExp, string][] = [
   [/compound/, '#00b88a'],
   [/curve/, '#d04a3a'],
   [/opensea/, '#2081e2'],
-  [/ens/, '#5298ff'],
+  [/\bens\b/, '#5298ff'],
   [/1inch/, '#2a4a8a'],
-  [/cow/, '#1a3a6a'],
+  [/\bcow\b|cowswap/, '#1a3a6a'],
   [/eigen/, '#2a2a6a'],
-  [/maker|sky/, '#1aab9b'],
+  [/maker|\bsky\b/, '#1aab9b'],
   [/rocket/, '#e85a2a'],
   [/pendle/, '#3ab0c0'],
   [/morpho/, '#2a6ae0'],
   [/balancer/, '#4a4a4a'],
-  [/blur/, '#ff8a00'],
+  [/\bblur\b/, '#ff8a00'],
 ];
 
 export function brandColor(protocolId: string): string {
@@ -258,8 +258,9 @@ export function topBuilding(kind: PlacedKind, w: number, h: number, roofColor: s
       for (let x = wx + 6; x < wx + ww - 2; x += 10) px(c, x, wallTop, 1, st.wallH, st.trim);
     }
     if (st.wall === P.stone || st.wall === P.stoneLight || st.wall === P.stoneDark) {
+      // every other course staggered (counted from the wall top: y itself is rarely a multiple of 4)
       for (let y = wallTop + 3; y < base - 2; y += 4)
-        for (let x = wx + ((y / 4) % 2 === 0 ? 2 : 5); x < wx + ww - 2; x += 7) px(c, x, y, 4, 1, shade(st.wall, -0.12));
+        for (let x = wx + (Math.floor((y - wallTop) / 4) % 2 === 0 ? 2 : 5); x < wx + ww - 2; x += 7) px(c, x, y, 4, 1, shade(st.wall, -0.12));
     }
 
     // windows

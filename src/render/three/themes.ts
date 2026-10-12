@@ -88,6 +88,8 @@ export interface Theme {
   surroundings?(site: Site): Surroundings;
   /** How the toll board at the Chronicle Tower looks: a painted board, an LED panel, a hologram. */
   board?: BoardLook;
+  /** Free the theme's shared materials, textures and plants once no town draws with it. */
+  dispose?(): void;
 }
 
 export type BoardLook = 'wood' | 'led' | 'holo';
@@ -142,6 +144,12 @@ export function bundleTheme(b: ThemeBundle): Theme {
       caravan: (tier, crest) => buildCaravan(style, tier, lib, crest),
     },
     board: style === 'modern' ? 'led' : style === 'scifi' ? 'holo' : 'wood',
+    dispose: () => {
+      builder.dispose();
+      veg?.dispose();
+      factory.dispose();
+      lib.dispose();
+    },
   };
   if (spec.notes) theme.needs = spec.notes;
   const characters = spec.characters;

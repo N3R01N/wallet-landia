@@ -29,6 +29,7 @@ export class Soundscape {
   #nextBird = 0;
   #nextCricket = 0;
   #started = 0;
+  #awaitingGesture = false;
   /** How many of each sound played (for tests and tuning). */
   readonly played: Record<string, number> = {};
 
@@ -54,7 +55,11 @@ export class Soundscape {
 
   /** On after a reload: wait for the first click or key to start. */
   #resumeOnGesture(): void {
+    // one pair of listeners at a time, however often sound is switched on before a gesture
+    if (this.#awaitingGesture) return;
+    this.#awaitingGesture = true;
     const go = (): void => {
+      this.#awaitingGesture = false;
       void this.#ctx?.resume();
       window.removeEventListener('pointerdown', go);
       window.removeEventListener('keydown', go);

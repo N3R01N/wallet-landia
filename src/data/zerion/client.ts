@@ -174,6 +174,15 @@ export class ZerionClient {
     params: QueryParams = {},
     options: { maxPages?: number; signal?: AbortSignal } = {},
   ): Promise<T[]> {
+    return (await this.getPages<T>(path, params, options)).data;
+  }
+
+  /** As `getAll`, and whether pages were left (`more`: stopped at the cap or aborted, with a next link). */
+  async getPages<T>(
+    path: string,
+    params: QueryParams = {},
+    options: { maxPages?: number; signal?: AbortSignal } = {},
+  ): Promise<{ data: T[]; more: boolean }> {
     const cap = options.maxPages ?? this.#maxPages;
     const out: T[] = [];
     let url: string | undefined = buildUrl(this.transport, path, params);
@@ -181,12 +190,12 @@ export class ZerionClient {
     for (let page = 0; page < cap && url !== undefined; page++) {
       if (options.signal?.aborted) break;
       const body: ZerionList<T> = await this.#request<ZerionList<T>>(url, options.signal);
-      out.push(...body.data);
+      for (const item of body.data) out.push(item);
       const next = body.links?.next;
-      url = next === undefined ? undefined : this.#localizeNext(next);
+      url = next === undefined || next === '' ? undefined : this.#localizeNext(next);
     }
 
-    return out;
+    return { data: out, more: url !== undefined };
   }
 
   /**
@@ -268,6 +277,12 @@ export class ZerionClient {
           429,
           url,
         );
+      }
+
+      // a gateway hiccup (502/503/504) usually clears at once: one more try, after a pause
+      if (response.status >= 502 && response.status <= 504 && attempt === 0) {
+        this.#pacer.penalize(retryDelayMs(limits, 1));
+        continue;
       }
 
       throw new ZerionError(
