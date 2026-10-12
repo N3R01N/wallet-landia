@@ -7,6 +7,7 @@ export interface TourRefs {
   stage: HTMLElement;
   views: HTMLElement;
   guildBtn: HTMLElement;
+  buildBtn: HTMLElement;
   legend: HTMLElement;
   /** Open the Guild panel, unless it already is (the last steps point into it). */
   showGuild: () => void;
@@ -27,11 +28,19 @@ export function tourSteps(refs: TourRefs): TourStep[] {
       title: 'The town',
       body: [
         'Each hero is a wallet. Their mount (a donkey up to a griffin) and their home grow with what the wallet holds.',
-        'Each building is a protocol the wallets used: exchanges are bazaars, lending is a counting house, staking is the temple. Heroes walk there to replay their transactions.',
+        'Each building is a protocol the wallets used: exchanges are bazaars, lending is a counting house, staking is the temple. Heroes walk there to replay their transactions; until you build one, they set off for it through the town gate.',
         'The Chronicle Tower in the square is the blockchain itself: its bell rings for every block, the line at its door shows how busy the chain is, the board shows the gas fee, and the fire on top burns green when it is cheap and red when it is dear.',
         'Click any hero or building to look inside.',
       ],
       target: () => refs.stage,
+    },
+    {
+      title: 'Build your town',
+      body: [
+        'Your town starts as the square. Open 🔨 Build (or press B) to put up your heroes\' homes and every building their history unlocked: pick one, then click where it should stand. Roads lay themselves.',
+        'R turns a building, M or a drag moves it, Del stores it, Ctrl+Z undoes. Your land grows with your level, and you can share your town (or just its design) with friends.',
+      ],
+      target: () => refs.buildBtn,
     },
     {
       title: 'The quest log',

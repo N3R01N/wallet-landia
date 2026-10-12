@@ -83,7 +83,7 @@ test('a first-visit tour explains the demo town and leads to the Guild panel; it
   await expect(card).toContainText('demo town');
   await expect(card).toContainText('1 /');
   // forward to the Zerion key step: it opens the Guild panel and points at the key field
-  for (let i = 0; i < 7; i++) await card.locator('.btn.primary').click();
+  for (let i = 0; i < 8; i++) await card.locator('.btn.primary').click();
   await expect(card.locator('h3')).toHaveText('1. A Zerion key');
   await expect(page.locator('.inspector h2').first()).toHaveText('⚙ Guild');
   await expect(card.locator('a[href="https://dashboard.zerion.io"]')).toBeVisible();

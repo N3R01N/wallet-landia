@@ -54,7 +54,7 @@ export class App {
   #statusEl = el('span', { class: 'status' });
   /** The first-visit tour, and what it points at. */
   #tourBtn = el('button', { class: 'btn', title: 'Show the tour again', 'aria-label': 'Show the tour again' }, '?');
-  #tourRefs: { views: HTMLElement; guildBtn: HTMLElement; legend: HTMLElement } | null = null;
+  #tourRefs: { views: HTMLElement; guildBtn: HTMLElement; legend: HTMLElement; buildBtn: HTMLElement } | null = null;
   #tourShown = false;
   /** The town's sounds (off by default). */
   #sound = new Soundscape();
@@ -1073,7 +1073,7 @@ export class App {
     );
     this.#viewSel = layout.viewSel;
     this.#speedBtns = layout.speedBtns;
-    this.#tourRefs = { views: layout.views, guildBtn: layout.guildBtn, legend: layout.legend };
+    this.#tourRefs = { views: layout.views, guildBtn: layout.guildBtn, legend: layout.legend, buildBtn: this.#buildBtn };
     return layout.element;
   }
 
@@ -1184,6 +1184,12 @@ export class App {
       return [el('strong', {}, h.name), el('div', {}, `${CLASS_LABEL[this.#classOf(h.address)]} · ${approxUsd(h.netWorth)} (${TIER_NAMES[h.tier]})`), el('div', { class: 'muted' }, 'a wallet · click to see their quest and follow them')];
     }
     const b = t.placed;
+    // in build mode, a building of yours: what a click and a drag do
+    if (this.#build.open) {
+      const mine = sanitizeLayout(this.#prefs.towns[this.#prefs.realm]).placed.some((e) => e.id === b.id);
+      const name = b.protocolId !== undefined ? (this.#guild.protocols.get(b.protocolId)?.name ?? buildingName(b.kind as never)) : b.kind === 'home' ? `${this.#guild.heroes.find((x) => x.address === b.heroAddress)?.name ?? 'A hero'}'s home` : buildingName(b.kind as never);
+      return mine ? [el('strong', {}, name), el('div', { class: 'muted' }, 'click to select · then drag, R to turn, Del to store')] : [el('strong', {}, name), el('div', { class: 'muted' }, 'part of the square: it stays where it is')];
+    }
     if (b.kind === 'home' && b.heroAddress === undefined) return [el('strong', {}, 'A private estate'), el('div', { class: 'muted' }, 'Its owner keeps this wallet to themselves: shuttered.')];
     if (b.kind === 'home') {
       const h = this.#guild.heroes.find((x) => x.address === b.heroAddress);
