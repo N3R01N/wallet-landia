@@ -144,3 +144,64 @@ test('build mode: store a building, and let the town arrange the rest on your la
   await page.keyboard.press('Escape');
   await expect(drawer).toBeHidden();
 });
+
+test('build mode: select a building, move it, drag it, turn it, store it; undo and redo every step', async ({ page }) => {
+  await page.goto('/?expose&freeze');
+  await expect(page.locator('.veil')).toBeHidden({ timeout: 30_000 });
+  await page.keyboard.press('b');
+  const drawer = page.locator('.build-drawer');
+  // put one up
+  const card = drawer.locator('.build-card').first();
+  const id = await card.getAttribute('data-build');
+  await card.locator('.btn', { hasText: 'Build' }).click();
+  const a = await tileOnScreen(page, 10.5, 6.5);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.click(a.x, a.y);
+  await expect.poll(() => savedTown(page)).toEqual([{ id, x: 9, y: 5, rot: 0 }]);
+
+  // select it in town; M picks it up, a click puts it down elsewhere (keeping its place in the order)
+  await page.mouse.click(a.x, a.y);
+  await expect(drawer.locator('.build-selected')).toBeVisible();
+  await page.keyboard.press('m');
+  const b = await tileOnScreen(page, 30.5, 6.5);
+  await page.mouse.move(b.x, b.y);
+  await page.mouse.click(b.x, b.y);
+  await expect.poll(() => savedTown(page)).toEqual([{ id, x: 29, y: 5, rot: 0 }]);
+
+  // turned where it stands
+  await expect(drawer.locator('.build-selected')).toBeVisible();
+  await page.keyboard.press('r');
+  await expect.poll(async () => (await savedTown(page))[0]?.rot).toBe(1);
+
+  // dragged: pressed on it, moved, let go
+  const c = await tileOnScreen(page, 14.5, 24.5);
+  await page.mouse.move(b.x, b.y);
+  await page.mouse.down();
+  await page.mouse.move((b.x + c.x) / 2, (b.y + c.y) / 2, { steps: 4 });
+  await page.mouse.move(c.x, c.y, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(() => savedTown(page)).toEqual([{ id, x: 13, y: 23, rot: 1 }]);
+
+  // undo, step by step, and redo
+  await page.keyboard.press('Control+z');
+  await expect.poll(() => savedTown(page)).toEqual([{ id, x: 29, y: 5, rot: 1 }]);
+  await page.keyboard.press('Control+z');
+  await expect.poll(() => savedTown(page)).toEqual([{ id, x: 29, y: 5, rot: 0 }]);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(() => savedTown(page)).toEqual([{ id, x: 29, y: 5, rot: 1 }]);
+
+  // stored (Del), and back with Undo
+  await page.mouse.click(b.x, b.y);
+  await expect(drawer.locator('.build-selected')).toBeVisible();
+  await page.keyboard.press('Delete');
+  await expect.poll(() => savedTown(page)).toEqual([]);
+  await drawer.locator('.btn[aria-label="Undo"]').click();
+  await expect.poll(() => savedTown(page)).toEqual([{ id, x: 29, y: 5, rot: 1 }]);
+
+  // Esc while moving leaves it where it was
+  await page.mouse.click(b.x, b.y);
+  await page.keyboard.press('m');
+  await page.mouse.move(a.x, a.y);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => savedTown(page)).toEqual([{ id, x: 29, y: 5, rot: 1 }]);
+});

@@ -84,6 +84,7 @@ export class App {
     },
     land: () => landFor(this.#player.profile?.level ?? 1),
     view: () => this.#renderer,
+    placedOf: (id) => this.#sim.plan.buildings.find((b) => b.id === id),
     changed: () => this.#buildChanged(),
   });
   #buildBtn = el('button', { class: 'btn build-btn', title: 'Build your town (B)', 'aria-pressed': 'false' }, '🔨 Build');
@@ -212,6 +213,8 @@ export class App {
         holding: () => this.#build.holding(),
         move: (sx, sy) => this.#build.move(sx, sy),
         key: (e) => this.#build.key(e),
+        press: (sx, sy) => this.#build.press(sx, sy),
+        release: (sx, sy) => this.#build.release(sx, sy),
       },
     });
     this.#buildBtn.onclick = () => this.#toggleBuild();
@@ -932,6 +935,8 @@ export class App {
     if (!open && this.#beforeBuild !== null) {
       const was = this.#beforeBuild;
       this.#beforeBuild = null;
+      // built in place while building: merged again now, once (a moment's work, then fewer draw calls)
+      this.#r3d?.settle();
       this.#sim.fog = was.fog && this.#prefs.fog;
       if (this.#sim.playing !== was.playing) this.#togglePlay();
     }

@@ -365,6 +365,29 @@ export class Renderer implements WorldView {
     c.fill();
   }
 
+  /**
+   * The sprites are drawn facing south: a building turned another way gets a
+   * door on the side it faces (the wall by its door tile), where its road
+   * comes in.
+   */
+  #doorstep(b: Placed): void {
+    const c = this.ctx;
+    const d = b.door;
+    const box: Record<1 | 2 | 3, [number, number, number, number]> = {
+      1: [b.x - 0.14, d.y + 0.22, b.x + 0.06, d.y + 0.78],
+      2: [d.x + 0.22, b.y - 0.14, d.x + 0.78, b.y + 0.06],
+      3: [b.x + b.w - 0.06, d.y + 0.22, b.x + b.w + 0.14, d.y + 0.78],
+    };
+    const r = box[b.rot as 1 | 2 | 3];
+    c.fillStyle = '#4a2c14';
+    c.strokeStyle = '#e2cc98';
+    c.lineWidth = 1 / this.scale;
+    c.beginPath();
+    this.#tiles(c, r[0], r[1], r[2], r[3]);
+    c.fill();
+    c.stroke();
+  }
+
   /** The building in hand, see-through, where it would stand (sorted among the others). */
   #ghostDrawable(g: BuildGhost): Drawable {
     const b: Placed = { id: 'ghost', kind: g.kind, x: g.x, y: g.y, w: g.w, h: g.h, door: g.door, doorAt: { x: g.door.x + 0.5, y: g.door.y + 0.5 }, district: 'square', rot: g.rot };
@@ -377,6 +400,7 @@ export class Renderer implements WorldView {
         const s = this.#buildingSprite(b);
         this.ctx.globalAlpha = g.ok ? 0.72 : 0.45;
         this.#blit(s, b.x, this.view === 'top' ? b.y + b.h : b.y);
+        if (g.rot !== 0) this.#doorstep(b);
         this.ctx.globalAlpha = 1;
       },
     };
@@ -403,6 +427,7 @@ export class Renderer implements WorldView {
         let [left, top] = [0, 0];
         if (fog < 1) [left, top] = this.#blit(s, anchor.x, anchor.y);
         else [left, top] = this.#spriteBox(s, anchor.x, anchor.y);
+        if ((b.rot ?? 0) !== 0 && fog < 0.5) this.#doorstep(b);
         const protocol = b.protocolId !== undefined ? this.#sim.guild.protocols.get(b.protocolId) : undefined;
         if (fog > 0) {
           // fog of war: a cloud bank where the building stands, lifting once a hero has been

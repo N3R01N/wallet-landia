@@ -25,6 +25,10 @@ export interface InputHost {
     move(sx: number, sy: number): void;
     /** A key while building: true if it was build mode's. */
     key(e: KeyboardEvent): boolean;
+    /** The pointer goes down at (sx, sy): true if build mode takes it (a building picked up to drag). */
+    press(sx: number, sy: number): boolean;
+    /** That drag ends at (sx, sy). */
+    release(sx: number, sy: number): void;
   };
 }
 
@@ -36,6 +40,12 @@ export function bindInput(host: InputHost): void {
   const onStage = (e: Event): boolean => e.target instanceof Node && stage.contains(e.target) && !inMap(e);
   // Left-drag pans; right-drag or shift-drag orbits (3D only).
   let drag: { x: number; y: number; moved: boolean; orbit: boolean } | null = null;
+  /** A building being dragged in build mode: the pointer moves it, not the camera. */
+  let carrying = false;
+  const local = (e: PointerEvent): [number, number] => {
+    const r = stage.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  };
   // Touch: two fingers pinch to zoom and twist to orbit.
   const touches = new Map<number, { x: number; y: number }>();
   let pinch: { dist: number; angle: number } | null = null;
@@ -51,6 +61,11 @@ export function bindInput(host: InputHost): void {
       drag = null;
       const t = twoFinger();
       pinch = t ? { dist: t.dist, angle: t.angle } : null;
+      return;
+    }
+    if (e.button === 0 && host.build?.press(...local(e)) === true) {
+      carrying = true;
+      drag = null;
       return;
     }
     drag = { x: e.clientX, y: e.clientY, moved: false, orbit: e.button === 2 || e.shiftKey };
@@ -102,6 +117,12 @@ export function bindInput(host: InputHost): void {
     }
   });
   window.addEventListener('pointerup', (e) => {
+    if (carrying) {
+      carrying = false;
+      host.build?.release(...local(e));
+      release(e);
+      return;
+    }
     if (drag !== null && !drag.moved && !drag.orbit && onStage(e)) host.click(e);
     drag = null;
     release(e);
@@ -128,16 +149,18 @@ export function bindInput(host: InputHost): void {
     if (e.target !== clicked) clicked = null;
   });
   window.addEventListener('keydown', (e) => {
-    // not while typing, not shortcuts of the browser or system (ctrl/cmd/alt), and the Realm Map has its own keys
-    if (e.ctrlKey || e.metaKey || e.altKey || inMap(e)) return;
     const t = e.target;
-    if (t instanceof HTMLElement && (t.isContentEditable || t.matches('input, select, textarea'))) return;
-    // Space and Enter press a button or follow a link reached with the keyboard
-    if ((e.key === ' ' || e.key === 'Enter') && t instanceof HTMLElement && t !== clicked && t.matches(CONTROL)) return;
-    if (host.build?.key(e) === true) {
+    const typing = t instanceof HTMLElement && (t.isContentEditable || t.matches('input, select, textarea'));
+    // build mode first (its Undo and Redo are Ctrl keys), never while typing or on the Realm Map
+    if (!typing && !inMap(e) && host.build?.key(e) === true) {
       e.preventDefault();
       return;
     }
+    // not while typing, not shortcuts of the browser or system (ctrl/cmd/alt), and the Realm Map has its own keys
+    if (e.ctrlKey || e.metaKey || e.altKey || inMap(e)) return;
+    if (typing) return;
+    // Space and Enter press a button or follow a link reached with the keyboard
+    if ((e.key === ' ' || e.key === 'Enter') && t instanceof HTMLElement && t !== clicked && t.matches(CONTROL)) return;
     if (e.key === 'b') host.build?.toggle();
     else if (e.key === ' ') {
       e.preventDefault();

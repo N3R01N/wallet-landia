@@ -55,6 +55,9 @@ export class Renderer3D implements WorldView {
 
   #pipeline: ImagePipeline;
   #lastSize = '';
+  /** Full town builds, and plan changes made in place (`stats`, for tests). */
+  #rebuilds = 0;
+  #updates = 0;
   #lastFrame = performance.now();
   #frame = 0;
   // scratch for picking: no garbage on every pointer move
@@ -121,11 +124,25 @@ export class Renderer3D implements WorldView {
   setSim(sim: Sim): void {
     const same = sim === this.#sim;
     this.#sim = sim;
-    if (same || !this.#town.matches(sim, this.#theme)) this.#build();
-    else {
+    if (same) this.#build();
+    else if (this.#town.matches(sim, this.#theme)) {
       this.#town.refresh(sim);
       this.#people.refresh(sim);
-    }
+    } else if (this.#town.update(sim, this.#theme)) {
+      // a few buildings and streets changed (the player builds): just those, in place
+      this.#updates++;
+      this.#people.refresh(sim);
+      if (this.#town.smoke) this.#lastSize = ''; // size the new puffs to the viewport
+    } else this.#build();
+  }
+
+  /**
+   * Tidy a town changed in place (call when the player stops building): built anew, merged
+   * into few meshes again, scenery, lamps and worn ground redone. A no-op if nothing changed
+   * in place. A full build: it can take a moment.
+   */
+  settle(): void {
+    if (this.#town.changedInPlace) this.#build();
   }
 
   /** The theme id drawing the town ('' = built in). */
@@ -222,6 +239,7 @@ export class Renderer3D implements WorldView {
 
   /** The whole town anew: its people too. */
   #build(): void {
+    this.#rebuilds++;
     this.#people.clear();
     this.#town.build(this.#sim, this.#theme);
     if (this.#town.smoke) this.#lastSize = ''; // size the puffs to the viewport
@@ -300,10 +318,13 @@ export class Renderer3D implements WorldView {
     this.#ring.visible = true;
   }
 
-  /** What the last frame cost (all passes), for tests and tuning. `persons`: rigged models made. */
-  stats(): { calls: number; triangles: number; geometries: number; textures: number; persons: number; agents: number } {
+  /**
+   * What the last frame cost (all passes), for tests and tuning. `persons`: rigged models made;
+   * `rebuilds`: whole-town builds so far; `updates`: plan changes made in place (a building placed, moved, stored).
+   */
+  stats(): { calls: number; triangles: number; geometries: number; textures: number; persons: number; agents: number; rebuilds: number; updates: number } {
     const i = this.#gl.info;
-    return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures, persons: this.#people.rigCount(), agents: this.#sim.agents.length };
+    return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures, persons: this.#people.rigCount(), agents: this.#sim.agents.length, rebuilds: this.#rebuilds, updates: this.#updates };
   }
 
   /** Agents and their rigged stand-ins (`ox`/`oz`: the model, if one is made), for tests and tuning tools only. */

@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Tier } from '../../domain/tiers.js';
 import { crestColors } from '../../util/rng.js';
-import { MAP_H, MAP_W, type Placed, type Pt } from '../../world/layout.js';
+import { MAP_H, MAP_W, type Placed, type PlacedKind, type Pt, type TileKind, type TownPlan } from '../../world/layout.js';
 import type { Effect, Sim } from '../../world/sim.js';
 import type { Rot } from '../../world/townLayout.js';
 import { heatColor, tollOf } from '../../world/chain.js';
@@ -73,7 +73,28 @@ export interface BuildingInfo {
   door?: DoorRig;
   /** Where people go in (told to each new sim), or null: no way in. */
   doorway: Pt | null;
+  /** Where it stands and what it is built from: a later plan with the same keeps it. */
+  key: string;
 }
+
+/** A merged mesh of building parts, and which vertices each building has in it (so one can be taken out). */
+interface Merged {
+  mesh: THREE.Mesh;
+  owners: Map<BuildingInfo, { start: number; count: number }>;
+}
+
+/** Tiles a plan change may turn over in place (streets come and go on open ground); plaza and water are fixed. */
+const FIXED_TILES = new Set<TileKind>(['plaza', 'water']);
+const STREET = new Set<TileKind>(['road', 'path', 'plaza']);
+/** Buildings others hang on (the tower's boards, beacon, bell and pigeons): moved, the town is built anew. */
+const FIXED_KINDS = new Set<PlacedKind>(['tower']);
+/** More changed than this at once (or since the last build), and the town is built anew. */
+const MAX_CHANGED = 8;
+const MAX_SINCE_BUILD = 60;
+/** Scenery this close to a new building's footprint is cleared (tiles). */
+const CLEARANCE = 0.6;
+const _m4 = new THREE.Matrix4();
+const _v3 = new THREE.Vector3();
 
 export class TownScene {
   /** Everything built; the renderer adds it to its scene. */
@@ -114,6 +135,27 @@ export class TownScene {
   #townKey = '';
   /** Which harvest piles stand (building and size), so a live update leaves unchanged ones be. */
   #pileKey = '';
+  /** The merged building meshes (see `#mergeBuildings`). */
+  #merged: Merged[] = [];
+  /** The tiles the standing town shows. */
+  #tiles: readonly TileKind[] = [];
+  /** The built-in look's ground texture (baked from the tiles), or the theme's street surfaces and their materials. */
+  #groundTex: THREE.CanvasTexture | null = null;
+  #surfaces: THREE.Mesh[] = [];
+  #surfaceMats: Parameters<typeof tileSurfaces>[1] | null = null;
+  #harbour = false;
+  /** Scenery on the town's ground (props, grass, lamps; a theme's surroundings) that new buildings and streets clear. */
+  #scenery: THREE.Object3D[] = [];
+  /** Instances and objects cleared away, and where they stood (to come back if the ground is free again). */
+  #hidden = new Map<THREE.InstancedMesh, Map<number, THREE.Matrix4>>();
+  #hiddenObjects = new Set<THREE.Object3D>();
+  /** Buildings changed in place since the town was last built. */
+  #changedSinceBuild = 0;
+
+  /** Whether the standing town was changed in place since it was built (`build` again tidies it: one merge, scenery, lamps, worn ground). */
+  get changedInPlace(): boolean {
+    return this.#changedSinceBuild > 0;
+  }
 
   /** Materials dimmed or lit at night: the theme's, else the built-in look's. */
   get windowMaterial(): THREE.MeshStandardMaterial {
@@ -141,8 +183,17 @@ export class TownScene {
     this.#builtFrom = resourceMark();
     this.#theme = theme;
     this.buildings = [];
+    this.#merged = [];
+    this.#scenery = [];
+    this.#hidden.clear();
+    this.#hiddenObjects.clear();
+    this.#surfaces = [];
+    this.#surfaceMats = null;
+    this.#groundTex = null;
+    this.#changedSinceBuild = 0;
     const plan = sim.plan;
     this.#townKey = this.#keyOf(sim, theme);
+    this.#tiles = plan.tiles;
 
     this.#bell = null;
     for (const b of plan.buildings) {
@@ -153,7 +204,7 @@ export class TownScene {
     // the tower's real height (its `top` has headroom for markers), measured before its parts are merged away
     const towerInfo = this.tower;
     const towerTip = towerInfo ? new THREE.Box3().setFromObject(towerInfo.group).max.y : 0;
-    this.#mergeBuildings();
+    this.#mergeBuildings(this.buildings);
     this.buildingGroups = this.buildings.map((b) => b.group);
     const emitters = this.buildings.flatMap((b) => b.smoke ?? []);
     this.smoke = emitters.length > 0 ? new Smoke(emitters) : null;
@@ -194,19 +245,19 @@ export class TownScene {
     this.#pileKey = '';
     this.#placePiles(sim);
     // fog of war can cover any protocol's building (shown or not as the replay goes)
-    const fogged = this.buildings.filter((b) => b.placed.protocolId !== undefined);
-    this.#fogged = fogged.map((b) => b.placed);
-    this.#fog = fogged.length > 0 ? new FogBank(fogged.map((b) => ({ x: b.placed.x, z: b.placed.y, w: b.placed.w, d: b.placed.h, top: b.top }))) : null;
-    if (this.#fog) this.world.add(this.#fog.mesh);
+    this.#fog = null;
+    this.#makeFog();
 
     if (theme?.surroundings) {
       // the theme's world: terrain, woods, props and lanterns around the town, PBR ground
       const s = theme.surroundings(townSite(plan, placeLamps(plan)));
       this.world.add(s.group);
+      this.#scenery = [s.group];
       this.lamps = s.lamps;
       const surface = (w: 'road' | 'plaza' | 'path'): THREE.Material => theme.groundMaterial?.(w) ?? this.#factory.mat(w === 'path' ? '#8a7556' : '#9a8f80');
-      // (the harbour's water comes with the surroundings, in its dug basin)
-      for (const m of tileSurfaces(plan, { paved: surface('road'), plaza: surface('plaza'), trodden: surface('path'), water: this.#themedWater })) if (m.name !== 'ground-water' || !s.group.getObjectByName('harbour')) this.world.add(m);
+      this.#surfaceMats = { paved: surface('road'), plaza: surface('plaza'), trodden: surface('path'), water: this.#themedWater };
+      this.#harbour = s.group.getObjectByName('harbour') !== undefined;
+      this.#laySurfaces(plan);
       shadeClouds(this.world);
       return;
     }
@@ -220,6 +271,7 @@ export class TownScene {
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(MAP_W / 2, 0, MAP_H / 2);
     ground.receiveShadow = true;
+    this.#groundTex = groundTex;
     const slab = new THREE.Mesh(new THREE.BoxGeometry(MAP_W, 1.6, MAP_H), [
       this.#factory.mat('#7a5a3a'),
       this.#factory.mat('#6a4a2a'),
@@ -233,11 +285,209 @@ export class TownScene {
     water.rotation.x = -Math.PI / 2;
     water.position.set(42.5, 0.04, 32.5);
     this.world.add(ground, slab, water);
-    for (const o of buildPropMeshes(scatterProps(plan), (c) => this.#factory.mat(c))) this.world.add(o);
-    this.world.add(buildGrass(plan));
+    for (const o of buildPropMeshes(scatterProps(plan), (c) => this.#factory.mat(c))) {
+      this.world.add(o);
+      this.#scenery.push(o);
+    }
+    const grass = buildGrass(plan);
+    this.world.add(grass);
     this.lamps = buildLamps(placeLamps(plan));
     this.world.add(this.lamps.group);
+    this.#scenery.push(grass, this.lamps.group);
     shadeClouds(this.world);
+  }
+
+  /**
+   * A plan that differs from the standing town only in a few buildings (placed, stored, moved,
+   * turned or rebuilt) and the streets on open ground: change just those, in place. The rest
+   * (terrain, surroundings, other buildings, critters, clouds) stands. False when it cannot
+   * (another theme, fixed pieces moved, too much changed): then `build`.
+   *
+   * New buildings are merged on their own (a few more draw calls); taken-out ones leave a
+   * collapsed gap in the shared merged meshes. A later `build` tidies it all up.
+   */
+  update(sim: Sim, theme: Theme | null): boolean {
+    if (theme !== this.#theme || this.#townKey === '') return false;
+    const plan = sim.plan;
+    if (plan.tiles.length !== this.#tiles.length) return false;
+    const changedTiles: number[] = [];
+    for (let i = 0; i < plan.tiles.length; i++) {
+      const was = this.#tiles[i]!;
+      const now = plan.tiles[i]!;
+      if (was === now) continue;
+      if (FIXED_TILES.has(was) || FIXED_TILES.has(now)) return false;
+      changedTiles.push(i);
+    }
+    const keys = new Map(plan.buildings.map((b) => [b.id, this.#buildingKey(b, sim)]));
+    const stale = this.buildings.filter((info) => keys.get(info.placed.id) !== info.key);
+    const kept = new Set(this.buildings.filter((info) => !stale.includes(info)).map((info) => info.placed.id));
+    const fresh = plan.buildings.filter((b) => !kept.has(b.id));
+    const changed = stale.length + fresh.length;
+    if (changed === 0 && changedTiles.length === 0) {
+      // (the same buildings, only listed in another order)
+      this.#townKey = this.#keyOf(sim, theme);
+      this.refresh(sim);
+      return true;
+    }
+    if (changed > MAX_CHANGED || this.#changedSinceBuild + changed > MAX_SINCE_BUILD) return false;
+    if ([...stale.map((s) => s.placed), ...fresh].some((b) => FIXED_KINDS.has(b.kind))) return false;
+
+    for (const info of stale) this.#removeBuilding(info);
+    const added = fresh.map((b) => {
+      const info = this.#buildBuilding(b, sim);
+      this.world.add(info.group);
+      this.buildings.push(info);
+      return info;
+    });
+    this.#mergeBuildings(added);
+    shadeClouds(this.world); // (the new parts' materials; ones already shaded are skipped)
+    this.buildingGroups = this.buildings.map((b) => b.group);
+    this.#changedSinceBuild += changed;
+
+    // what hangs on the set of buildings: smoke and fog
+    if (changed > 0) {
+      if (this.smoke) {
+        this.smoke.points.removeFromParent();
+        disposeTree(this.smoke.points);
+      }
+      const emitters = this.buildings.flatMap((b) => b.smoke ?? []);
+      this.smoke = emitters.length > 0 ? new Smoke(emitters) : null;
+      if (this.smoke) this.world.add(this.smoke.points);
+      this.#makeFog();
+    }
+    // the streets: ground, the block pulse's paths
+    if (changedTiles.length > 0) {
+      this.#tiles = plan.tiles;
+      if (this.#groundTex) {
+        this.#groundTex.image = bakeTopGround(plan).canvas;
+        this.#groundTex.needsUpdate = true;
+      }
+      if (this.#surfaceMats) this.#laySurfaces(plan);
+      if (this.pulse) {
+        this.pulse.mesh.removeFromParent();
+        disposeTree(this.pulse.mesh);
+      }
+      this.pulse = new BlockPulse(plan);
+      this.#pulseFrom = null;
+      this.world.add(this.pulse.mesh);
+    }
+    this.#clearScenery(plan, added, changedTiles);
+    this.#townKey = this.#keyOf(sim, theme);
+    this.refresh(sim, true);
+    return true;
+  }
+
+  /** Take one building out of the standing town (its own meshes freed; its share of merged ones collapsed). */
+  #removeBuilding(info: BuildingInfo): void {
+    this.#merged = this.#merged.filter((m) => {
+      const range = m.owners.get(info);
+      if (!range) return true;
+      m.owners.delete(info);
+      if (m.owners.size === 0) {
+        m.mesh.removeFromParent();
+        disposeTree(m.mesh, this.#builtFrom);
+        return false;
+      }
+      // (zero-size triangles draw nothing; the others' vertices stay where they are)
+      const pos = m.mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+      (pos.array as Float32Array).fill(0, range.start * 3, (range.start + range.count) * 3);
+      pos.needsUpdate = true;
+      return true;
+    });
+    info.group.removeFromParent();
+    disposeTree(info.group, this.#builtFrom);
+    this.buildings = this.buildings.filter((b) => b !== info);
+  }
+
+  /** Fog of war over the protocols' buildings. */
+  #makeFog(): void {
+    if (this.#fog) {
+      this.#fog.mesh.removeFromParent();
+      disposeTree(this.#fog.mesh);
+    }
+    const fogged = this.buildings.filter((b) => b.placed.protocolId !== undefined);
+    this.#fogged = fogged.map((b) => b.placed);
+    this.#fog = fogged.length > 0 ? new FogBank(fogged.map((b) => ({ x: b.placed.x, z: b.placed.y, w: b.placed.w, d: b.placed.h, top: b.top }))) : null;
+    if (this.#fog) this.world.add(this.#fog.mesh);
+  }
+
+  /** A theme's street surfaces (roads, plaza, paths; water unless the harbour brings its own), laid anew. */
+  #laySurfaces(plan: TownPlan): void {
+    for (const m of this.#surfaces) {
+      m.removeFromParent();
+      m.geometry.dispose(); // (the materials are the theme's)
+    }
+    this.#surfaces = tileSurfaces(plan, this.#surfaceMats!).filter((m) => m.name !== 'ground-water' || !this.#harbour);
+    for (const m of this.#surfaces) this.world.add(m);
+  }
+
+  /**
+   * Clear scenery (trees, rocks, grass, flowers, lamps) from new buildings and new streets, and
+   * let back what was cleared earlier where the ground is free again.
+   */
+  #clearScenery(plan: TownPlan, added: BuildingInfo[], changedTiles: number[]): void {
+    const near = (b: Placed, x: number, z: number): boolean => x > b.x - CLEARANCE && x < b.x + b.w + CLEARANCE && z > b.y - CLEARANCE && z < b.y + b.h + CLEARANCE;
+    const newStreet = new Set(changedTiles.filter((i) => STREET.has(plan.tiles[i]!)));
+    const tileOf = (x: number, z: number): number => {
+      const tx = Math.floor(x);
+      const tz = Math.floor(z);
+      return tx < 0 || tz < 0 || tx >= MAP_W || tz >= MAP_H ? -1 : tz * MAP_W + tx;
+    };
+    const clear = (x: number, z: number): boolean => {
+      const t = tileOf(x, z);
+      return t >= 0 && (newStreet.has(t) || added.some((b) => near(b.placed, x, z)));
+    };
+    const stillTaken = (x: number, z: number): boolean => {
+      const t = tileOf(x, z);
+      return t >= 0 && (STREET.has(plan.tiles[t]!) || plan.buildings.some((b) => near(b, x, z)));
+    };
+    this.world.updateMatrixWorld();
+    // back where the ground is free again
+    for (const [mesh, list] of this.#hidden) {
+      for (const [i, m] of list) {
+        _v3.setFromMatrixPosition(m).applyMatrix4(mesh.matrixWorld);
+        if (stillTaken(_v3.x, _v3.z)) continue;
+        mesh.setMatrixAt(i, m);
+        mesh.instanceMatrix.needsUpdate = true;
+        list.delete(i);
+      }
+    }
+    for (const o of this.#hiddenObjects) {
+      o.getWorldPosition(_v3);
+      if (stillTaken(_v3.x, _v3.z)) continue;
+      o.visible = true;
+      this.#hiddenObjects.delete(o);
+    }
+    if (added.length === 0 && newStreet.size === 0) return;
+    // cleared from the new
+    for (const root of this.#scenery) {
+      root.traverse((o) => {
+        const mesh = o as THREE.InstancedMesh;
+        if (!mesh.isInstancedMesh) return;
+        let list = this.#hidden.get(mesh);
+        for (let i = 0; i < mesh.count; i++) {
+          if (list?.has(i)) continue;
+          mesh.getMatrixAt(i, _m4);
+          _v3.setFromMatrixPosition(_m4).applyMatrix4(mesh.matrixWorld);
+          if (!clear(_v3.x, _v3.z)) continue;
+          if (!list) this.#hidden.set(mesh, (list = new Map()));
+          list.set(i, _m4.clone());
+          // zero size where it stood (its bounds stay as they were)
+          const e = _m4.elements;
+          for (const k of [0, 1, 2, 4, 5, 6, 8, 9, 10]) e[k] = 0;
+          mesh.setMatrixAt(i, _m4);
+          mesh.instanceMatrix.needsUpdate = true;
+        }
+      });
+      // a pack's prop models stand on their own
+      if (!(root as THREE.InstancedMesh).isInstancedMesh && root !== this.lamps?.group && root.parent === this.world && root.name !== 'surroundings') {
+        root.getWorldPosition(_v3);
+        if (root.visible && clear(_v3.x, _v3.z)) {
+          root.visible = false;
+          this.#hiddenObjects.add(root);
+        }
+      }
+    }
   }
 
   /**
@@ -333,7 +583,12 @@ export class TownScene {
    */
   #keyOf(sim: Sim, theme: Theme | null): string {
     const plan = sim.plan;
-    return `${theme?.id ?? ''}|${plan.tiles.join(',')}|${JSON.stringify(plan.buildings.map((b) => [b, this.specOf(b, sim)]))}`;
+    return `${theme?.id ?? ''}|${plan.tiles.join(',')}|${plan.buildings.map((b) => this.#buildingKey(b, sim)).join('|')}`;
+  }
+
+  /** One building's place and spec. */
+  #buildingKey(b: Placed, sim: Sim): string {
+    return JSON.stringify([b, this.specOf(b, sim)]);
   }
 
   /** Harvest piles by the doors, laid again only when the harvests changed. */
@@ -364,10 +619,10 @@ export class TownScene {
    * with shadows). The bell keeps swinging on its own; each building keeps an
    * invisible footprint box for hover, click and sign occlusion.
    */
-  #mergeBuildings(): void {
-    const buckets = new Map<string, { mat: THREE.Material; cast: boolean; cloth: boolean; geos: THREE.BufferGeometry[]; sources: THREE.Mesh[] }>();
+  #mergeBuildings(list: BuildingInfo[]): void {
+    const buckets = new Map<string, { mat: THREE.Material; cast: boolean; cloth: boolean; geos: THREE.BufferGeometry[]; sources: THREE.Mesh[]; owners: BuildingInfo[] }>();
     const bell = this.#bell;
-    for (const b of this.buildings) {
+    for (const b of list) {
       b.group.updateMatrixWorld(true);
       b.group.traverse((o) => {
         const mesh = o as THREE.Mesh;
@@ -399,11 +654,12 @@ export class TownScene {
         const key = `${mat.uuid}|${mesh.castShadow ? 1 : 0}|${cloth ? 'cloth' : ''}`;
         let bucket = buckets.get(key);
         if (!bucket) {
-          bucket = { mat, cast: mesh.castShadow, cloth, geos: [], sources: [] };
+          bucket = { mat, cast: mesh.castShadow, cloth, geos: [], sources: [], owners: [] };
           buckets.set(key, bucket);
         }
         bucket.geos.push(geo);
         bucket.sources.push(mesh);
+        bucket.owners.push(b);
       });
       // the stand-in the pointer and the sign rays hit
       const own = ownSize(b.placed.w, b.placed.h, b.placed.rot ?? 0); // (in the group's own, turned frame)
@@ -413,8 +669,19 @@ export class TownScene {
       b.group.add(proxy);
     }
     const windows = this.windowMaterial;
-    for (const { mat, cast, cloth, geos, sources } of buckets.values()) {
+    for (const { mat, cast, cloth, geos, sources, owners } of buckets.values()) {
       const geo = mergeGeometries(geos, false);
+      // which vertices are whose (the parts go in in order, each unindexed)
+      const ranges = new Map<BuildingInfo, { start: number; count: number }>();
+      let at = 0;
+      geos.forEach((g, i) => {
+        const n = g.getAttribute('position').count;
+        const owner = owners[i]!;
+        const r = ranges.get(owner);
+        if (r && r.start + r.count === at) r.count += n;
+        else if (!r) ranges.set(owner, { start: at, count: n });
+        at += n;
+      });
       for (const g of geos) g.dispose();
       if (!geo) continue; // the parts stay as they are rather than vanish
       // merged: the parts give way to the one mesh (never drawn, so they hold nothing on the GPU)
@@ -433,6 +700,7 @@ export class TownScene {
       mesh.receiveShadow = true;
       mesh.name = 'buildings';
       this.world.add(mesh);
+      this.#merged.push({ mesh, owners: ranges });
     }
   }
 
@@ -475,7 +743,7 @@ export class TownScene {
       o.userData.target = target;
     });
     if (built.bell) this.#bell = built.bell;
-    const info: BuildingInfo = { placed: b, target, group: g, top: built.top, doorway: null };
+    const info: BuildingInfo = { placed: b, target, group: g, top: built.top, doorway: null, key: this.#buildingKey(b, sim) };
     if (built.smoke) info.smoke = built.smoke.map((e) => ({ ...e, ...at(e), y: g.position.y + e.y }));
     if (built.sign) info.sign = { ...built.sign, ...at(built.sign) };
     // the door nearest the door tile is the one people use; the sim walks them in through it

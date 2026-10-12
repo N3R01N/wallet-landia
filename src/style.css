@@ -1634,6 +1634,32 @@ button.medal {
   text-overflow: ellipsis;
 }
 
+.build-card.selected {
+  border-color: var(--wood);
+  background: rgba(245, 197, 24, 0.18);
+}
+
+.build-selected {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 2px solid var(--gold);
+  border-radius: 6px;
+  background: rgba(245, 197, 24, 0.12);
+}
+
+.build-selected-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.build-head .form-row {
+  gap: 4px;
+}
+
 .build-thumb {
   width: 44px;
   height: 44px;
