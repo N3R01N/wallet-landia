@@ -1,8 +1,9 @@
 /**
  * Small life about town: flocks of birds wheeling over the roofs by day,
- * butterflies tumbling over the lawns, and fireflies blinking in the grass at
- * night. Three draw calls in all (two instanced meshes and a point cloud),
- * moved on the CPU from smooth curves, so they cost next to nothing.
+ * butterflies tumbling over the lawns, fireflies blinking in the grass at
+ * night, and pigeons the Chronicle bell startles off the roofs round the tower.
+ * Four draw calls at most (three instanced meshes and a point cloud), moved
+ * on the CPU from smooth curves, so they cost next to nothing.
  */
 
 import * as THREE from 'three';
@@ -14,6 +15,9 @@ const FLOCKS = 3;
 const PER_FLOCK = 7;
 const BUTTERFLIES = 14;
 const FIREFLIES = 90;
+const PIGEONS = 12;
+/** Seconds from take-off to landing again. */
+const FLIGHT = 7;
 
 /** A gull seen from below: a little body and two swept wings (the wing tips rise and fall with the flap). */
 function birdGeometry(): THREE.BufferGeometry {
@@ -39,6 +43,22 @@ function butterflyGeometry(): THREE.BufferGeometry {
   return g;
 }
 
+/** Where the pigeons sit (roof tops near the tower, tiles; y up) and the tower they circle. */
+export interface Roosts {
+  spots: { x: number; y: number; z: number }[];
+  tower: { x: number; z: number; top: number };
+}
+
+interface Pigeon {
+  /** Its roof, its circle (radius, height over the tower top), which way round, when it goes. */
+  spot: { x: number; y: number; z: number };
+  r: number;
+  h: number;
+  dir: number;
+  delay: number;
+  phase: number;
+}
+
 interface Flutter {
   x: number;
   y: number;
@@ -57,6 +77,12 @@ export class Critters {
   readonly #butterflies: Flutter[] = [];
   readonly #fireflies: Flutter[] = [];
   readonly #glowColors: Float32Array;
+  readonly #pigeonMesh: THREE.InstancedMesh | null = null;
+  readonly #pigeons: Pigeon[] = [];
+  readonly #tower: Roosts['tower'] | null = null;
+  /** When the bell last startled them (sim seconds), or null: they sit. */
+  #flushedAt: number | null = null;
+  #p = new THREE.Vector3();
   readonly #m = new THREE.Matrix4();
   readonly #q = new THREE.Quaternion();
   readonly #e = new THREE.Euler();
@@ -65,7 +91,7 @@ export class Critters {
   #day = 1;
   #dark = 0;
 
-  constructor(plan: TownPlan) {
+  constructor(plan: TownPlan, roosts: Roosts | null = null) {
     const rng = makeRng(777);
     this.group.name = 'critters';
     this.#birds = new THREE.InstancedMesh(birdGeometry(), new THREE.MeshStandardMaterial({ color: '#e9e6df', roughness: 0.8, side: THREE.DoubleSide }), FLOCKS * PER_FLOCK);
@@ -99,6 +125,25 @@ export class Critters {
     this.glow.frustumCulled = false;
     this.glow.name = 'fireflies';
     this.group.add(this.#birds, this.#flies, this.glow);
+
+    // pigeons: seeded apart from the rest, so the others stay as they were
+    if (roosts && roosts.spots.length > 0) {
+      const prng = makeRng(4242);
+      this.#tower = roosts.tower;
+      for (let i = 0; i < PIGEONS; i++) {
+        this.#pigeons.push({ spot: roosts.spots[i % roosts.spots.length]!, r: 2.5 + prng() * 3.5, h: 1.2 + prng() * 2.2, dir: i % 3 === 0 ? -1 : 1, delay: prng() * 0.5, phase: prng() * 6.3 });
+      }
+      this.#pigeonMesh = new THREE.InstancedMesh(birdGeometry(), new THREE.MeshStandardMaterial({ color: '#8d929c', roughness: 0.85, side: THREE.DoubleSide }), PIGEONS);
+      this.#pigeonMesh.frustumCulled = false;
+      this.#pigeonMesh.visible = false;
+      this.#pigeonMesh.name = 'pigeons';
+      this.group.add(this.#pigeonMesh);
+    }
+  }
+
+  /** The bell rang (`t`: sim seconds): the pigeons take off, circle the tower and settle again. */
+  flush(t: number): void {
+    this.#flushedAt = t;
   }
 
   /** `night` 0..1; `gloom` 0..1 (birds and butterflies take shelter from the storm). */
@@ -110,6 +155,46 @@ export class Critters {
     this.#updateBirds(t);
     this.#updateButterflies(t);
     this.#updateFireflies(t);
+    this.#updatePigeons(t);
+  }
+
+  /** Where pigeon `p` is `s` seconds into its flight: up off its roof, round the tower, and back down. */
+  #pigeonAt(p: Pigeon, s: number, out: THREE.Vector3): THREE.Vector3 {
+    const c = this.#tower!;
+    const a0 = Math.atan2(p.spot.z - c.z, p.spot.x - c.x);
+    // whole laps, so it comes round to its own roof as it lands
+    const a = a0 + p.dir * ((s / FLIGHT) * Math.PI * 4 + Math.sin(s * 1.3 + p.phase) * 0.15);
+    const up = THREE.MathUtils.smoothstep(s, 0, 1.4) * (1 - THREE.MathUtils.smoothstep(s, FLIGHT - 1.8, FLIGHT));
+    const cy = c.top + p.h + Math.sin(s * 1.7 + p.phase) * 0.4;
+    out.set(c.x + Math.cos(a) * p.r, cy, c.z + Math.sin(a) * p.r);
+    // from the roof to the circle and back; a little hop up as they leave
+    out.x = p.spot.x + (out.x - p.spot.x) * up;
+    out.z = p.spot.z + (out.z - p.spot.z) * up;
+    out.y = p.spot.y + (out.y - p.spot.y) * up + Math.sin(Math.min(1, s / 1.4) * Math.PI) * 0.6 * (s < 1.4 ? 1 : 0);
+    return out;
+  }
+
+  #updatePigeons(t: number): void {
+    const mesh = this.#pigeonMesh;
+    if (mesh === null) return;
+    // (a clock that went back, a new sim's, ends the flight)
+    if (this.#flushedAt !== null && t < this.#flushedAt) this.#flushedAt = null;
+    const since = this.#flushedAt === null ? Infinity : t - this.#flushedAt;
+    mesh.visible = since >= 0 && since < FLIGHT + 0.6;
+    if (!mesh.visible) return;
+    this.#pigeons.forEach((p, i) => {
+      const s = Math.max(0, Math.min(FLIGHT, since - p.delay));
+      // they appear as they lift off the roof and fold away as they land (perched, they are part of the roof)
+      const size = 0.75 * Math.min(1, s / 0.25, (FLIGHT - s) / 0.35);
+      const at = this.#pigeonAt(p, s, this.#v);
+      const ahead = this.#pigeonAt(p, Math.min(FLIGHT, s + 0.05), this.#p);
+      const yaw = Math.atan2(ahead.x - at.x, ahead.z - at.z);
+      const flap = s < 1.6 || s > FLIGHT - 1.6 ? Math.sin(t * 18 + i * 2.3) : Math.sin(t * 11 + i * 1.7) > -0.2 ? Math.sin(t * 13 + i) : 0.35;
+      this.#q.setFromEuler(this.#e.set(0, yaw, -0.35 * p.dir));
+      this.#m.compose(at, this.#q, this.#s.set(size, size * flap * 1.6, size));
+      mesh.setMatrixAt(i, this.#m);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
   }
 
   #updateBirds(t: number): void {

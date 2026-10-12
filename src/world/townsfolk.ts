@@ -6,6 +6,7 @@
  */
 
 import type { ActTask, Agent, Town } from './agents.js';
+import type { Pt } from './layout.js';
 import { walkableAt } from './route.js';
 
 export class Townsfolk {
@@ -90,6 +91,42 @@ export class Townsfolk {
     }
   }
 
+  /**
+   * Something big happens at `at` (`big` 2..3, the journey's drama): the
+   * villagers about stop, turn to look, and say so; on the biggest, they
+   * cheer, and the ones further off come closer to see. Then they go on
+   * with their day. Returns how many stopped.
+   */
+  gawk(at: Pt, big: number): number {
+    const town = this.#town;
+    const reach = 3 + big * 2;
+    const most = big * 2;
+    const near = town
+      .agents()
+      .filter((o) => o.kind === 'villager' && !o.gone && !o.queued && !o.inside && o.doorway === null && o.acting === null && o.alt === 0 && Math.hypot(o.x - at.x, o.y - at.y) < reach)
+      .sort((p, q) => Math.hypot(p.x - at.x, p.y - at.y) - Math.hypot(q.x - at.x, q.y - at.y))
+      .slice(0, most);
+    for (const o of near) {
+      const d = Math.hypot(o.x - at.x, o.y - at.y);
+      const look = 2 + big * 0.8 + town.rng() * 1.5;
+      town.releaseSlot(o);
+      o.path = [];
+      o.tasks = [];
+      let delay = 0.2 + town.rng() * 0.4; // not all at once: heads turn one after another
+      if (big >= 3 && d > 2.5) {
+        // come and see: to a couple of tiles off, on the near side
+        const spot = { x: at.x + ((o.x - at.x) / d) * 2, y: at.y + ((o.y - at.y) / d) * 2 };
+        if (walkableAt(town.plan, spot)) {
+          o.tasks.push({ type: 'walk', to: spot });
+          delay += (d - 2) / o.speed;
+        }
+      }
+      o.tasks.push({ type: 'act', verb: 'wait', seconds: delay, face: at }, { type: 'act', verb: 'talk', seconds: look, gesture: big >= 3 ? 'cheer' : 'talk', face: at });
+      bubble(town, o, look, delay, big >= 3 ? ['!', '‼', '$', '★'] : ['!', '?', '$']);
+    }
+    return near.length;
+  }
+
   /** Stop a passer-by for a chat: walk up, face each other, talk a while. */
   #chat(a: Agent): boolean {
     const town = this.#town;
@@ -115,7 +152,6 @@ export class Townsfolk {
 }
 
 /** A speech bubble over someone's head while they talk. */
-export function bubble(town: Town, a: Agent, seconds: number, delay: number): void {
-  const words = ['…', '!', '?', '♪', '$', '☺'];
+export function bubble(town: Town, a: Agent, seconds: number, delay: number, words: readonly string[] = ['…', '!', '?', '♪', '$', '☺']): void {
   town.addEffect({ kind: 'bubble', x: a.x, y: a.y, age: 0, ttl: delay + seconds, delay, drama: 0, fromAgent: a.id, text: words[Math.floor(town.rng() * words.length)]! });
 }

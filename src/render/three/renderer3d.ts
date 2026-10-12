@@ -83,6 +83,7 @@ export class Renderer3D implements WorldView {
       if (this.#town.smoke) out.push(this.#town.smoke.points);
       if (this.#town.critters) out.push(this.#town.critters.glow);
       if (this.#town.lamps) out.push(this.#town.lamps.pools);
+      if (this.#town.pulse) out.push(this.#town.pulse.mesh);
       return out;
     };
 

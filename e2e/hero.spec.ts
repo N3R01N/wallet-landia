@@ -6,20 +6,20 @@ const view = (page: Page): Promise<View> => page.evaluate(() => {
   return { hover: v.hover, following: v.following ?? null };
 });
 
-/** Sweep the town until the pointer is over a hero; where it is. */
+/** Sweep the town (in the page, through the view's own hit test: quick) for a spot over a hero; where it is. */
 async function findHero(page: Page): Promise<{ x: number; y: number; address: string } | null> {
-  const box = await page.locator('.world').boundingBox();
+  const box = await page.locator('.stage-wrap').boundingBox();
   if (!box) return null;
-  for (let gy = 0.2; gy <= 0.85; gy += 0.025) {
-    for (let gx = 0.25; gx <= 0.9; gx += 0.02) {
-      const x = box.x + box.width * gx;
-      const y = box.y + box.height * gy;
-      await page.mouse.move(x, y);
-      const h = (await view(page)).hover;
-      if (h?.kind === 'hero' && h.address !== undefined) return { x, y, address: h.address };
-    }
-  }
-  return null;
+  const hit = await page.evaluate(([w, h]) => {
+    const v = (window as unknown as { townView: { hitTest(x: number, y: number): { kind: string; address?: string } | null } }).townView;
+    for (let gy = 0.2; gy <= 0.85; gy += 0.0125)
+      for (let gx = 0.2; gx <= 0.95; gx += 0.01) {
+        const t = v.hitTest(w * gx, h * gy);
+        if (t?.kind === 'hero' && t.address !== undefined) return { x: w * gx, y: h * gy, address: t.address };
+      }
+    return null;
+  }, [box.width, box.height] as const);
+  return hit === null ? null : { x: box.x + hit.x, y: box.y + hit.y, address: hit.address };
 }
 
 test('one picker for the three views', async ({ page }) => {

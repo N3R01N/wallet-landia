@@ -6,7 +6,7 @@
 
 import type { Session, Shown } from '../data/session.js';
 import type { RawWallet } from '../data/zerion/endpoints.js';
-import { defaultTitle, medalById, titleOptions, type Earned } from '../domain/feats.js';
+import { defaultTitle, medalById, titleOptions } from '../domain/feats.js';
 import type { HeroClass } from '../domain/model.js';
 import { badgeMoments, type PlayerBadge, type PlayerProfile, type Provenance } from '../domain/player.js';
 import { fromWire, workPlayer, type PlayerJob, type WireProfile } from '../domain/playerJob.js';
@@ -142,16 +142,6 @@ export class PlayerController {
       this.#timer = null;
       void this.refresh();
     }, Math.max(1500, Math.max(15_000, this.#cost * 20) - (Date.now() - this.#at)));
-  }
-
-  /** Badges this wallet earned first (for its hero's sheet). */
-  firstEarnedBy(address: string): Map<string, Earned> {
-    const out = new Map<string, Earned>();
-    for (const [id, b] of this.profile?.badges ?? []) {
-      const first = b.tiers[0]!;
-      if (first.wallet === address) out.set(id, { at: first.at, journey: first.journey });
-    }
-    return out;
   }
 
   /** A hero's title: any badge of yours unlocks its title for every one of your heroes. */

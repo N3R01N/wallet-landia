@@ -70,14 +70,15 @@ test('loads live, caches, and plays a new transaction when the chain moves', asy
   await expect(page.locator('.btn.ink')).toHaveText('✒ 295');
 
   // A reload within the cache window costs nothing.
+  const beforeReload = fake.nonceAsks;
   await page.reload();
   await expect(page.locator('.brand')).toContainText('live', { timeout: 20_000 });
   expect(fake.zerionRequests).toHaveLength(5);
 
-  // Let the session take its baseline of the chain (one more look at the nonce),
-  // then the wallet sends something: its nonce moves, and Zerion has a new tx.
-  const asked = fake.nonceAsks;
-  await expect.poll(() => fake.nonceAsks, { timeout: 15_000 }).toBeGreaterThan(asked);
+  // Let the reloaded page take its baseline of the chain (the load's look at the
+  // nonce, then the baseline's), then the wallet sends something: its nonce
+  // moves, and Zerion has a new tx.
+  await expect.poll(() => fake.nonceAsks, { timeout: 15_000 }).toBeGreaterThanOrEqual(beforeReload + 2);
   const fresh = structuredClone(demo.transactions[0]);
   delete fresh.attributes.flags;
   delete fresh.relationships.dapp;

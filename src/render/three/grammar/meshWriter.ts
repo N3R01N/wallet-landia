@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import type { MatKey, MaterialLibrary } from './materials.js';
+import { FLUTTER } from '../flags.js';
 
 export type V3 = [number, number, number];
 export type Mat = MatKey | { key: MatKey; tint?: string };
@@ -20,7 +21,12 @@ interface Part {
   pos: number[];
   nor: number[];
   uv: number[];
+  /** Cloth: per-vertex flutter (see flags.ts). */
+  flutter?: number[];
 }
+
+/** While set, what is written is cloth: its flutter (axis xyz, freedom w) at each point. */
+export type FlutterOf = (x: number, y: number, z: number) => [number, number, number, number];
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _a = new THREE.Vector3();
@@ -39,14 +45,17 @@ const NO_SKIP: readonly string[] = [];
 export class MeshWriter {
   readonly #parts = new Map<string, Part>();
   triangles = 0;
+  /** Set around cloth (a flag, a banner): it goes in a part of its own that ripples. */
+  flutter: FlutterOf | null = null;
 
   #part(mat: Mat): Part {
     const key = typeof mat === 'string' ? mat : mat.key;
     const tint = typeof mat === 'string' ? undefined : mat.tint;
-    const id = `${key}|${tint ?? ''}`;
+    const id = `${key}|${tint ?? ''}${this.flutter ? '|flutter' : ''}`;
     let p = this.#parts.get(id);
     if (!p) {
       p = { key, tint, pos: [], nor: [], uv: [] };
+      if (this.flutter) p.flutter = [];
       this.#parts.set(id, p);
     }
     return p;
@@ -70,11 +79,13 @@ export class MeshWriter {
       _v.crossVectors(_n, _u).normalize();
     }
     const part = this.#part(mat);
+    const flutter = this.flutter;
     const emit = (q: V3): void => {
       _p.fromArray(q);
       part.pos.push(q[0], q[1], q[2]);
       part.nor.push(_n.x, _n.y, _n.z);
       part.uv.push(_p.dot(_u), _p.dot(_v));
+      if (flutter) part.flutter!.push(...flutter(q[0], q[1], q[2]));
     };
     for (let i = 1; i < pts.length - 1; i++) {
       emit(pts[0]!);
@@ -196,6 +207,7 @@ export class MeshWriter {
       geo.setAttribute('position', new THREE.Float32BufferAttribute(part.pos, 3));
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(part.nor, 3));
       geo.setAttribute('uv', new THREE.Float32BufferAttribute(part.uv, 2));
+      if (part.flutter) geo.setAttribute(FLUTTER, new THREE.Float32BufferAttribute(part.flutter, 4));
       geo.computeBoundingSphere();
       const mesh = new THREE.Mesh(geo, lib.get(part.key, part.tint));
       mesh.castShadow = part.key !== 'glass' && part.key !== 'fire';

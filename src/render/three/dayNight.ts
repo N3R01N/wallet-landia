@@ -13,6 +13,8 @@ import type { ImagePipeline, Quality } from './pipeline.js';
 import type { Theme } from './themes.js';
 import { doorwayMaterial } from './doors.js';
 import { wind } from './wind.js';
+import { lateness, windowLight } from './windowLights.js';
+import { CLOUD_SCALE, clouds } from './clouds.js';
 import type { SpriteMaterials } from './spriteMaterials.js';
 
 export class DayNight {
@@ -33,6 +35,8 @@ export class DayNight {
   #flashColour = new THREE.Color('#e8ecff');
   #nightTint = new THREE.Color('#7f88b8');
   #gloomTint = new THREE.Color('#9a9aa6');
+  /** Cloud shadows are off at quality low. */
+  #clouds = true;
 
   constructor(gl: THREE.WebGLRenderer, scene: THREE.Scene) {
     this.#gl = gl;
@@ -44,6 +48,8 @@ export class DayNight {
     scene.add(this.#hemi, this.sun, this.sun.target);
     this.sun.position.set(MAP_W / 2 - 22, 42, MAP_H / 2 + 26);
     this.sun.target.position.set(MAP_W / 2, 0, MAP_H / 2);
+    // cloud shadows fall along the sunlight: a point h up shades the ground h·(sun.xz / sun.y) away from the sun
+    clouds.uCloudSkew.value.set((this.sun.position.x - MAP_W / 2) / this.sun.position.y, (this.sun.position.z - MAP_H / 2) / this.sun.position.y);
     this.sun.castShadow = true;
     // The town is a bounded receiver region, so one shadow map is the right
     // tool (shadow-systems skill). The light is fixed, so there is no texel
@@ -58,6 +64,7 @@ export class DayNight {
   }
 
   applyShadowTier(quality: Quality): void {
+    this.#clouds = quality !== 'low';
     const size = quality === 'low' ? 1024 : 2048;
     this.sun.shadow.mapSize.set(size, size);
     this.sun.shadow.map?.dispose();
@@ -93,6 +100,9 @@ export class DayNight {
     // Emissive hierarchy (bloom skill): fire > lamp bulbs > windows > lit walls.
     // Only the first three exceed the HDR bloom threshold, and only at night.
     lit.windows.emissiveIntensity = night * 1.7;
+    // (the town's own windows light one by one: windowLights.ts)
+    windowLight.uWinNight.value = night;
+    windowLight.uWinLate.value = lateness(currentHour());
     doorwayMaterial.emissiveIntensity = 0.04 + night * 0.7;
     // flames never burn quite steady
     const t = sim.elapsed;
@@ -112,5 +122,10 @@ export class DayNight {
     // Wind: a breeze, rising with the storm.
     wind.uTime.value = sim.elapsed;
     wind.uStrength.value = 0.3 + gloom * 0.7;
+    // Cloud shadows drift with the wind: deep on a clear day, gone by night and under a storm's overcast.
+    const day = 1 - Math.min(1, night * 1.6);
+    clouds.uCloudStrength.value = this.#clouds ? 0.42 * day * day * (1 - gloom) * (1 - gloom) * shine : 0;
+    const drift = (sim.elapsed * 0.9) / CLOUD_SCALE; // ~0.9 tiles a second
+    clouds.uCloudShift.value.set(wind.uDir.value.x * drift, wind.uDir.value.y * drift);
   }
 }

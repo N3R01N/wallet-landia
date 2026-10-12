@@ -195,6 +195,8 @@ export class Renderer implements WorldView {
     const ground = this.#ground();
     c.drawImage(ground.canvas, ground.x, ground.y);
     this.#water(c);
+    // a new block: light runs out over the ground from the tower (under the buildings and people)
+    for (const e of sim.effects) if (e.kind === 'ring') this.#groundPulse(c, e, sim.chain.busy);
 
     this.#hits = [];
     const items: Drawable[] = [];
@@ -459,6 +461,25 @@ export class Renderer implements WorldView {
 
   // --- effects ---------------------------------------------------------------
 
+  /** A ring of light spreading over the ground from the Chronicle Tower; brighter for a fuller block. */
+  #groundPulse(c: CanvasRenderingContext2D, e: Effect, busy: number): void {
+    const k = e.age / e.ttl;
+    if (k < 0 || k >= 1) return;
+    const r = 18 * (1 - (1 - k) * (1 - k));
+    c.lineWidth = 1.25;
+    for (const [rr, a] of [[r, 1], [r * 0.82, 0.4]] as const) {
+      c.strokeStyle = `rgba(255,214,122,${(1 - k) * (0.3 + busy * 0.5) * a})`;
+      c.beginPath();
+      // round on the ground, whatever the view does to it
+      for (let i = 0; i <= 40; i++) {
+        const [px, py] = this.toArt(e.x + Math.cos((i / 40) * Math.PI * 2) * rr, e.y + Math.sin((i / 40) * Math.PI * 2) * rr);
+        if (i === 0) c.moveTo(px, py);
+        else c.lineTo(px, py);
+      }
+      c.stroke();
+    }
+  }
+
   #effect(c: CanvasRenderingContext2D, e: Effect): void {
     const k = e.age / e.ttl;
     const [x, y] = this.toArt(e.x, e.y);
@@ -472,6 +493,21 @@ export class Renderer implements WorldView {
           const r = 6 + (k + i * 0.15) * 40;
           c.beginPath();
           c.ellipse(x, topY, r, r * 0.5, 0, 0, Math.PI * 2);
+          c.stroke();
+        }
+        // and startles the pigeons off the roofs: a few birds flush up and away (fixed paths, no dice)
+        c.strokeStyle = `rgba(70,72,84,${Math.min(1, (1 - k) * 2)})`;
+        c.lineWidth = 0.75;
+        for (let i = 0; i < 6; i++) {
+          const ang = i * 2.39 + 0.5;
+          const d = 8 + k * (26 + (i % 3) * 8);
+          const bx = x + Math.cos(ang) * d;
+          const by = topY + 10 - k * (30 + (i % 2) * 10) - Math.abs(Math.sin(ang)) * d * 0.3;
+          const flap = Math.sin(e.age * 22 + i * 1.7) * 1.6;
+          c.beginPath();
+          c.moveTo(bx - 2.2, by - flap);
+          c.lineTo(bx, by);
+          c.lineTo(bx + 2.2, by - flap);
           c.stroke();
         }
         break;

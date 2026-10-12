@@ -273,7 +273,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     const top = hab(c, 0, -0.4, W * 0.36, 3.6, { key: 'roofTiles', tint: c.bannerRoof });
     for (const x of [-W / 2 + 0.6, W / 2 - 0.6]) {
       module(c, R(1.1, 1.6, x, D * 0.22), 0, 2.6, { ports: ['front'] });
-      m.box([x, 3.5, D * 0.22 + 0.82], [0.6, 1.4, 0.03], { key: 'cloth', tint: c.banner });
+      m.banner([x, 3.5, D * 0.22 + 0.82], [0.6, 1.4, 0.03], c.banner);
     }
     tube(c, [-W / 2 + 0.6, D * 0.22], [-W * 0.2, -0.2], 1.0);
     tube(c, [W / 2 - 0.6, D * 0.22], [W * 0.2, -0.2], 1.0);

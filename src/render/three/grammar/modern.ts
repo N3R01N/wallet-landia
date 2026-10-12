@@ -263,7 +263,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     const y = floors(c, r, FLOOR, 2, { wall: 'stone' });
     const top = m.flatRoof(r, y, 'grass', 'stoneDark', 0.7);
     for (const [x, z] of [[-1, -0.5], [0.8, 0.3], [-0.2, 0.8]] as const) m.box([x, y + 0.5, z], [0.7, 0.6, 0.7], 'forestFloor');
-    for (const x of [-W / 2 + 0.5, W / 2 - 0.5]) m.box([x, FLOOR + 1.6, r.cz + r.d / 2 + 0.06], [0.7, 2.6, 0.03], { key: 'cloth', tint: c.banner });
+    for (const x of [-W / 2 + 0.5, W / 2 - 0.5]) m.banner([x, FLOOR + 1.6, r.cz + r.d / 2 + 0.06], [0.7, 2.6, 0.03], c.banner);
     return { top, sign: [0, 3.3, r.cz + r.d / 2 + 0.4] };
   },
   /** The town gate: two pylons, a sign gantry and a barrier. */

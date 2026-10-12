@@ -14,6 +14,7 @@ import { packModel } from './models.js';
 import { makeDoor, type DoorRig } from './doors.js';
 import { hashString } from '../../util/rng.js';
 import { keep } from './dispose.js';
+import { flutterGeometry } from './flags.js';
 
 /** 2D wall/roof heights are in art px; this turns them into tiles. */
 export const HEIGHT_SCALE = 1 / 12;
@@ -257,7 +258,8 @@ export class BuildingFactory {
       case 'banners':
         for (const sx of [-1, 1]) {
           add(new THREE.CylinderGeometry(0.03, 0.03, 1.1, 4), this.mat(P.woodDark), sx * (W / 2 - 0.1), H + 0.45, front + 0.05);
-          add(new THREE.BoxGeometry(0.02, 0.38, 0.3), this.mat(banner), sx * (W / 2 - 0.1), H + 0.78, front + 0.22);
+          // pinned at the pole (its back edge), free at the front
+          add(flutterGeometry(new THREE.BoxGeometry(0.02, 0.38, 0.3), [0.1, 0, 0], (_x, _y, z) => (z + 0.15) / 0.3), this.mat(banner), sx * (W / 2 - 0.1), H + 0.78, front + 0.22);
         }
         break;
       case 'pier':

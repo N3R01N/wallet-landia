@@ -895,9 +895,7 @@ export class App {
       onJourney: (j) => this.#openJourney(j),
       onReplay: (j) => this.#replay(j),
       beat: this.#realmBeat(),
-      medalsOf: (a) => this.#player.firstEarnedBy(a),
       playerBadges: () => this.#player.badgeIds(),
-      onPlayer: () => this.#openPlayer(),
       titleOf: (a) => this.#player.titleOf(a),
       setTitle: (a, t) => {
         if (t === null) delete this.#prefs.titles[a];
@@ -979,7 +977,7 @@ export class App {
     if (follow) this.#renderer.follow?.(address);
   }
 
-  /** The hero's whole sheet (treasure, class, title, badges, quest log), a click away from their quest. */
+  /** The hero's whole sheet (treasure, class, title, quest log), a click away from their quest. */
   #heroOverview(address: string): void {
     const hero = this.#guild.heroes.find((h) => h.address === address);
     if (!hero) return;

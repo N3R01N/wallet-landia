@@ -855,6 +855,8 @@ export class Sim {
     // (the goods themselves fly as coins: a burst only when nothing visible changes hands)
     else if ((step ?? first) === undefined || ((step ?? first)!.give.length === 0 && (step ?? first)!.get.length === 0)) this.effects.push({ kind: 'coins', ...at, age: 0, ttl: 1.4 + big * 0.5, drama: big });
     this.effects.push({ kind: 'float', ...at, age: 0, ttl: 3 + big, drama: big, text: j.label });
+    // a big one turns heads: the villagers about stop and look (on the biggest, they cheer and come closer)
+    if (big >= 2) this.#folk.gawk({ x: a.x, y: a.y }, big);
     if (verb === 'give' || verb === 'send' || verb === 'lend') a.carrying = null;
     if (big >= 3) this.shake = 0.6;
   }

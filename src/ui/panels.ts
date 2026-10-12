@@ -9,7 +9,7 @@ import { buildingName, districtName, heroArt, itemArt } from '../assets/art.js';
 import { CLASS_LABEL, type Stash, type Goods, type Guild, type Hero, type HeroClass, type Item, type Journey, type Target, type Verb } from '../domain/model.js';
 import { verbText } from '../domain/mappers.js';
 import { harvestOf, LOAN_COLORS, LOAN_WORDS, loanHealth } from '../domain/risk.js';
-import { ALL_MEDALS, teachingQuests, titleOptions, type Earned } from '../domain/feats.js';
+import { ALL_MEDALS, teachingQuests, titleOptions } from '../domain/feats.js';
 import { BADGE_TIERS, BADGE_TIER_NAMES, type PlayerProfile } from '../domain/player.js';
 import { TIER_COLORS, TIER_NAMES, approxUsd, exactUsd, formatQty } from '../domain/tiers.js';
 import { MOUNT_NAMES } from '../render/characters.js';
@@ -49,12 +49,8 @@ export interface PanelContext {
   onReplay: (j: Journey) => void;
   /** The latest block of the realm on show (a province's own chain in its town). */
   beat: BlockBeat | null;
-  /** The badges this wallet earned first (badges belong to the player: see the player sheet). */
-  medalsOf: (address: string) => Map<string, Earned>;
   /** Every badge the player has (they unlock titles for all their heroes). */
   playerBadges: () => string[];
-  /** Open the player's sheet (level and badges). */
-  onPlayer: () => void;
   /** The title a hero wears. */
   titleOf: (address: string) => string;
   /** Pick a title (null: back to the one the town chooses). */
@@ -226,28 +222,6 @@ function stashHealth(s: Stash): HTMLElement | null {
   return out;
 }
 
-/** Badges and the level belong to the player, across all their wallets. */
-function playerLink(ctx: PanelContext): HTMLElement {
-  const b = el('button', { class: 'btn' }, '🛡 Your level and all your badges →');
-  b.onclick = () => ctx.onPlayer();
-  return el('div', { class: 'form-row' }, b);
-}
-
-/** The medal case: every medal, earned ones bright, the rest showing how to earn them. */
-function medalCase(medals: Map<string, Earned>): HTMLElement {
-  return el(
-    'div',
-    { class: 'medals' },
-    ...ALL_MEDALS.map((m) => {
-      const e = medals.get(m.id);
-      const when = e === undefined ? '' : e.at === null ? 'Earned for what this hero holds.' : `Earned ${new Date(e.at).toLocaleDateString('en-GB')}.`;
-      const badge = el('div', { class: `medal${e ? ' earned' : ''}`, 'data-medal': m.id }, el('span', { class: 'medal-icon' }, m.icon), el('span', { class: 'medal-name' }, m.name));
-      badge.title = e ? `${m.name}: ${when}\nTitle: ${m.title}\n\n${m.lesson}` : `${m.name} (not yet)\n${m.hint}`;
-      return badge;
-    }),
-  );
-}
-
 function questCard(q: ReturnType<typeof teachingQuests>[number]): HTMLElement {
   return el(
     'div',
@@ -274,7 +248,6 @@ function crestPicker(hero: Hero, ctx: PanelContext): HTMLElement {
 
 export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
   const cls = ctx.classOf(hero.address);
-  const medals = ctx.medalsOf(hero.address);
   const title = ctx.titleOf(hero.address);
   const titleSelect = el('select', { 'aria-label': 'Hero title' });
   for (const t of titleOptions(cls, ctx.playerBadges())) {
@@ -338,9 +311,6 @@ export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
     el('h3', {}, 'Stashes abroad'),
     hero.stashes.length > 0 ? stashes : el('p', { class: 'muted' }, 'Nothing stored in any building.'),
     hero.spamCount > 0 ? el('p', { class: 'muted' }, `🗑 ${hero.spamCount} pieces of cursed junk lie in the midden by the fence (spam tokens, hidden).`) : null,
-    el('h3', {}, `Badges first earned by this wallet (${medals.size})`),
-    playerLink(ctx),
-    medalCase(medals),
     quests.length > 0 ? el('h3', {}, `Teaching quests (${quests.filter((q) => q.done).length} of ${quests.length} done)`) : null,
     quests.length > 0 ? el('div', { class: 'tquests' }, ...quests.map(questCard)) : null,
     el('h3', {}, 'Quest log'),
@@ -386,7 +356,7 @@ export function buildingPanel(b: Placed, ctx: PanelContext): HTMLElement {
       body.append(
         el('div', { class: 'stat-row' }, el('span', {}, 'Guild treasury'), el('strong', {}, exactUsd(total))),
         ...ctx.guild.heroes.map((h) => {
-          const row = el('div', { class: 'stat-row clickable' }, el('span', {}, `${h.name}, ${ctx.titleOf(h.address)}`), el('span', { class: 'muted' }, `🏅 ${ctx.medalsOf(h.address).size}`), chip(approxUsd(h.netWorth), TIER_COLORS[h.tier] ?? '#888'));
+          const row = el('div', { class: 'stat-row clickable' }, el('span', {}, `${h.name}, ${ctx.titleOf(h.address)}`), chip(approxUsd(h.netWorth), TIER_COLORS[h.tier] ?? '#888'));
           row.onclick = () => ctx.onSelectHero(h.address);
           return row;
         }),

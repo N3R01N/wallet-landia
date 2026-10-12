@@ -1,12 +1,11 @@
 /**
- * Gamification (Phase 5): medals a hero earns by doing things on-chain, the
- * titles they unlock, and teaching quests that point at something worth
- * learning about a hero's own wallet.
+ * Gamification: the medals (the player's badges, see `player.ts`) and the
+ * rules that earn them from a hero's journeys or holdings, the titles they
+ * unlock for every one of the player's heroes, and teaching quests that point
+ * at something worth learning about a hero's own wallet.
  *
- * Everything is read from the guild as loaded: a medal is earned by the first
- * journey that qualifies (so the replay can award it as it plays), or by what
- * a hero holds now. The player's browser remembers medals once seen, since
- * the history window moves on (see `settings.ts`).
+ * Badges belong to the player, across all their wallets, not to a hero: a
+ * hero's sheet shows no badges, only the titles the player's badges unlock.
  */
 
 import type { Guild, Hero, HeroClass, Journey, Verb } from './model.js';
@@ -22,12 +21,6 @@ export interface Medal {
   lesson: string;
   /** The title it unlocks ("Merric, the Barterer"). */
   title: string;
-}
-
-/** Earned: when, and by which journey (null: for what the hero holds now). */
-export interface Earned {
-  at: number | null;
-  journey: string | null;
 }
 
 export type JourneyRule = (j: Journey, seen: Seen) => boolean;
@@ -299,21 +292,11 @@ function journeysOf(hero: Hero, guild: Guild): Journey[] {
   return guild.journeys.filter((j) => j.hero === hero.address);
 }
 
-/** The medals a hero has earned, from the loaded guild. */
-export function earnedMedals(hero: Hero, guild: Guild): Map<string, Earned> {
-  const out = new Map<string, Earned>();
-  walkSeen(journeysOf(hero, guild), (j, seen) => {
-    for (const m of MEDALS) if (!out.has(m.id) && m.journey?.(j, seen)) out.set(m.id, { at: j.time, journey: j.key });
-  });
-  for (const m of MEDALS) if (!out.has(m.id) && m.holding?.(hero)) out.set(m.id, { at: null, journey: null });
-  return out;
-}
-
 export function medalById(id: string): Medal | undefined {
   return MEDALS.find((m) => m.id === id);
 }
 
-/** Titles a hero may wear: one per medal, plus their class. */
+/** Titles a hero may wear: one per badge the player has, plus their class. */
 export function titleOptions(cls: HeroClass, medals: Iterable<string>): string[] {
   const out = [`the ${CLASS_LABEL[cls]}`];
   for (const id of medals) {

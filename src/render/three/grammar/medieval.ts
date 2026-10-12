@@ -334,7 +334,20 @@ export class Mason {
 
   pole(x: number, z: number, h: number, flag?: string): void {
     this.box([x, h / 2, z], [0.08, h, 0.08], 'timber');
-    if (flag) this.box([x + 0.35, h - 0.35, z], [0.6, 0.45, 0.03], { key: 'cloth', tint: flag });
+    if (!flag) return;
+    // pinned at the pole, free at the fly end
+    const x0 = x + 0.05;
+    this.w.flutter = (px) => [0, 0, 0.2, Math.max(0, Math.min(1, (px - x0) / 0.6))];
+    this.box([x + 0.35, h - 0.35, z], [0.6, 0.45, 0.03], { key: 'cloth', tint: flag });
+    this.w.flutter = null;
+  }
+
+  /** A banner hung flat on a front (+z) wall: pinned along its top, its foot billowing out. */
+  banner(c: V3, size: V3, tint: string): void {
+    const top = c[1] + size[1] / 2;
+    this.w.flutter = (_x, y) => [0, 0, 0.14, -Math.max(0, Math.min(1, (top - y) / size[1]))];
+    this.box(c, size, { key: 'cloth', tint });
+    this.w.flutter = null;
   }
 }
 
@@ -492,7 +505,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
   barracks(c) {
     const { m, W, D } = c;
     const body = stoneHall(c, { w: W, d: D * 0.8, storeys: 2, roof: 'crenel', roofMat: 'stone', wall: 'stoneDark' });
-    for (const x of [-W / 2 + 0.6, W / 2 - 0.6]) m.box([x, 4.5, body.r.d / 2 + 0.03], [0.6, 1.6, 0.03], { key: 'cloth', tint: c.banner });
+    for (const x of [-W / 2 + 0.6, W / 2 - 0.6]) m.banner([x, 4.5, body.r.d / 2 + 0.03], [0.6, 1.6, 0.03], c.banner);
     m.pole(W / 2 - 0.4, -body.r.d / 2 + 0.4, body.top + 2.2, c.banner);
     return { top: body.top + 2, sign: [0, 2.9, body.r.d / 2 + 0.3] };
   },
@@ -639,7 +652,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
   guildhall(c) {
     const made = timberHouse(c, { w: c.W, d: c.D * 0.7, storeys: 2, jetty: 0.35, roof: { key: 'roofTiles', tint: c.bannerRoof }, stoneGround: true });
     for (const x of [-c.W / 2 + 0.5, c.W / 2 - 0.5]) {
-      c.m.box([x, 4.4, c.D * 0.35 + 0.42], [0.7, 1.8, 0.03], { key: 'cloth', tint: c.banner });
+      c.m.banner([x, 4.4, c.D * 0.35 + 0.42], [0.7, 1.8, 0.03], c.banner);
       c.m.box([x, 5.35, c.D * 0.35 + 0.45], [0.85, 0.08, 0.08], 'timber');
     }
     c.m.chimney(c.W / 2 - 0.8, -0.6, 5.5, 3.2);

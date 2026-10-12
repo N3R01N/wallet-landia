@@ -26,8 +26,16 @@ import { Smoke, type Emitter } from './smoke.js';
 import { rippling } from './water.js';
 import { tileSurfaces, townSite } from './townSite.js';
 import { moveDoor, type DoorRig } from './doors.js';
-import { Critters } from './critters.js';
+import { Critters, type Roosts } from './critters.js';
 import { disposeTree, keep, resourceMark, type ResourceMark } from './dispose.js';
+import { FLUTTER, flutterDepth, flutterMaterial } from './flags.js';
+import { litWindowMaterial, seedWindows } from './windowLights.js';
+import { BlockPulse } from './blockPulse.js';
+import { shadeClouds } from './clouds.js';
+
+// scratch for merging cloth
+const _lin = new THREE.Matrix3();
+const _ax = new THREE.Vector3();
 
 export interface BuildingInfo {
   placed: Placed;
@@ -66,6 +74,9 @@ export class TownScene {
   #bell: THREE.Object3D | null = null;
   #bellSwing = { t: 99, amp: 0 };
   #rungRings = new WeakSet<Effect>();
+  /** Light running out along the streets from the tower on each block, and the ring that sent it (with its block's fullness). */
+  pulse: BlockPulse | null = null;
+  #pulseFrom: { ring: Effect; busy: number } | null = null;
   /** The Chronicle Tower's toll board and beacon: how busy and how dear the chain is. */
   #tollBoard: TollBoard3D | null = null;
   /** ETH since the player's last visit, on a board in the square. */
@@ -125,8 +136,11 @@ export class TownScene {
     this.buildingGroups = this.buildings.map((b) => b.group);
     const emitters = this.buildings.flatMap((b) => b.smoke ?? []);
     this.smoke = emitters.length > 0 ? new Smoke(emitters) : null;
-    this.critters = new Critters(plan);
+    this.critters = new Critters(plan, this.#roosts(towerTip));
     this.world.add(this.critters.group);
+    this.pulse = new BlockPulse(plan);
+    this.#pulseFrom = null;
+    this.world.add(this.pulse.mesh);
     if (this.smoke) this.world.add(this.smoke.points);
     // the tower's signs: a beacon on its top, a toll board by its door
     const tower = this.tower;
@@ -166,6 +180,7 @@ export class TownScene {
       const surface = (w: 'road' | 'plaza' | 'path'): THREE.Material => theme.groundMaterial?.(w) ?? this.#factory.mat(w === 'path' ? '#8a7556' : '#9a8f80');
       // (the harbour's water comes with the surroundings, in its dug basin)
       for (const m of tileSurfaces(plan, { paved: surface('road'), plaza: surface('plaza'), trodden: surface('path'), water: this.#themedWater })) if (m.name !== 'ground-water' || !s.group.getObjectByName('harbour')) this.world.add(m);
+      shadeClouds(this.world);
       return;
     }
 
@@ -195,6 +210,7 @@ export class TownScene {
     this.world.add(buildGrass(plan));
     this.lamps = buildLamps(placeLamps(plan));
     this.world.add(this.lamps.group);
+    shadeClouds(this.world);
   }
 
   /**
@@ -217,6 +233,12 @@ export class TownScene {
   /** The town's own motion and lights for this frame: bell, doors, critters, lamps, smoke, fog, boards, water. */
   animate(sim: Sim, dt: number, night: number, gloom: number): void {
     this.#swingBell(sim, dt);
+    // (a ring the sim no longer holds, as after a live update brought a new sim, has stopped ageing: done)
+    if (this.#pulseFrom && !sim.effects.includes(this.#pulseFrom.ring)) this.#pulseFrom = null;
+    const ring = this.#pulseFrom?.ring;
+    const tower = this.tower?.placed;
+    this.pulse?.update(ring && tower ? ring.age / ring.ttl : null, tower ? tower.x + tower.w / 2 : 0, tower ? tower.y + tower.h / 2 : 0, this.#pulseFrom?.busy ?? 0, night);
+    if (ring && ring.age >= ring.ttl) this.#pulseFrom = null;
     for (const b of this.buildings) if (b.door) moveDoor(b.door, sim.doorOpen(b.placed.id), dt);
     this.critters?.update(sim.elapsed, dt, night, gloom);
     this.lamps?.setNight(night);
@@ -246,6 +268,9 @@ export class TownScene {
       if (e.kind !== 'ring' || this.#rungRings.has(e)) continue;
       this.#rungRings.add(e);
       this.#bellSwing = { t: 0, amp: 0.55 };
+      // the block's news runs down the streets, and the pigeons on the roofs round about take off
+      this.#pulseFrom = { ring: e, busy: sim.chain.busy };
+      this.critters?.flush(sim.elapsed);
     }
     const b = this.#bell;
     if (b === null) return;
@@ -307,7 +332,7 @@ export class TownScene {
    * invisible footprint box for hover, click and sign occlusion.
    */
   #mergeBuildings(): void {
-    const buckets = new Map<string, { mat: THREE.Material; cast: boolean; geos: THREE.BufferGeometry[]; sources: THREE.Mesh[] }>();
+    const buckets = new Map<string, { mat: THREE.Material; cast: boolean; cloth: boolean; geos: THREE.BufferGeometry[]; sources: THREE.Mesh[] }>();
     const bell = this.#bell;
     for (const b of this.buildings) {
       b.group.updateMatrixWorld(true);
@@ -319,18 +344,29 @@ export class TownScene {
         if (!src.getAttribute('normal')) src.computeVertexNormals();
         // plain floats, whatever a pack's glTF stored (quantised, normalised, interleaved), so every part merges
         const geo = new THREE.BufferGeometry();
-        for (const [name, size] of [['position', 3], ['normal', 3], ['uv', 2]] as const) {
+        // (cloth keeps its flutter, in its own bucket: see flags.ts)
+        const cloth = src.getAttribute(FLUTTER) !== undefined;
+        for (const [name, size] of [['position', 3], ['normal', 3], ['uv', 2], ...(cloth ? [[FLUTTER, 4] as const] : [])] as const) {
           const a = src.getAttribute(name);
           const out = new Float32Array(src.getAttribute('position').count * size);
           if (a) for (let v = 0; v < a.count; v++) for (let k = 0; k < size; k++) out[v * size + k] = a.getComponent(v, k);
           geo.setAttribute(name, new THREE.Float32BufferAttribute(out, size));
         }
         geo.applyMatrix4(mesh.matrixWorld);
+        // the flutter axis turns and scales with the part (metres to tiles), like a direction
+        if (cloth) {
+          const f = geo.getAttribute(FLUTTER) as THREE.BufferAttribute;
+          _lin.setFromMatrix4(mesh.matrixWorld);
+          for (let v = 0; v < f.count; v++) {
+            _ax.set(f.getX(v), f.getY(v), f.getZ(v)).applyMatrix3(_lin);
+            f.setXYZ(v, _ax.x, _ax.y, _ax.z);
+          }
+        }
         const mat = mesh.material;
-        const key = `${mat.uuid}|${mesh.castShadow ? 1 : 0}`;
+        const key = `${mat.uuid}|${mesh.castShadow ? 1 : 0}|${cloth ? 'cloth' : ''}`;
         let bucket = buckets.get(key);
         if (!bucket) {
-          bucket = { mat, cast: mesh.castShadow, geos: [], sources: [] };
+          bucket = { mat, cast: mesh.castShadow, cloth, geos: [], sources: [] };
           buckets.set(key, bucket);
         }
         bucket.geos.push(geo);
@@ -342,7 +378,8 @@ export class TownScene {
       proxy.userData.target = b.target;
       b.group.add(proxy);
     }
-    for (const { mat, cast, geos, sources } of buckets.values()) {
+    const windows = this.windowMaterial;
+    for (const { mat, cast, cloth, geos, sources } of buckets.values()) {
       const geo = mergeGeometries(geos, false);
       for (const g of geos) g.dispose();
       if (!geo) continue; // the parts stay as they are rather than vanish
@@ -350,11 +387,36 @@ export class TownScene {
       for (const m of sources) m.removeFromParent();
       geo.computeBoundingSphere();
       const mesh = new THREE.Mesh(geo, mat);
+      // flags ripple; windows light one by one (on patched clones of their materials, kept with them)
+      if (cloth) {
+        mesh.material = flutterMaterial(mat);
+        if (cast) mesh.customDepthMaterial = flutterDepth();
+      } else if (mat === windows) {
+        seedWindows(geo);
+        mesh.material = litWindowMaterial(windows);
+      }
       mesh.castShadow = cast;
       mesh.receiveShadow = true;
       mesh.name = 'buildings';
       this.world.add(mesh);
     }
+  }
+
+  /**
+   * Where pigeons sit: roof tops round the Chronicle Tower (the nearest few, and the tower
+   * itself), chosen by distance alone, so a frozen replay always has the same.
+   */
+  #roosts(towerTip: number): Roosts | null {
+    const t = this.tower;
+    if (!t) return null;
+    const tx = t.placed.x + t.placed.w / 2;
+    const tz = t.placed.y + t.placed.h / 2;
+    const near = this.buildings
+      .filter((b) => b !== t && b.placed.kind !== 'gate' && b.top > 0.9)
+      .map((b) => ({ x: b.placed.x + b.placed.w / 2, y: b.top, z: b.placed.y + b.placed.h / 2 }))
+      .sort((a, b) => Math.hypot(a.x - tx, a.z - tz) - Math.hypot(b.x - tx, b.z - tz) || a.x - b.x)
+      .slice(0, 5);
+    return { spots: [...near, { x: tx, y: towerTip * 0.8, z: tz }], tower: { x: tx, z: tz, top: towerTip } };
   }
 
   #buildBuilding(b: Placed, sim: Sim): BuildingInfo {
