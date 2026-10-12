@@ -124,6 +124,9 @@ export class TownScene {
   /** ETH since the player's last visit, on a board in the square. */
   #marketBoard: TollBoard3D | null = null;
   #beacon: Beacon3D | null = null;
+  get beacon(): Beacon3D | null {
+    return this.#beacon;
+  }
   /** Harvest piles at doors, hidden while their building is in fog. */
   #harvestPiles: { placed: Placed; object: THREE.Object3D }[] = [];
   /** Fog of war over unvisited buildings, and which buildings it covers. */
