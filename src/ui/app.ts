@@ -20,7 +20,8 @@ import { PROVINCE_POLL_MS, PROVINCE_RPC, setRpcUrl, startHeartbeat, validRpcUrl,
 import { buildingName } from '../assets/art.js';
 import { planTown, type TownPlan } from '../world/layout.js';
 import { landFor, planFromLayout, rememberProtocols, sanitizeLayout, suggestedLayout } from '../world/townLayout.js';
-import { BuildMode } from './buildMode.js';
+import { applyDesign, decodeShare, encodeShare, makeShare, shareInHash, visitLayout, type SharedTown } from '../world/townShare.js';
+import { BuildMode, type ShareOut } from './buildMode.js';
 import { Sim } from '../world/sim.js';
 import { Renderer } from '../render/renderer.js';
 import type { HitTarget, ViewKind, WorldView } from '../render/view.js';
@@ -86,11 +87,18 @@ export class App {
     view: () => this.#renderer,
     placedOf: (id) => this.#sim.plan.buildings.find((b) => b.id === id),
     changed: () => this.#buildChanged(),
+    share: (mode) => this.#makeShare(mode),
   });
   #buildBtn = el('button', { class: 'btn build-btn', title: 'Build your town (B)', 'aria-pressed': 'false' }, '🔨 Build');
   /** While building the replay rests and the fog lifts; how they were, to put them back. */
   #beforeBuild: { playing: boolean; fog: boolean } | null = null;
   readonly #autoTown = autoTown();
+  /** A shared town being visited (from a link), and whether it is shown in its owner's style (theme, crests, classes). */
+  #shared: SharedTown | null = null;
+  #theirStyle = true;
+  /** Over a shared town: whose it is, and a switch between their style and yours. */
+  #visitBanner = el('div', { class: 'visit-banner panel', hidden: '' });
+  #linkAsked = false;
   #realmMap: { element: HTMLElement; dispose: () => void } | null = null;
   /** Your wallets' lifetime history, as the walk back last reported it. */
   #history: { statuses: LedgerStatus[]; paused: string | null } | null = null;
@@ -281,7 +289,7 @@ export class App {
   #applyTheme(): boolean {
     const r = this.#r3d;
     if (r === null) return false;
-    const id = new URLSearchParams(location.search).get('theme') ?? this.#prefs.theme;
+    const id = new URLSearchParams(location.search).get('theme') ?? this.#sharedTheme() ?? this.#prefs.theme;
     const bundle = this.#themes.find((t) => t.id === id) ?? null;
     if ((bundle?.id ?? '') === r.themeId) return false;
     if (bundle) this.#busy('theme', `Raising ${bundle.name}…`);
@@ -290,6 +298,140 @@ export class App {
       .catch((e: unknown) => console.warn('theme', e))
       .finally(() => this.#busy('theme', null));
     return bundle !== null;
+  }
+
+  /** A shared town's own look, while it is shown in its owner's style and that look is here (null: yours). */
+  #sharedTheme(): string | null {
+    const s = this.#shown?.visiting ? this.#shared : null;
+    if (s === null || !this.#theirStyle) return null;
+    return s.theme === '' || this.#themes.some((t) => t.id === s.theme) ? s.theme : null;
+  }
+
+  /**
+   * Visit a shared town: its public wallets, raised as its owner built it,
+   * in their style (the banner switches to yours).
+   */
+  #visitShared(s: SharedTown): void {
+    this.#shared = s;
+    this.#theirStyle = true;
+    const who = s.heroes.find((h) => h.name !== '')?.name ?? (s.heroes[0] ? shortAddr(s.heroes[0].address) : 'a friend');
+    this.#busy('town', `Walking to ${who}'s town…`);
+    void this.#session.visit(
+      s.heroes.map((h) => h.address),
+      who,
+    );
+  }
+
+  /** A link to your town (to visit) or its design (to copy), with your private wallets kept out. */
+  async #makeShare(mode: 'town' | 'design'): Promise<ShareOut> {
+    const realm = this.#prefs.realm;
+    const land = landFor(this.#player.profile?.level ?? 1);
+    const owned = new Set(this.#guild.heroes.map((h) => h.address));
+    const pub = this.#prefs.publicWallets.filter((a) => owned.has(a));
+    const shared = makeShare({
+      mode,
+      realm,
+      land: { w: land.x1 - land.x0, h: land.y1 - land.y0 },
+      theme: this.#prefs.theme,
+      layout: sanitizeLayout(this.#prefs.towns[realm]),
+      guild: this.#guild,
+      known: this.#prefs.unlocked[realm] ?? {},
+      publicWallets: pub,
+      names: Object.fromEntries(this.#guild.heroes.map((h) => [h.address, h.name])),
+      classes: Object.fromEntries(this.#guild.heroes.map((h) => [h.address, this.#classOf(h.address)])),
+      titles: Object.fromEntries(this.#guild.heroes.map((h) => [h.address, this.#player.titleOf(h.address)])),
+      crests: this.#prefs.crests,
+    });
+    const payload = await encodeShare(shared);
+    const url = `${location.origin}${location.pathname}#${mode}=${payload}`;
+    const names = shared.heroes.map((h) => h.name || shortAddr(h.address));
+    return { url, json: JSON.stringify({ format: 'wallet-landia-town/1', link: url, ...shared }, null, 2), shown: names, hidden: this.#guild.heroes.length - shared.heroes.length, buildings: shared.buildings.length };
+  }
+
+  /**
+   * A shared town or design in the page's address (a link a friend sent):
+   * asked about once the town is up, never taken on its own.
+   */
+  async #openShareLink(): Promise<void> {
+    const found = shareInHash(location.hash);
+    if (found === null) return;
+    // asked once: a reload does not ask again
+    history.replaceState(null, '', `${location.pathname}${location.search}`);
+    let s: SharedTown;
+    try {
+      s = await decodeShare(found.payload);
+    } catch (e) {
+      this.#toast('⚠', 'That town link did not open', e instanceof Error ? e.message : String(e), 10_000);
+      return;
+    }
+    const who = s.heroes.find((h) => h.name !== '')?.name ?? 'A friend';
+    const look = s.theme === '' ? 'the built-in look' : (this.#themes.find((t) => t.id === s.theme)?.name ?? s.theme);
+    const useDesign = (withLook: boolean): void => {
+      if (this.#shown?.visiting) {
+        this.#toast('🏠', 'Go home first', 'A design is used for your own town: return home, then open the link again.', 8000);
+        return;
+      }
+      const { layout, placed, of } = applyDesign(s, this.#guild);
+      if (withLook && this.#themes.some((t) => t.id === s.theme)) {
+        this.#prefs.theme = s.theme;
+        savePrefs(this.#prefs);
+        this.#applyTheme();
+      }
+      this.#closeInspector();
+      this.#build.adopt(layout, `Design used: ${placed} of ${of} buildings found their place (the rest are not yours to build, or did not fit). Undo takes it back.`);
+    };
+    const yes = el('button', { class: 'btn primary' }, s.mode === 'town' ? `Visit ${who}'s town` : 'Use this design');
+    const alt = el('button', { class: 'btn' }, s.mode === 'town' ? 'Use it as a design for my town' : `Use it, and their look (${look})`);
+    const no = el('button', { class: 'btn' }, 'No thanks');
+    yes.onclick = () => {
+      if (s.mode === 'town') {
+        this.#closeInspector();
+        this.#visitShared(s);
+      } else useDesign(false);
+    };
+    alt.onclick = () => useDesign(s.mode === 'design');
+    no.onclick = () => this.#closeInspector();
+    const homes = s.buildings.filter((b) => b.kind === 'home').length;
+    this.#openInspector(
+      el(
+        'div',
+        { class: 'panel-body share-offer' },
+        el('h2', {}, s.mode === 'town' ? `🏘 ${who}'s town` : '📐 A town design'),
+        el('p', {}, `${s.buildings.length - homes} buildings and ${homes} home${homes === 1 ? '' : 's'}, on ${s.land.w}×${s.land.h} tiles of land, in ${look}.`),
+        s.mode === 'town'
+          ? el('p', { class: 'muted' }, s.heroes.length > 0 ? `Its heroes: ${s.heroes.map((h) => h.name || shortAddr(h.address)).join(', ')}. Visiting loads their wallets with your Zerion key; your own town is not touched.` : 'No one lives in it publicly: you would see the town, not its heroes.')
+          : el('p', { class: 'muted' }, 'Your own buildings take its places (homes go to your homes in turn); what you cannot build stays in your list. Undo takes it all back.'),
+        el('div', { class: 'form-row' }, yes, alt, no),
+      ),
+    );
+  }
+
+  /** A shared town's crests (in its owner's style), else yours. */
+  #applyCrests(): void {
+    const s = this.#shown?.visiting && this.#theirStyle ? this.#shared : null;
+    const theirs: Record<string, [string, string]> = {};
+    for (const h of s?.heroes ?? []) if (h.crest !== '') theirs[h.address] = [h.crest, '#e6e4de'];
+    setCrests({ ...this.#prefs.crests, ...theirs });
+  }
+
+  /** The banner over a shared town: whose it is, and their style or yours. */
+  #showVisitBanner(): void {
+    const s = this.#shown?.visiting ? this.#shared : null;
+    this.#visitBanner.hidden = s === null;
+    if (s === null) return;
+    const who = s.heroes.find((h) => h.name !== '')?.name ?? 'A friend';
+    const missing = s.theme !== '' && !this.#themes.some((t) => t.id === s.theme);
+    const flip = el('button', { class: 'btn small' }, this.#theirStyle ? 'Use my style' : 'Use their style');
+    flip.onclick = () => {
+      this.#theirStyle = !this.#theirStyle;
+      this.#applyCrests();
+      this.#swapSim({ keepTime: true, bell: false });
+      this.#applyTheme();
+      this.#showVisitBanner();
+    };
+    const parts: HTMLElement[] = [el('span', {}, `🏘 ${who}'s town · ${this.#theirStyle ? 'shown in their style' : 'shown in your style'}`)];
+    if (missing) parts.push(el('span', { class: 'muted small' }, ` (their look "${s.theme}" is not in this browser: yours instead)`));
+    this.#visitBanner.replaceChildren(...parts, flip);
   }
 
   /** The town's bell rings with its own chain's blocks: Ethereum's in the kingdom, a province's from its own node. */
@@ -384,6 +526,8 @@ export class App {
   }
 
   #classOf(address: string): HeroClass {
+    const theirs = this.#shown?.visiting && this.#theirStyle ? this.#shared?.heroes.find((x) => x.address === address)?.cls : undefined;
+    if (theirs !== undefined && theirs in CLASS_LABEL) return theirs as HeroClass;
     const override = this.#prefs.classOverrides[address];
     if (override !== undefined) return override;
     return this.#guild.heroes.find((h) => h.address === address)?.suggestedClass ?? 'adventurer';
@@ -395,6 +539,11 @@ export class App {
    * the classic town lays it out.
    */
   #plan(): TownPlan {
+    if (this.#shown?.visiting && this.#shared !== null) {
+      // a shared town stands as its owner built it (what this guild does not know of comes from the link)
+      const v = visitLayout(this.#shared);
+      return planFromLayout(this.#guild, v.layout, v.extra);
+    }
     if (this.#shown?.visiting) return planTown(this.#guild);
     // test hook: the e2e tests that are not about building start from the suggested town
     if (this.#autoTown) return planFromLayout(this.#guild, suggestedLayout(this.#guild));
@@ -490,10 +639,14 @@ export class App {
 
   /** Heroes wear the names the player gave them. */
   #nameHeroes(): void {
+    const shared = this.#shown?.visiting ? this.#shared : null;
     for (const h of this.#world.heroes) {
       this.#bornNames.set(h.address, h.name);
       const mine = this.#prefs.names[h.address.toLowerCase()];
       if (mine !== undefined && mine.trim() !== '') h.name = mine;
+      // a shared town's heroes go by the names their owner gave them
+      const theirs = shared?.heroes.find((x) => x.address === h.address)?.name ?? '';
+      if (theirs.trim() !== '') h.name = theirs;
     }
   }
 
@@ -591,6 +744,17 @@ export class App {
 
   #onTown(shown: Shown): void {
     this.#busy('town', null);
+    // home again (or another visit): a shared town's style goes with it
+    if (shown.visiting === null) this.#shared = null;
+    queueMicrotask(() => {
+      this.#applyTheme();
+      this.#showVisitBanner();
+      // a town link a friend sent: asked about once the first town is up
+      if (!this.#linkAsked) {
+        this.#linkAsked = true;
+        void this.#openShareLink();
+      }
+    });
     // a first visit: the tour, once the town is there (not in automated browsers unless ?tour asks)
     const forced = new URLSearchParams(location.search).has('tour');
     if (!this.#tourShown && (forced || (!this.#prefs.tourDone && !navigator.webdriver))) {
@@ -605,6 +769,8 @@ export class App {
     this.#names = shown.names;
     this.#sourceEl.textContent = shown.label;
     this.#homeBtn.hidden = shown.visiting === null;
+    // (crests are built into the town: theirs, or yours, before it is raised)
+    this.#applyCrests();
     this.#swapSim({ seek: true });
     // you, from all your wallets' history (at home; a visited town leaves your level as it was)
     void this.#player.refresh();
@@ -719,6 +885,7 @@ export class App {
         },
         onVisit: (a) => {
           this.#busy('town', 'Travelling to their town…');
+          this.#shared = null;
           void this.#session.visit(a);
         },
         onClearCache: () => this.#session.clearCache(),
@@ -860,6 +1027,7 @@ export class App {
         homeBtn: this.#homeBtn,
         buildBtn: this.#buildBtn,
         buildDrawer: this.#build.drawer,
+        visitBanner: this.#visitBanner,
         soundBtn: this.#soundBtn,
         inkBtn: this.#inkEl,
         tourBtn: this.#tourBtn,
@@ -1016,6 +1184,7 @@ export class App {
       return [el('strong', {}, h.name), el('div', {}, `${CLASS_LABEL[this.#classOf(h.address)]} · ${approxUsd(h.netWorth)} (${TIER_NAMES[h.tier]})`), el('div', { class: 'muted' }, 'a wallet · click to see their quest and follow them')];
     }
     const b = t.placed;
+    if (b.kind === 'home' && b.heroAddress === undefined) return [el('strong', {}, 'A private estate'), el('div', { class: 'muted' }, 'Its owner keeps this wallet to themselves: shuttered.')];
     if (b.kind === 'home') {
       const h = this.#guild.heroes.find((x) => x.address === b.heroAddress);
       return [el('strong', {}, `${h?.name ?? 'A hero'}'s home`), el('div', {}, `${approxUsd(h?.netWorth)} · click to see the treasure`)];
@@ -1049,7 +1218,7 @@ export class App {
       onReplay: (j) => this.#replay(j),
       beat: this.#realmBeat(),
       playerBadges: () => this.#player.badgeIds(),
-      titleOf: (a) => this.#player.titleOf(a),
+      titleOf: (a) => (this.#shown?.visiting ? this.#shared?.heroes.find((x) => x.address === a)?.title : undefined) || this.#player.titleOf(a),
       setTitle: (a, t) => {
         if (t === null) delete this.#prefs.titles[a];
         else this.#prefs.titles[a] = t;
@@ -1090,6 +1259,10 @@ export class App {
     }
     this.#renderer.selected = target;
     this.#renderer.follow?.(null);
+    if (target.placed.kind === 'home' && target.placed.heroAddress === undefined) {
+      this.#openInspector(el('div', { class: 'panel-body' }, el('h2', {}, 'A private estate'), el('p', {}, 'The owner of this town keeps this wallet private: its home stands, shuttered, and nothing of what it did is shared.')));
+      return;
+    }
     if (this.#sim.fogOver(target.placed) > 0.5) {
       this.#openInspector(el('div', { class: 'panel-body' }, el('h2', {}, 'Unexplored'), el('p', {}, 'A bank of mist hides this building. No hero has been here yet in this replay: it lifts when one visits, and the map is fully charted when the replay ends.'), el('p', { class: 'muted' }, 'Fog of war can be turned off in 🎨 Looks.')));
       return;

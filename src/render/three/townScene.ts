@@ -570,7 +570,8 @@ export class TownScene {
       kind: b.kind,
       w: own.w,
       h: own.h,
-      tier: (hero?.tier ?? 0) as Tier,
+      // (a home with no hero is a shared town's private estate: an ordinary house, shuttered)
+      tier: (hero?.tier ?? (b.kind === 'home' ? 2 : 0)) as Tier,
       roof: protocol ? brandColor(protocol.id) : '#a0522d',
       banner: b.kind === 'guildhall' || hero ? guildColor : P.red,
       iconUrl: protocol?.iconUrl ?? null,

@@ -228,3 +228,88 @@ test('land: the medallion says when it grows; a level that brought more is told 
   await page.waitForTimeout(500);
   await expect(page.locator('.toast', { hasText: 'More land for your town' })).toHaveCount(0);
 });
+
+/** Arrange a town, then make a share link of it from the build drawer. */
+async function shareLink(page: Page, which: 'Share my town' | 'Share a design'): Promise<string> {
+  await page.keyboard.press('b');
+  const drawer = page.locator('.build-drawer');
+  await drawer.locator('.btn', { hasText: 'Arrange the rest for me' }).click();
+  await expect.poll(async () => (await savedTown(page)).length).toBeGreaterThan(3);
+  await drawer.locator('.btn', { hasText: which }).click();
+  const input = drawer.locator('input[aria-label="Share link"]');
+  await expect(input).toHaveValue(/#(town|design)=[A-Za-z0-9_-]+$/);
+  return input.inputValue();
+}
+
+test('sharing a design: a friend opens the link, uses it for their own town, and can undo it', async ({ page, browser }) => {
+  await page.goto('/?expose&freeze');
+  await expect(page.locator('.veil')).toBeHidden({ timeout: 30_000 });
+  const link = await shareLink(page, 'Share a design');
+  expect(link).toContain('#design=');
+  const built = (await savedTown(page)).length;
+
+  // a friend: another browser, an empty town of their own
+  const friend = await browser.newContext({ storageState: { cookies: [], origins: [{ origin: 'http://localhost:5198', localStorage: [{ name: 'wallet-landia-v4/prefs/v1', value: JSON.stringify({ view: 'top', tourDone: true }) }] }] } });
+  const f = await friend.newPage();
+  await f.goto(link.replace(/^https?:\/\/[^/]+\//, '/').replace('/#', '/?expose&freeze#'));
+  await expect(f.locator('.veil')).toBeHidden({ timeout: 30_000 });
+  const offer = f.locator('.inspector .share-offer');
+  await expect(offer).toContainText('A town design');
+  // asked once: the link is gone from the address
+  expect(new URL(f.url()).hash).toBe('');
+  await offer.locator('.btn', { hasText: 'Use this design' }).click();
+  await expect(f.locator('.build-drawer')).toBeVisible();
+  await expect(f.locator('.build-hint')).toContainText(/Design used: \d+ of \d+/);
+  await expect.poll(async () => (await savedTown(f)).length).toBe(built);
+  await f.keyboard.press('Control+z');
+  await expect.poll(async () => (await savedTown(f)).length).toBe(0);
+  await friend.close();
+});
+
+test('sharing your town: only public wallets go; a friend visits it as built, in your style or theirs', async ({ page, browser }) => {
+  await page.goto('/?expose&freeze');
+  await expect(page.locator('.veil')).toBeHidden({ timeout: 30_000 });
+  const heroes = await page.evaluate(() => (window as unknown as { townSim: { guild: { heroes: { address: string; name: string }[] } } }).townSim.guild.heroes.map((h) => h.address).sort());
+  const [pub, ...priv] = heroes as [string, ...string[]];
+  // one wallet public, a name for its hero; the rest stay private
+  await page.evaluate(([a]) => {
+    const key = 'wallet-landia-v4/prefs/v1';
+    const p = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
+    localStorage.setItem(key, JSON.stringify({ ...p, publicWallets: [a], names: { [a!]: 'Sir Shares-a-Lot' } }));
+  }, [pub]);
+  await page.reload();
+  await expect(page.locator('.veil')).toBeHidden({ timeout: 30_000 });
+  const link = await shareLink(page, 'Share my town');
+  await expect(page.locator('.build-share')).toContainText('Sir Shares-a-Lot');
+  await expect(page.locator('.build-share')).toContainText(`${priv.length} private wallet`);
+  // the link itself never holds a private address
+  const { decodeShare } = await import('../src/world/townShare.js');
+  const shared = await decodeShare(link.split('#town=')[1]!);
+  expect(shared.heroes.map((h) => h.address)).toEqual([pub]);
+  for (const a of priv) expect(JSON.stringify(shared)).not.toContain(a.slice(2));
+
+  const friend = await browser.newContext({ storageState: { cookies: [], origins: [{ origin: 'http://localhost:5198', localStorage: [{ name: 'wallet-landia-v4/prefs/v1', value: JSON.stringify({ view: 'top', tourDone: true }) }] }] } });
+  const f = await friend.newPage();
+  await f.goto(link.replace(/^https?:\/\/[^/]+\//, '/').replace('/#', '/?expose&freeze#'));
+  await expect(f.locator('.veil')).toBeHidden({ timeout: 30_000 });
+  await expect(f.locator('.inspector .share-offer')).toContainText("Sir Shares-a-Lot's town");
+  await f.locator('.inspector .btn', { hasText: "Visit Sir Shares-a-Lot's town" }).click();
+  await expect(f.locator('.brand')).toContainText("Visiting Sir Shares-a-Lot's town", { timeout: 30_000 });
+  const visited = await f.evaluate(() => {
+    const p = (window as unknown as { townSim: { plan: { buildings: { id: string; heroAddress?: string }[] }; guild: { heroes: { address: string; name: string }[] } } }).townSim;
+    return { ids: p.plan.buildings.map((b) => b.id), heroes: p.guild.heroes.map((h) => [h.address, h.name]) };
+  });
+  expect(visited.ids.filter((i) => i.startsWith('estate:'))).toHaveLength(priv.length);
+  expect(visited.ids).toContain(`home:${pub}`);
+  expect(visited.heroes).toEqual([[pub, 'Sir Shares-a-Lot']]);
+  // their style, or yours
+  const banner = f.locator('.visit-banner');
+  await expect(banner).toContainText('shown in their style');
+  await banner.locator('.btn', { hasText: 'Use my style' }).click();
+  await expect(banner).toContainText('shown in your style');
+  // home again: the banner goes, and their town stays theirs
+  await f.locator('.btn', { hasText: 'Return home' }).click();
+  await expect(banner).toBeHidden({ timeout: 30_000 });
+  expect(await savedTown(f)).toEqual([]);
+  await friend.close();
+});

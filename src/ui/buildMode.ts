@@ -37,6 +37,19 @@ export interface BuildHost {
   placedOf(id: string): Placed | undefined;
   /** Build mode opened or closed, or what may be built changed (the header's count follows). */
   changed(): void;
+  /** A link to this town (or its design) to share, and what it shows of you. */
+  share(mode: 'town' | 'design'): Promise<ShareOut>;
+}
+
+/** A share link made, with what it says about whose wallets are in it. */
+export interface ShareOut {
+  url: string;
+  /** The same, as a file to keep or send. */
+  json: string;
+  /** Your wallets shown in it, by name, and how many stay private. */
+  shown: string[];
+  hidden: number;
+  buildings: number;
 }
 
 type Tab = 'homes' | 'protocols' | 'placed';
@@ -108,6 +121,16 @@ export class BuildMode {
     this.drawer.hidden = true;
     this.#host.view().build = null;
     this.#host.changed();
+  }
+
+  /** A layout from elsewhere (a shared design) as one change: build mode opens, and Undo takes it back. */
+  adopt(layout: TownLayout, note: string): void {
+    if (!this.#open) this.enter();
+    this.#held = null;
+    this.#select(null);
+    this.#commit(layout);
+    this.#hint.classList.remove('bad');
+    this.#hint.textContent = note;
   }
 
   /** The town was raised again (a new layout, new history, another realm): try against the new one. */
@@ -456,8 +479,60 @@ export class BuildMode {
       list,
       this.#hint,
       el('div', { class: 'form-row build-foot' }, auto, clear),
+      this.#shareBox(),
     ].filter((x): x is HTMLElement => x !== null);
     this.drawer.replaceChildren(...parts);
+  }
+
+  /** What is being shared (a link made), shown under the share buttons. */
+  #shareOut: { mode: 'town' | 'design'; out: ShareOut; href: string } | null = null;
+
+  /** Share your town (to visit) or its design (to copy): a link, and what it shows of you. */
+  #shareBox(): HTMLElement {
+    const make = (mode: 'town' | 'design', label: string, title: string): HTMLElement => {
+      const b = el('button', { class: `btn small${this.#shareOut?.mode === mode ? ' on' : ''}`, title }, label);
+      b.onclick = async () => {
+        b.textContent = 'Making the link…';
+        try {
+          const out = await this.#host.share(mode);
+          // one download address per link made (the old one let go)
+          if (this.#shareOut !== null) URL.revokeObjectURL(this.#shareOut.href);
+          this.#shareOut = { mode, out, href: URL.createObjectURL(new Blob([out.json], { type: 'application/json' })) };
+        } catch (e) {
+          this.#hint.textContent = `Could not make the link: ${e instanceof Error ? e.message : String(e)}`;
+        }
+        this.#render();
+      };
+      return b;
+    };
+    const box = el(
+      'div',
+      { class: 'build-share' },
+      el('div', { class: 'form-row' }, make('town', '🔗 Share my town', 'A link friends open to visit your town (only your public wallets)'), make('design', '📐 Share a design', 'A link to copy your layout: no wallets, no names')),
+    );
+    const s = this.#shareOut;
+    if (s === null) return box;
+    const link = el('input', { type: 'text', readonly: '', value: s.out.url, 'aria-label': 'Share link' });
+    const copy = el('button', { class: 'btn small' }, 'Copy link');
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(s.out.url);
+        copy.textContent = 'Copied';
+      } catch {
+        link.select();
+        copy.textContent = 'Press Ctrl+C';
+      }
+    };
+    const file = el('a', { class: 'btn small', download: `town-${s.mode}.json` }, 'Download');
+    file.href = s.href;
+    const who =
+      s.mode === 'design'
+        ? 'A design names no one: no wallets, no names, homes numbered. It does show which buildings your town has.'
+        : s.out.shown.length === 0
+          ? `None of your wallets is public, so no one lives in it: ${s.out.hidden} private home${s.out.hidden === 1 ? '' : 's'} shown shuttered. Mark wallets public in ⚙ Guild.`
+          : `Shown: ${s.out.shown.join(', ')}.${s.out.hidden > 0 ? ` ${s.out.hidden} private wallet${s.out.hidden === 1 ? '' : 's'} kept out (homes shuttered, what only they did left out).` : ''}`;
+    box.append(el('div', { class: 'form-row' }, link, copy, file), el('p', { class: 'muted small' }, `${s.out.buildings} buildings. ${who}`));
+    return box;
   }
 
   /** The building selected in town, and what can be done with it. */

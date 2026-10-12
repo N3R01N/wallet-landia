@@ -56,7 +56,7 @@ export interface Prefs {
   /** The town the player built in each realm (realm → layout, see world/townLayout.ts); read through `sanitizeLayout`. */
   towns: Record<string, unknown>;
   /** Every protocol each realm's history has shown (realm → id → what its building needs), so what may be built never shrinks with the history window. */
-  unlocked: Record<string, Record<string, { name: string; iconUrl: string | null; url: string | null; category: string; building: string }>>;
+  unlocked: Record<string, Record<string, { name: string; iconUrl: string | null; url: string | null; category: string; building: string; by?: string[] }>>;
   /** The land last announced (tiles, w × h): a level that brings more is told once. */
   landArea: number;
   /** Your wallets you are happy to show when sharing your town (lowercase addresses); the rest are private. */

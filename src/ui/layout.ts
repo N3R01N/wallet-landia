@@ -22,6 +22,8 @@ export interface LayoutParts {
   buildBtn: HTMLElement;
   /** Build mode's drawer, over the town's left side. */
   buildDrawer: HTMLElement;
+  /** Over a shared town: whose it is, their style or yours. */
+  visitBanner: HTMLElement;
   soundBtn: HTMLElement;
   inkBtn: HTMLElement;
   tourBtn: HTMLElement;
@@ -160,7 +162,7 @@ export function buildLayout(prefs: Prefs, parts: LayoutParts, act: LayoutActions
   const questlog = el('section', { class: 'questlog' }, el('h4', {}, el('span', {}, 'Quest log'), fold), parts.log);
   foldable(questlog, fold, 'the quest log', () => prefs.questlogFolded, (f) => (prefs.questlogFolded = f), prefs);
 
-  const element = el('div', { class: 'app' }, header, el('main', { class: 'world' }, parts.stage, parts.playerBtn, questlog, parts.buildDrawer, legend, parts.toasts, parts.veil, parts.inspector, parts.tooltip), timeline);
+  const element = el('div', { class: 'app' }, header, el('main', { class: 'world' }, parts.stage, parts.playerBtn, questlog, parts.buildDrawer, parts.visitBanner, legend, parts.toasts, parts.veil, parts.inspector, parts.tooltip), timeline);
   return { element, viewSel, speedBtns, views, guildBtn, legend };
 }
 

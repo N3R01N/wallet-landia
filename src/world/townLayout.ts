@@ -363,9 +363,10 @@ export class BuildPlanner {
  * same layout serves several history windows and realms, and a building
  * comes back when it may.
  */
-export function planFromLayout(guild: Guild, layout: TownLayout): TownPlan {
+export function planFromLayout(guild: Guild, layout: TownLayout, extra: readonly Buildable[] = []): TownPlan {
   const t = new TownBuilder();
-  const can = new Map(buildables(guild).map((b) => [b.id, b]));
+  // (`extra`: what a shared town holds that this guild does not know of; the guild's own come first)
+  const can = new Map([...extra, ...buildables(guild)].map((b) => [b.id, b]));
   for (const e of layout.placed) {
     const what = can.get(e.id);
     if (what !== undefined) t.place(what, e.x, e.y, e.rot);
@@ -519,7 +520,7 @@ export function onLand(land: Land, b: { x: number; y: number; w: number; h: numb
 // --- what may be built, remembered -----------------------------------------------
 
 /** What a protocol's building needs, kept once its history has shown it. */
-export type Known = Record<string, { name: string; iconUrl: string | null; url: string | null; category: string; building: string }>;
+export type Known = Record<string, { name: string; iconUrl: string | null; url: string | null; category: string; building: string; by?: string[] }>;
 
 const BUILDINGS = new Set<string>(Object.keys(DISTRICT_OF));
 
@@ -531,9 +532,17 @@ const BUILDINGS = new Set<string>(Object.keys(DISTRICT_OF));
  */
 export function rememberProtocols(guild: Guild, known: Known): { guild: Guild; fresh: string[] } {
   const fresh: string[] = [];
+  // which wallets brought each one (their journeys there, their stashes in it): sharing leaves out what only private ones did
+  const by = new Map<string, Set<string>>();
+  const credit = (id: string, wallet: string): void => {
+    by.set(id, (by.get(id) ?? new Set()).add(wallet));
+  };
+  for (const j of guild.journeys) for (const s of j.steps) if (s.target.kind === 'building') credit(s.target.protocolId, j.hero);
+  for (const h of guild.heroes) for (const s of h.stashes) credit(s.protocolId, h.address);
   for (const p of guild.protocols.values()) {
     if (known[p.id] === undefined) fresh.push(p.id);
-    known[p.id] = { name: p.name, iconUrl: p.iconUrl, url: p.url, category: p.category, building: p.building };
+    const wallets = new Set([...(known[p.id]?.by ?? []), ...(by.get(p.id) ?? [])]);
+    known[p.id] = { name: p.name, iconUrl: p.iconUrl, url: p.url, category: p.category, building: p.building, by: [...wallets].sort() };
   }
   const protocols = new Map(guild.protocols);
   for (const [id, k] of Object.entries(known)) {

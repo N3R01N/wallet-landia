@@ -269,26 +269,32 @@ export class Session {
     this.#show({ mode: set.kind, raws: set.wallets, visiting: null, names, label }, 'town');
   }
 
-  /** Visit a followed wallet's town (read-only, separate from home). */
-  async visit(address: string): Promise<void> {
+  /**
+   * Visit a town (read-only, separate from home): a followed wallet's, or a
+   * shared town's public wallets (`label` names it; with none, an empty town).
+   */
+  async visit(address: string | readonly string[], label?: string): Promise<void> {
     const gen = ++this.#generation;
-    const addr = address.toLowerCase();
+    const addrs = (typeof address === 'string' ? [address] : [...address]).map((a) => a.toLowerCase());
     const loader = await this.#liveLoader();
     // a followed town keeps only its recent history: the walk back is for your own wallets
     this.#walkBack(null, null);
     let raws: RawWallet[] | null;
-    if (loader !== null) {
-      raws = await this.#loadLive(loader, [addr], gen);
+    if (addrs.length === 0) raws = [];
+    else if (loader !== null) {
+      raws = await this.#loadLive(loader, addrs, gen);
     } else {
       const set = await loadFixtures();
-      const hit = set.wallets.find((w) => w.address === addr);
-      raws = hit ? [hit] : null;
+      const hits = set.wallets.filter((w) => addrs.includes(w.address));
+      raws = hits.length > 0 ? hits : null;
       if (raws === null) this.#events.onStatus('Visiting needs a Zerion key (or a captured fixture for that address).', 'error');
     }
     if (raws === null || gen !== this.#generation) return;
-    const names = await this.#names([addr]);
+    const names = await this.#names(addrs);
     if (gen !== this.#generation) return;
-    this.#show({ mode: loader ? 'live' : 'captured', raws, visiting: addr, names, label: `Visiting ${names.get(addr) ?? `${addr.slice(0, 6)}…${addr.slice(-4)}`}'s town` }, 'town');
+    const first = addrs[0] ?? 'shared';
+    const who = label ?? names.get(first) ?? `${first.slice(0, 6)}…${first.slice(-4)}`;
+    this.#show({ mode: loader ? 'live' : 'captured', raws, visiting: first, names, label: `Visiting ${who}'s town` }, 'town');
   }
 
   /** Bring the town on show up to date now, at the player's request (~5 requests a wallet). */

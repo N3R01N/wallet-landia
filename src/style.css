@@ -1701,3 +1701,32 @@ button.medal {
   }
 }
 
+/* over a shared town: whose it is, and their style or yours */
+.visit-banner {
+  position: absolute;
+  z-index: 3;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.build-share {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--parchment-dark);
+}
+
+.build-share input {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+}
+

@@ -430,7 +430,8 @@ export class Renderer implements WorldView {
     const protocol = b.protocolId !== undefined ? sim.guild.protocols.get(b.protocolId) : undefined;
     const roof = protocol ? brandColor(protocol.id) : '#a0522d';
     const hero = b.heroAddress !== undefined ? sim.guild.heroes.find((x) => x.address === b.heroAddress) : undefined;
-    const tier = hero?.tier ?? 0;
+    // (a home with no hero is a shared town's private estate: an ordinary house, shuttered)
+    const tier = hero?.tier ?? (b.kind === 'home' ? 2 : 0);
     const variant = b.kind === 'guildhall' ? this.#guildColor : hero ? this.#guildColor : '';
     return buildingArt(this.view, b.kind, b.w, b.h, roof, tier, variant);
   }
