@@ -54,3 +54,43 @@ test('the Guild panel picks which provinces load with Ethereum', async ({ page }
   await expect(page.locator('.realm-isle[data-realm="base"]')).toBeVisible();
   await expect(page.locator('.realm-isle[data-realm="optimism"]')).toHaveCount(0);
 });
+
+/** Live L2 towers: a province's town follows its own chain's blocks, from its own node, only while it is open. */
+test('a province tower rings with its own chain, and only while its town is open', async ({ page }) => {
+  let baseCalls = 0;
+  let block = 30_000_000;
+  await page.route('https://base-rpc.publicnode.com/**', async (route) => {
+    baseCalls++;
+    block++;
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, result: { number: `0x${block.toString(16)}`, gasUsed: '0xfe502a', gasLimit: '0x5f5e100', baseFeePerGas: '0x3b9aca', timestamp: `0x${Math.floor(Date.now() / 1000).toString(16)}`, transactions: new Array(140).fill('0x') } }),
+    });
+  });
+  // the kingdom's town does not ask Base's node
+  await page.goto('/?expose');
+  await expect(page.locator('.realm-btn')).toContainText('Ethereum', { timeout: 20_000 });
+  await page.waitForTimeout(1500);
+  expect(baseCalls).toBe(0);
+
+  await page.locator('.realm-btn').click();
+  await page.locator('.realm-isle[data-realm="base"]').click();
+  await expect(page.locator('.beat')).toContainText('Base block #30,000,', { timeout: 15_000 });
+  await expect(page.locator('.beat')).toContainText('140 txs');
+  await expect(page.locator('.beat')).toContainText('0.0039 gwei');
+  const sim = await page.evaluate(() => {
+    const s = (window as unknown as { townSim: { realm: string; chain: { block: number | null; busy: number } } }).townSim;
+    return { realm: s.realm, block: s.chain.block, busy: s.chain.busy };
+  });
+  expect(sim.realm).toBe('base');
+  expect(sim.block).toBeGreaterThan(30_000_000);
+  expect(sim.busy).toBeCloseTo(0.5, 2);
+
+  // back home: Base's node is left alone
+  await page.locator('.realm-btn').click();
+  await page.locator('.realm-isle[data-realm="ethereum"]').click();
+  await page.waitForTimeout(500);
+  const after = baseCalls;
+  await page.waitForTimeout(3000);
+  expect(baseCalls).toBe(after);
+});

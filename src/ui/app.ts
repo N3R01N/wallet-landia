@@ -15,7 +15,7 @@ import { guildPanel } from './guildPanel.js';
 import { looksPanel, themePicker, type LooksContext } from './looksPanel.js';
 import { assets } from '../assets/registry.js';
 import { loadBundledPacks, loadImportedPacks } from '../assets/packs.js';
-import { setRpcUrl, startHeartbeat, validRpcUrl, type BlockBeat } from '../data/rpc.js';
+import { PROVINCE_POLL_MS, PROVINCE_RPC, setRpcUrl, startHeartbeat, validRpcUrl, type BlockBeat } from '../data/rpc.js';
 import { buildingName } from '../assets/art.js';
 import { planTown } from '../world/layout.js';
 import { Sim } from '../world/sim.js';
@@ -30,7 +30,7 @@ import { Soundscape } from '../audio/soundscape.js';
 import { Tour, type TourStep } from './tour.js';
 import { nightFactor } from '../render/overlay.js';
 import { priceMove, type PriceMove } from '../domain/risk.js';
-import { ethPriceFrom } from '../world/chain.js';
+import { ethPriceFrom, formatGwei } from '../world/chain.js';
 import { defaultTitle, earnedMedals, medalById, medalsByJourney, titleOptions, type Earned, type Medal } from '../domain/feats.js';
 import { buildingPanel, heroPanel, questLogRow, questPanel, type PanelContext } from './panels.js';
 
@@ -146,8 +146,9 @@ export class App {
       this.#beat = beat;
       this.#bell();
       void this.#session.onBlock();
-      this.#beatLabel.textContent = `🔔 block #${beat.number.toLocaleString('en-US')} · ${beat.txCount} txs · base toll ${beat.baseFeeGwei?.toFixed(2) ?? '?'} gwei`;
+      this.#showBeat();
     });
+    this.#followRealm();
   }
 
   start(): void {
@@ -207,9 +208,49 @@ export class App {
     return bundle !== null;
   }
 
-  /** The bell rings with Ethereum's blocks, in the kingdom's town (a province's tower has no feed yet). */
+  /** The town's bell rings with its own chain's blocks: Ethereum's in the kingdom, a province's from its own node. */
   #bell(): void {
-    if (this.#beat && this.#prefs.realm === 'ethereum') this.#sim.bell(this.#beat);
+    const beat = this.#prefs.realm === 'ethereum' ? this.#beat : this.#province?.chain === this.#prefs.realm ? this.#province.beat : null;
+    if (beat) this.#sim.bell(beat);
+  }
+
+  /** A province's feed, while its town is open (Ethereum's runs always: it also checks the wallets). */
+  #province: { chain: string; beat: BlockBeat | null; stop: () => void } | null = null;
+
+  /** Follow the blocks of the realm on show (a province with a known node), and only that one. */
+  #followRealm(): void {
+    const chain = this.#prefs.realm;
+    if (this.#province?.chain === chain) return;
+    this.#province?.stop();
+    this.#province = null;
+    const url = PROVINCE_RPC[chain];
+    if (url !== undefined) {
+      const province: { chain: string; beat: BlockBeat | null; stop: () => void } = { chain, beat: null, stop: () => undefined };
+      this.#province = province;
+      province.stop = startHeartbeat(
+        (beat) => {
+          if (this.#province !== province) return;
+          province.beat = beat;
+          this.#bell();
+          this.#showBeat();
+        },
+        { chain, url, every: PROVINCE_POLL_MS },
+      );
+    }
+    this.#showBeat();
+  }
+
+  /** The bar's bell line: the latest block of the realm on show. */
+  #showBeat(): void {
+    const realm = this.#prefs.realm;
+    const beat = realm === 'ethereum' ? this.#beat : this.#province?.chain === realm ? this.#province.beat : null;
+    const name = realmOf(realm).name;
+    if (beat === null) {
+      this.#beatLabel.textContent = realm === 'ethereum' || PROVINCE_RPC[realm] !== undefined ? `listening for ${name}'s bell…` : `${name}: no bell to listen to yet`;
+      return;
+    }
+    const where = realm === 'ethereum' ? 'block' : `${name} block`;
+    this.#beatLabel.textContent = `🔔 ${where} #${beat.number.toLocaleString('en-US')} · ${beat.txCount} txs · base toll ${beat.baseFeeGwei !== null ? formatGwei(beat.baseFeeGwei) : '?'} gwei`;
   }
 
   #openRealmMap(): void {
@@ -243,6 +284,7 @@ export class App {
       this.#rebuild();
       this.#r2d.setSim(this.#sim);
       this.#r3d?.setSim(this.#sim);
+      this.#followRealm();
       this.#bell();
       this.#closeInspector();
       const realm = realmOf(id);
@@ -269,6 +311,8 @@ export class App {
     const plan = planTown(this.#guild);
     this.#sim = new Sim(this.#guild, plan);
     this.#sim.realm = this.#prefs.realm;
+    // a province may hold no ETH of its own: price its toll from all the guild holds
+    this.#sim.ethUsd ??= ethPriceFrom(this.#world.heroes.flatMap((h) => h.items));
     this.#realmBtn.textContent = `🗺 ${realmOf(this.#prefs.realm).name}`;
     this.#sim.speed = this.#prefs.speed;
     this.#sim.fog = this.#prefs.fog;
@@ -606,6 +650,7 @@ export class App {
           if (!chains.includes(this.#prefs.realm)) this.#prefs.realm = 'ethereum';
           savePrefs(this.#prefs);
           setRealmChains(chains);
+          this.#followRealm();
           this.#busy('town', 'Charting the realm…');
           void this.#session.home();
         },

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { nextPollDelay, validRpcUrl } from '../src/data/rpc.js';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { blockFullness, nextPollDelay, PROVINCE_RPC, validRpcUrl } from '../src/data/rpc.js';
+import { formatGwei } from '../src/world/chain.js';
 import { versioned } from '../src/assets/themeBundles.js';
 
 describe('the heartbeat asks about once a block', () => {
@@ -17,6 +20,35 @@ describe('the heartbeat asks about once a block', () => {
     expect(nextPollDelay({ lastBlockMs: t0, now: t0, misses: 0, failures: 1 })).toBe(4_000);
     expect(nextPollDelay({ lastBlockMs: t0, now: t0, misses: 0, failures: 3 })).toBe(16_000);
     expect(nextPollDelay({ lastBlockMs: t0, now: t0, misses: 0, failures: 20 })).toBe(120_000);
+  });
+});
+
+describe('province towers', () => {
+  it('ask at a steady, slow pace (and still back off when the node fails)', () => {
+    expect(nextPollDelay({ lastBlockMs: 0, now: 0, misses: 0, failures: 0, every: 10_000 })).toBe(10_000);
+    expect(nextPollDelay({ lastBlockMs: 0, now: 0, misses: 5, failures: 0, every: 10_000 })).toBe(10_000);
+    expect(nextPollDelay({ lastBlockMs: 0, now: 0, misses: 0, failures: 2, every: 10_000 })).toBe(8_000);
+  });
+
+  it('measure fullness per chain: against the gas limit, or Arbitrum’s speed limit', () => {
+    expect(blockFullness('ethereum', 15_000_000, 30_000_000)).toBe(0.5);
+    // Base targets a sixth of its limit: 25M of 400M is a little under half of target-and-again
+    expect(blockFullness('base', 400_000_000 / 6, 400_000_000)).toBeCloseTo(0.5);
+    expect(blockFullness('base', 25_201_735, 400_000_000)).toBeCloseTo(0.19, 2);
+    expect(blockFullness('optimism', 300_000_000, 40_000_000)).toBe(1);
+    // Arbitrum's limit is vast: a block with 1.75M gas (its speed limit's worth for a ¼ s block) is half full
+    expect(blockFullness('arbitrum', 1_750_000, 1_125_899_906_842_624)).toBe(0.5);
+  });
+
+  it('show L2 fees, which are thousandths of a gwei', () => {
+    expect(formatGwei(0.0042)).toBe('0.0042');
+    expect(formatGwei(0.05)).toBe('0.05');
+    expect(formatGwei(12.3)).toBe('12');
+  });
+
+  it('are allowed by the page’s security policy', () => {
+    const html = readFileSync(resolve(__dirname, '../index.html'), 'utf8');
+    for (const url of Object.values(PROVINCE_RPC)) expect(html).toContain(url);
   });
 });
 

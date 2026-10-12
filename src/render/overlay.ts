@@ -234,13 +234,14 @@ export function route(c: CanvasRenderingContext2D, r: Route, project: Project, e
 
 /** The three lines on the toll board: a heading, the base fee with its trend, and a plain transfer's cost. */
 export function tollLines(sim: Sim): { head: string; fee: string; sub: string; color: string } {
-  // a province's tower keeps its own records; its bell is not heard here yet
-  if (sim.realm !== 'ethereum') return { head: realmOf(sim.realm).name.toUpperCase(), fee: 'L2 province', sub: 'settles on Ethereum', color: '#9fd8ff' };
+  // a province's tower reads its own chain (its own node); until its first bell, it says what it is
+  const province = sim.realm !== 'ethereum' ? realmOf(sim.realm).name.toUpperCase() : null;
+  const head = province !== null ? `${province} TOLL` : 'TOLL';
   const toll = tollOf(sim.chain, sim.ethUsd);
-  if (toll.gwei === null) return { head: 'TOLL', fee: '…', sub: 'listening for the bell', color: '#d8d0c0' };
+  if (toll.gwei === null) return province !== null ? { head: province, fee: 'L2 province', sub: 'listening for its bell', color: '#9fd8ff' } : { head, fee: '…', sub: 'listening for the bell', color: '#d8d0c0' };
   const arrow = toll.trend > 0 ? ' ▲' : toll.trend < 0 ? ' ▼' : ' ▶';
   return {
-    head: 'TOLL',
+    head,
     fee: `${formatGwei(toll.gwei)} gwei${arrow}`,
     sub: toll.transferUsd !== null ? `a transfer ≈ ${formatTransferUsd(toll.transferUsd)}` : `${Math.round(sim.chain.busy * 100)}% full`,
     color: TOLL_COLORS[toll.level],

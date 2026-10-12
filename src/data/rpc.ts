@@ -37,6 +37,33 @@ export const ALLOWED_RPC_HOSTS = [
   '*.blastapi.io',
 ] as const;
 
+/**
+ * The provinces' own nodes (free, keyless), for their towers' bells. Only
+ * asked while that province's town is open. Keep in step with index.html's
+ * connect-src too.
+ */
+export const PROVINCE_RPC: Record<string, string> = {
+  base: 'https://base-rpc.publicnode.com',
+  arbitrum: 'https://arbitrum-one-rpc.publicnode.com',
+  optimism: 'https://optimism-rpc.publicnode.com',
+};
+
+/** How often a province's tower asks for its latest block: L2 blocks come every second or two, so one a while is plenty. */
+export const PROVINCE_POLL_MS = 10_000;
+
+/**
+ * How full a block is (0..1), where ½ means "at the chain's target" (the base
+ * fee holds; fuller and it rises). Ethereum targets half its gas limit; the OP
+ * Stack chains (Base, Optimism) a sixth (EIP-1559 elasticity 6); Arbitrum's
+ * limit is vast and meaningless, so it is its speed limit (7M gas a second, a
+ * block every ¼ s).
+ */
+export function blockFullness(chain: string, gasUsed: number, gasLimit: number): number {
+  const target = chain === 'arbitrum' ? 7_000_000 * 0.25 : chain === 'base' || chain === 'optimism' ? gasLimit / 6 : gasLimit / 2;
+  const room = Math.max(1, target * 2);
+  return Math.min(1, Math.max(0, gasUsed / room));
+}
+
 /** Is this a usable RPC address: https, on one of the allowed providers? */
 export function validRpcUrl(url: string): boolean {
   try {
@@ -120,15 +147,21 @@ const SLOT_MS = 12_000;
  * is late, look again soon; when the node fails or limits us, back off.
  * About one request a block instead of three, a tenth of that when failing.
  */
-export function nextPollDelay(o: { lastBlockMs: number | null; now: number; misses: number; failures: number }): number {
+export function nextPollDelay(o: { lastBlockMs: number | null; now: number; misses: number; failures: number; every?: number }): number {
   if (o.failures > 0) return Math.min(120_000, 4_000 * 2 ** (o.failures - 1));
+  if (o.every !== undefined) return o.every; // a province: a steady, slow look
   if (o.lastBlockMs === null) return 4_000;
   if (o.misses > 0) return Math.min(SLOT_MS, 2_000 * o.misses); // a late or missed slot
   const due = o.lastBlockMs + SLOT_MS + 1_500 - o.now;
   return Math.min(SLOT_MS + 2_000, Math.max(2_000, due));
 }
 
-export function startHeartbeat(onBeat: (beat: BlockBeat) => void): () => void {
+/**
+ * Follow a chain's blocks. By default Ethereum's, through the chosen node, at
+ * its 12 s rhythm; `chain` + `url` + `every` follow a province's instead.
+ */
+export function startHeartbeat(onBeat: (beat: BlockBeat) => void, opts: { chain?: string; url?: string; every?: number } = {}): () => void {
+  const chain = opts.chain ?? 'ethereum';
   let last = -1;
   let lastBlockMs: number | null = null;
   let misses = 0;
@@ -140,7 +173,7 @@ export function startHeartbeat(onBeat: (beat: BlockBeat) => void): () => void {
     if (stopped) return;
     try {
       if (document.visibilityState === 'visible') {
-        const res = await fetch(rpcUrl, {
+        const res = await fetch(opts.url ?? rpcUrl, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['latest', false] }),
@@ -157,7 +190,7 @@ export function startHeartbeat(onBeat: (beat: BlockBeat) => void): () => void {
           lastBlockMs = parseInt(b.timestamp, 16) * 1000;
           onBeat({
             number,
-            busy: Math.min(1, parseInt(b.gasUsed, 16) / Math.max(1, parseInt(b.gasLimit, 16))),
+            busy: blockFullness(chain, parseInt(b.gasUsed, 16), parseInt(b.gasLimit, 16)),
             baseFeeGwei: b.baseFeePerGas !== undefined ? parseInt(b.baseFeePerGas, 16) / 1e9 : null,
             txCount: b.transactions.length,
             timestamp: lastBlockMs,
@@ -169,7 +202,7 @@ export function startHeartbeat(onBeat: (beat: BlockBeat) => void): () => void {
       failures++;
     }
     // a hidden tab asks nothing; look again every so often to see if it is back
-    const delay = document.visibilityState === 'visible' ? nextPollDelay({ lastBlockMs, now: Date.now(), misses, failures }) : 5_000;
+    const delay = document.visibilityState === 'visible' ? nextPollDelay({ lastBlockMs, now: Date.now(), misses, failures, ...(opts.every !== undefined ? { every: opts.every } : {}) }) : 5_000;
     timer = setTimeout(() => void tick(), delay);
   };
   void tick();

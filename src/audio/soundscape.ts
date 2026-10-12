@@ -158,7 +158,8 @@ export class Soundscape {
     this.played[e.kind] = (this.played[e.kind] ?? 0) + 1;
     switch (e.kind) {
       case 'ring':
-        this.bell(t, 0.5 + sim.chain.busy * 0.5);
+        // a province's bell is smaller, and rings higher
+        this.bell(t, (0.5 + sim.chain.busy * 0.5) * (sim.realm === 'ethereum' ? 1 : 0.75), sim.realm === 'ethereum' ? 196 : 294);
         break;
       case 'coins':
         if (t - this.#lastCoins < 0.12) return; // a busy replay: one jingle at a time

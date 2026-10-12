@@ -212,8 +212,8 @@ export class Sim {
   chain: ChainState = initialChain();
   /** Which realm (chain id) this town is: Ethereum's rings with real blocks; a province's tower has no feed yet. */
   realm = 'ethereum';
-  /** ETH in USD, from what the guild holds (for the toll in dollars), or null. */
-  readonly ethUsd: number | null;
+  /** ETH in USD, from what the guild holds (for the toll in dollars), or null; a province's town is given the whole guild's. */
+  ethUsd: number | null;
   /** The line at the tower door, front first. */
   readonly queue: Agent[] = [];
   /** Where the line stands: spots along the road from the tower door, front first. */

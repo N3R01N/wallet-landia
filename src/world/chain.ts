@@ -92,7 +92,8 @@ export function heatColor(heat: number): [number, number, number] {
 }
 
 export function formatGwei(gwei: number): string {
-  return gwei >= 10 ? gwei.toFixed(0) : gwei >= 1 ? gwei.toFixed(1) : gwei.toFixed(2);
+  // L2 fees are thousandths of a gwei: keep two significant figures
+  return gwei >= 10 ? gwei.toFixed(0) : gwei >= 1 ? gwei.toFixed(1) : gwei >= 0.01 ? gwei.toFixed(2) : gwei > 0 ? gwei.toPrecision(2) : '0';
 }
 
 export function formatTransferUsd(usd: number): string {
