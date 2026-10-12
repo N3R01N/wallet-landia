@@ -13,7 +13,8 @@ import { doorSlot, flightRoute, walkRoute } from './route.js';
 import { realmOf } from '../domain/realms.js';
 import { WALK_SPEED, type ActTask, type Agent, type AgentKind, type Coin, type Effect, type Task, type Town } from './agents.js';
 import { TowerQueue } from './towerQueue.js';
-import { Townsfolk } from './townsfolk.js';
+import { bubble, Townsfolk } from './townsfolk.js';
+import { phrasesFor } from './marketChatter.js';
 
 // --- schedule ----------------------------------------------------------------
 
@@ -271,6 +272,19 @@ export class Sim {
     for (const b of this.plan.buildings) if (b.protocolId !== undefined && !this.revealed.has(b.protocolId)) this.revealed.set(b.protocolId, at);
   }
 
+  /** While a price move is shown, a villager now and then says what the market is doing. */
+  #chatterIn = 0;
+  #chatter(dt: number): void {
+    if (this.priceMove === null) return;
+    this.#chatterIn -= dt;
+    if (this.#chatterIn > 0) return;
+    this.#chatterIn = 5 + this.#rng() * 4;
+    const folk = this.agents.filter((a) => a.kind === 'villager' && !a.gone && !a.queued && !a.inside && a.doorway === null && a.alt === 0);
+    if (folk.length === 0) return;
+    const who = folk[Math.floor(this.#rng() * folk.length)]!;
+    bubble(this.#town(), who, 3.5, 0, phrasesFor(this.priceMove.mood), true);
+  }
+
   /** The market since the player last looked: a falling price brings rain, a crash a storm. */
   setPriceMove(m: PriceMove | null): void {
     this.priceMove = m;
@@ -461,6 +475,7 @@ export class Sim {
     if (this.t >= this.duration) this.#chart(this.elapsed);
 
     if (this.#folk.street() < this.#folk.target && this.#rng() < dtReal * 0.8) this.#folk.spawn(false);
+    this.#chatter(dtReal);
 
     for (const e of this.effects) e.age += dtReal;
     this.effects = this.effects.filter((e) => e.age < e.ttl);

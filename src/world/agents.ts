@@ -122,6 +122,8 @@ export interface Effect {
   dir?: 'in' | 'out';
   /** Seconds before it shows (the age counts from when it was made). */
   delay?: number;
+  /** bubble: held in full (a phrase to read), not blinked on and off. */
+  sticky?: boolean;
   /** Bailiffs seizing (coins, transfer): drawn and heard as a loss, not a payment. */
   seized?: boolean;
 }

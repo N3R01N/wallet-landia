@@ -508,7 +508,7 @@ export function bubbles(c: CanvasRenderingContext2D, sim: Sim, headOf: (x: numbe
   for (const e of sim.effects) {
     if (e.kind !== 'bubble' || e.fromAgent === undefined) continue;
     const t = e.age - (e.delay ?? 0);
-    if (t < 0 || t % 2 > 1.2) continue;
+    if (t < 0 || (e.sticky !== true && t % 2 > 1.2)) continue;
     const a = sim.findAgent(e.fromAgent);
     if (!a || a.inside) continue;
     const p = headOf(a.x, a.y, a.alt);
@@ -516,11 +516,14 @@ export function bubbles(c: CanvasRenderingContext2D, sim: Sim, headOf: (x: numbe
     const s = 9 * zoom;
     const x = p[0] + s * 0.8;
     const y = p[1] - s * 0.4;
+    // a phrase widens the bubble to fit it
+    c.font = `bold ${Math.round(s * 1.1)}px system-ui, sans-serif`;
+    const rx = Math.max(s * 1.25, c.measureText(e.text ?? '…').width / 2 + s * 0.5);
     c.fillStyle = 'rgba(255,252,240,0.95)';
     c.strokeStyle = 'rgba(60,40,25,0.8)';
     c.lineWidth = 1;
     c.beginPath();
-    c.ellipse(x, y, s * 1.25, s * 0.95, 0, 0, Math.PI * 2);
+    c.ellipse(x, y, rx, s * 0.95, 0, 0, Math.PI * 2);
     c.fill();
     c.stroke();
     c.beginPath();
@@ -529,7 +532,6 @@ export function bubbles(c: CanvasRenderingContext2D, sim: Sim, headOf: (x: numbe
     c.lineTo(x - s * 0.15, y + s * 0.85);
     c.fill();
     c.fillStyle = '#3c2819';
-    c.font = `bold ${Math.round(s * 1.1)}px system-ui, sans-serif`;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillText(e.text ?? '…', x, y + 1);

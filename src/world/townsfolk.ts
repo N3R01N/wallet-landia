@@ -152,6 +152,6 @@ export class Townsfolk {
 }
 
 /** A speech bubble over someone's head while they talk. */
-export function bubble(town: Town, a: Agent, seconds: number, delay: number, words: readonly string[] = ['…', '!', '?', '♪', '$', '☺']): void {
-  town.addEffect({ kind: 'bubble', x: a.x, y: a.y, age: 0, ttl: delay + seconds, delay, drama: 0, fromAgent: a.id, text: words[Math.floor(town.rng() * words.length)]! });
+export function bubble(town: Town, a: Agent, seconds: number, delay: number, words: readonly string[] = ['…', '!', '?', '♪', '$', '☺'], sticky = false): void {
+  town.addEffect({ kind: 'bubble', x: a.x, y: a.y, age: 0, ttl: delay + seconds, delay, drama: 0, fromAgent: a.id, text: words[Math.floor(town.rng() * words.length)]!, ...(sticky ? { sticky } : {}) });
 }
