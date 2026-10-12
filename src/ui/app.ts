@@ -189,6 +189,8 @@ export class App {
         if (this.#playerOpen && !this.#editingInspector()) this.#openPlayer();
         // a new level may bring more land
         this.#build.refresh();
+        this.#showLand();
+        this.#announceLand();
       },
     });
     this.#onBudget(this.#session.budget.snapshot());
@@ -455,6 +457,7 @@ export class App {
     }
     this.#build.refresh();
     this.#buildChanged();
+    this.#showLand();
     this.#r2d.setSim(this.#sim);
     this.#r3d?.setSim(this.#sim);
     if (o.bell !== false) this.#bell();
@@ -783,6 +786,7 @@ export class App {
           const r = new Renderer3D(this.#sim, this.#prefs.quality);
           r.classOf = (a) => this.#classOf(a);
           this.#r3d = r;
+          r.land = this.#r2d.land;
           this.#set3dQuality = (q) => r.setQuality(q);
           this.#applyTheme();
           // test hook: ?expose puts the 3D view on window
@@ -927,6 +931,30 @@ export class App {
     if (this.#sim.playing) this.#togglePlay();
     this.#sim.fog = false;
     this.#build.enter();
+  }
+
+  /** Your land, staked out in both views (none in a visited town: it is someone else's). */
+  #showLand(): void {
+    const land = this.#shown?.visiting ? null : landFor(this.#player.profile?.level ?? 1);
+    this.#r2d.land = land;
+    if (this.#r3d !== null) this.#r3d.land = land;
+  }
+
+  /** A level that brings more land is told once (also when the level came while you were away). */
+  #announceLand(): void {
+    const level = this.#player.profile?.level;
+    if (level === undefined || this.#shown?.visiting) return;
+    const land = landFor(level);
+    const w = land.x1 - land.x0;
+    const h = land.y1 - land.y0;
+    const was = this.#prefs.landArea;
+    if (w * h <= was) return;
+    this.#prefs.landArea = w * h;
+    savePrefs(this.#prefs);
+    if (was === 0 || this.#autoTown) return; // the first time it is simply yours
+    this.#toast('🏞', 'More land for your town', `Level ${level}: your town may now spread over ${w}×${h} tiles.${land.nextAt !== null ? ` More at level ${land.nextAt}.` : ' That is all of it.'}`, 10_000).onclick = () => {
+      if (!this.#build.open) this.#toggleBuild();
+    };
   }
 
   /** Build mode opened, closed, or what may be built changed: the button (and its count) and the page follow. */

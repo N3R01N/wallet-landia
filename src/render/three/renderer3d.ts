@@ -20,9 +20,10 @@ import { ImagePipeline, type DebugView, type Quality } from './pipeline.js';
 import { bundleTheme, type Theme } from './themes.js';
 import type { ThemeBundle } from '../../assets/themeBundles.js';
 import { PortraitStudio } from './portrait.js';
-import type { BuildOverlay, HitTarget, WorldView } from '../view.js';
+import type { BuildOverlay, HitTarget, LandRect, WorldView } from '../view.js';
 import { MAP_H, MAP_W } from '../../world/layout.js';
 import { BuildLayer } from './buildLayer.js';
+import { LandStakes } from './landStakes.js';
 import { spriteCharacters } from './spriteCharacters.js';
 import { CameraRig } from './cameraRig.js';
 import { TownScene } from './townScene.js';
@@ -39,6 +40,8 @@ export class Renderer3D implements WorldView {
   classOf: (address: string) => HeroClass = () => 'adventurer';
   /** While the player builds: the grid, the land and the building in hand (null: not building). */
   build: BuildOverlay | null = null;
+  land: LandRect | null = null;
+  readonly #stakes = new LandStakes();
 
   #sim: Sim;
   #gl: THREE.WebGLRenderer;
@@ -102,6 +105,7 @@ export class Renderer3D implements WorldView {
 
     this.#light = new DayNight(this.#gl, this.#scene);
     this.#scene.add(this.#town.world);
+    this.#scene.add(this.#stakes.group);
     this.#light.applyShadowTier(this.#pipeline.quality);
 
     this.#ring = new THREE.Mesh(
@@ -277,6 +281,9 @@ export class Renderer3D implements WorldView {
     this.#people.sync(this.#sim, dt, this.#cam.yaw);
     this.#highlight();
     this.#drawBuild();
+    // the land's stakes (while building, the build layer draws the land instead)
+    this.#stakes.group.visible = this.build === null;
+    if (this.build === null) this.#stakes.update(this.land, this.#sim.plan);
     if (this.#frame++ % 10 === 0) this.#overlay.occludeSigns(town);
     this.#pipeline.render();
     this.#overlay.draw(dpr, w, h, this.#sim, town, this.#cam.distance);

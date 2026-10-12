@@ -178,3 +178,22 @@ describe('trying a building in hand', () => {
     expect(planner.preview(shop!.id, small.x0, small.y0, 0, small).ok).toBe(true);
   });
 });
+
+describe('stakes along the land', () => {
+  it('stand on open ground along the edge, every two tiles; none on streets or buildings, none once the land is the whole map', async () => {
+    const { stakePoints } = await import('../src/render/stakes.js');
+    const land = landFor(5);
+    const plan = planFromLayout(guild, suggestedLayout(guild));
+    const pts = stakePoints(land, plan);
+    expect(pts.length).toBeGreaterThan(10);
+    for (const [x, y] of pts) {
+      expect(x === land.x0 || x === land.x1 || y === land.y0 || y === land.y1).toBe(true);
+      for (const [dx, dy] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
+        const k = tileAt(plan, x + dx!, y + dy!);
+        expect(['grass', 'wilds', 'sand']).toContain(k);
+        expect(plan.buildings.some((b) => x + dx! >= b.x && x + dx! < b.x + b.w && y + dy! >= b.y && y + dy! < b.y + b.h)).toBe(false);
+      }
+    }
+    expect(stakePoints(landFor(20), plan)).toEqual([]);
+  });
+});

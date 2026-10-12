@@ -570,6 +570,17 @@ select {
   color: var(--muted);
 }
 
+/* a second line under the plaque: when the land grows next */
+.medal-land {
+  margin-top: 4px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgba(58, 36, 20, 0.75);
+  color: var(--gold);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .player-medal:hover .medal-ring,
 .player-medal:focus-visible .medal-ring {
   transform: scale(1.05);
@@ -606,7 +617,8 @@ select {
   .medal-level {
     font-size: 20px;
   }
-  .medal-next {
+  .medal-next,
+  .medal-land {
     display: none;
   }
   .medal-rank {

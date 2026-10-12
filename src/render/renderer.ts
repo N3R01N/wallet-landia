@@ -4,7 +4,7 @@
  */
 
 import type { HeroClass } from '../domain/model.js';
-import { MAP_H, MAP_W, type Placed, type Pt } from '../world/layout.js';
+import { MAP_H, MAP_W, type Placed, type Pt, type TownPlan } from '../world/layout.js';
 import { CARAVAN_BACK, type Agent, type Effect, type Sim } from '../world/sim.js';
 import { crestColors, hashString, makeRng } from '../util/rng.js';
 import { brandColor, ISO_H, ISO_W } from './buildings.js';
@@ -13,7 +13,8 @@ import { bakeIsoGround, bakeTopGround, scatterProps, type Ground, type Prop } fr
 import type { Sprite } from './pixel.js';
 import { harvestSprite } from './characters.js';
 import { bubbles, carriedGoods, districtLabels, marketBoard, tollBoard, towerBeacon, floatingText, markers, nameTags, route, transfers, weather } from './overlay.js';
-import type { BuildGhost, BuildOverlay, HitTarget, WorldView } from './view.js';
+import type { BuildGhost, BuildOverlay, HitTarget, LandRect, WorldView } from './view.js';
+import { stakePoints } from './stakes.js';
 
 export type { HitTarget } from './view.js';
 export type Projection = 'top' | 'iso';
@@ -50,6 +51,9 @@ export class Renderer implements WorldView {
   selected: HitTarget | null = null;
   classOf: (address: string) => HeroClass = () => 'adventurer';
   build: BuildOverlay | null = null;
+  land: LandRect | null = null;
+  /** Where the land's stakes stand, for the land and town they were worked out for. */
+  #stakes: { land: LandRect; plan: TownPlan; at: [number, number][] } | null = null;
 
   #sim: Sim;
   #grounds = new Map<Projection, Ground>();
@@ -208,6 +212,7 @@ export class Renderer implements WorldView {
     // a new block: light runs out over the ground from the tower (under the buildings and people)
     for (const e of sim.effects) if (e.kind === 'ring') this.#groundPulse(c, e, sim.chain.busy);
     if (this.build !== null) this.#buildGround(c, this.build);
+    else if (this.land !== null) this.#landStakes(c, this.land);
 
     this.#hits = [];
     const items: Drawable[] = [];
@@ -386,6 +391,20 @@ export class Renderer implements WorldView {
     this.#tiles(c, r[0], r[1], r[2], r[3]);
     c.fill();
     c.stroke();
+  }
+
+  /** The land's edge, staked out: a post with a gold cap every two tiles (not on streets, water or buildings). */
+  #landStakes(c: CanvasRenderingContext2D, land: LandRect): void {
+    const plan = this.#sim.plan;
+    const s = this.#stakes;
+    if (s === null || s.plan !== plan || s.land.x0 !== land.x0 || s.land.y0 !== land.y0 || s.land.x1 !== land.x1 || s.land.y1 !== land.y1) this.#stakes = { land, plan, at: stakePoints(land, plan) };
+    for (const [x, y] of this.#stakes!.at) {
+      const [ax, ay] = this.toArt(x, y);
+      c.fillStyle = '#4a2c14';
+      c.fillRect(ax - 1, ay - 7, 2, 7);
+      c.fillStyle = '#f5c518';
+      c.fillRect(ax - 1.5, ay - 9, 3, 2);
+    }
   }
 
   /** The building in hand, see-through, where it would stand (sorted among the others). */

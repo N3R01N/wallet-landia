@@ -12,6 +12,7 @@ import { badgeMoments, type PlayerBadge, type PlayerProfile, type Provenance } f
 import { fromWire, workPlayer, type PlayerJob, type WireProfile } from '../domain/playerJob.js';
 import { savePrefs, type Prefs } from '../settings.js';
 import { el } from './dom.js';
+import { landFor } from '../world/townLayout.js';
 import type { PlayerReply, PlayerRequest } from './player.worker.js';
 
 export interface PlayerHost {
@@ -32,6 +33,8 @@ export class PlayerController {
   readonly #ring = el('span', { class: 'medal-ring' }, el('span', { class: 'medal-core' }, el('small', {}, 'Level'), this.#level));
   readonly #rank = el('span', { class: 'medal-rank' }, 'Wanderer');
   readonly #next = el('span', { class: 'medal-next' }, '');
+  /** When the town's land grows next (land comes with the level). */
+  readonly #land = el('span', { class: 'medal-land' }, '');
   /** Null until first worked out. */
   profile: PlayerProfile | null = null;
   /** Journeys that earned a badge or a tier, to announce them as the replay plays them. */
@@ -50,7 +53,7 @@ export class PlayerController {
 
   constructor(host: PlayerHost) {
     this.#host = host;
-    this.button.append(this.#ring, this.#rank, this.#next);
+    this.button.append(this.#ring, this.#rank, this.#next, this.#land);
     this.#show(null);
   }
 
@@ -69,6 +72,9 @@ export class PlayerController {
     this.#ring.setAttribute('aria-label', `Level ${level}: ${Math.round(share * 100)}% of the way to level ${level + 1}`);
     this.#rank.textContent = p === null ? 'Wanderer' : `${p.rank} · ${p.badges.size} badge${p.badges.size === 1 ? '' : 's'}`;
     this.#next.textContent = p === null ? 'working out…' : `${Math.max(0, span - into).toLocaleString('en-US')} XP to level ${level + 1}`;
+    const nextLand = landFor(level).nextAt;
+    this.#land.textContent = nextLand === null ? '' : `🏞 More land at level ${nextLand}`;
+    this.#land.hidden = p === null || nextLand === null;
     this.button.setAttribute('aria-label', `Level ${level} ${p?.rank ?? 'Wanderer'}: open your sheet`);
     if (p !== null) this.button.title = `You: level ${level} ${p.rank} · ${p.badges.size} badges · ${p.xp.toLocaleString('en-US')} XP — open your sheet`;
   }

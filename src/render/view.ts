@@ -38,12 +38,22 @@ export interface WorldView {
   groundAt(sx: number, sy: number): { x: number; y: number } | null;
   /** While the player builds: what to draw over the town (null: not building). */
   build: BuildOverlay | null;
+  /** The player's land, staked out along its edge (null: none shown, e.g. a visited town). */
+  land: LandRect | null;
+}
+
+/** A rectangle of tiles (x1/y1 exclusive). */
+export interface LandRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
 }
 
 /** What build mode draws: the tile grid, the player's land, and the building in hand (if any). */
 export interface BuildOverlay {
   /** The land the player may build on (tiles, x1/y1 exclusive); outside it is drawn darker. */
-  land: { x0: number; y0: number; x1: number; y1: number };
+  land: LandRect;
   ghost: BuildGhost | null;
 }
 

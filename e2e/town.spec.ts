@@ -205,3 +205,26 @@ test('build mode: select a building, move it, drag it, turn it, store it; undo a
   await page.keyboard.press('Escape');
   await expect.poll(() => savedTown(page)).toEqual([{ id, x: 29, y: 5, rot: 1 }]);
 });
+
+test('land: the medallion says when it grows; a level that brought more is told once; its edge is staked out', async ({ page }) => {
+  // as if the land was last told at level 1 (16 × 12 tiles)
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('seeded') !== null) return;
+    sessionStorage.setItem('seeded', '1');
+    localStorage.setItem('wallet-landia-v4/prefs/v1', JSON.stringify({ view: 'top', tourDone: true, landArea: 16 * 12 }));
+  });
+  await page.goto('/?expose&freeze');
+  await expect(page.locator('.veil')).toBeHidden({ timeout: 30_000 });
+  await expect(page.locator('.player-medal .medal-land')).toHaveText(/More land at level \d+/, { timeout: 30_000 });
+  const toast = page.locator('.toast', { hasText: 'More land for your town' });
+  await expect(toast).toBeVisible({ timeout: 30_000 });
+  const land = await page.evaluate(() => (window as unknown as { townView: { land: { x0: number; x1: number } | null } }).townView.land);
+  expect(land).not.toBeNull();
+  expect(land!.x1 - land!.x0).toBeGreaterThan(16);
+  // told once: not again after a reload
+  await page.reload();
+  await expect(page.locator('.veil')).toBeHidden({ timeout: 30_000 });
+  await expect(page.locator('.player-medal .medal-land')).toHaveText(/More land/, { timeout: 30_000 });
+  await page.waitForTimeout(500);
+  await expect(page.locator('.toast', { hasText: 'More land for your town' })).toHaveCount(0);
+});
