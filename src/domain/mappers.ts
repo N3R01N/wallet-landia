@@ -32,6 +32,22 @@ import {
 import { approxUsd, formatQty, tierOf, type Tier } from './tiers.js';
 import { heroName } from '../util/rng.js';
 
+
+/**
+ * A picture's address from the API, or undefined. Some arrive wrapped in quote
+ * marks, which made a relative (and so 404ing) image URL; only https survives.
+ */
+export function imageUrl(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const s = raw.trim().replace(/^["'\s]+|["'\s]+$/g, '');
+  try {
+    const u = new URL(s);
+    return u.protocol === 'https:' ? u.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export type HistoryWindow = { kind: 'days'; days: number } | { kind: 'count'; count: number };
 
 const CAMP_ID = 'mystery:camp';
@@ -177,7 +193,7 @@ function mapItems(raw: RawWallet): { items: Item[]; spam: number } {
       quantity: attrs.quantity.float,
       usd,
       tier: tierOf(usd),
-      iconUrl: f.icon?.url ?? null,
+      iconUrl: imageUrl(f.icon?.url) ?? null,
     });
   }
   const items = [...byId.values()].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
@@ -204,7 +220,7 @@ function mapNfts(raw: RawWallet): { nfts: Item[]; spam: number } {
       quantity: Number(n.attributes.amount ?? '1') || 1,
       usd,
       tier: tierOf(usd),
-      iconUrl: info?.content?.preview?.url ?? n.attributes.collection_info?.content?.icon?.url ?? null,
+      iconUrl: imageUrl(info?.content?.preview?.url) ?? imageUrl(n.attributes.collection_info?.content?.icon?.url) ?? null,
     });
   }
   return { nfts: nfts.sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0)), spam };
@@ -232,7 +248,7 @@ function mapStashes(raw: RawWallet, book: ProtocolBook): Stash[] {
     if (ident === null) continue;
     const attrs = position.attributes;
     book.touch(ident.id, ident.name, {
-      iconUrl: attrs.application_metadata?.icon?.url,
+      iconUrl: imageUrl(attrs.application_metadata?.icon?.url),
       url: attrs.application_metadata?.url,
       module: attrs.protocol_module,
     });
@@ -419,8 +435,8 @@ function goods(t: TransferResource): Goods {
   if (nft !== undefined) {
     const name = nft.name ?? (nft.token_id !== undefined ? `${g.symbol} #${nft.token_id}` : undefined);
     if (name !== undefined) g.name = name;
-    const image = nft.content?.preview?.url;
-    if (typeof image === 'string' && image !== '') g.image = image;
+    const image = imageUrl(nft.content?.preview?.url);
+    if (image !== undefined) g.image = image;
   }
   return g;
 }
@@ -463,7 +479,7 @@ function learnContracts(raws: readonly RawWallet[]): BuildCtx['learned'] {
       const ident = txProtocol(tx);
       const to = tx.attributes.sent_to.toLowerCase();
       if (ident === null || to === '' || learned.has(to)) continue;
-      learned.set(to, { id: ident.id, name: ident.name, iconUrl: tx.attributes.application_metadata?.icon?.url ?? undefined });
+      learned.set(to, { id: ident.id, name: ident.name, iconUrl: imageUrl(tx.attributes.application_metadata?.icon?.url) });
     }
   }
   return learned;
@@ -566,7 +582,7 @@ function resolveProtocol(raw: TransactionResource, ctx: BuildCtx): Protocol | nu
   if (ident === null && isKey && spender !== undefined) protocol = contractPlace(spender, raw, ctx);
   if (ident !== null) {
     protocol = ctx.book.touch(ident.id, ident.name, {
-      iconUrl: a.application_metadata?.icon?.url,
+      iconUrl: imageUrl(a.application_metadata?.icon?.url),
       url: a.application_metadata?.url,
     });
   }
@@ -661,7 +677,7 @@ function buildSteps(
     let actTarget = o.target;
     let actProtocol = o.protocol;
     if (actName !== undefined && actName !== '') {
-      const p = ensureClassified(ctx.book.touch(slugify(actName), actName, { iconUrl: act.application_metadata?.icon?.url }));
+      const p = ensureClassified(ctx.book.touch(slugify(actName), actName, { iconUrl: imageUrl(act.application_metadata?.icon?.url) }));
       actTarget = { kind: 'building', protocolId: p.id };
       actProtocol = p;
     }
