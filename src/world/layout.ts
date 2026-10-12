@@ -31,7 +31,7 @@ export const DISTRICT_NAMES: Record<District, string> = {
   harbour: 'Harbour',
 };
 
-const DISTRICT_OF: Record<BuildingKind, District> = {
+export const DISTRICT_OF: Record<BuildingKind, District> = {
   temple: 'temple',
   barracks: 'temple',
   alchemist: 'alchemy',
@@ -80,6 +80,8 @@ export interface Placed {
   protocolId?: string;
   heroAddress?: string;
   district: District | 'gate';
+  /** Quarter turns clockwise from facing south (the door below): 1 west, 2 north, 3 east. */
+  rot?: 0 | 1 | 2 | 3;
 }
 
 export interface TownPlan {
@@ -91,6 +93,8 @@ export interface TownPlan {
   guildhall: Placed;
   gate: Placed;
   walkable: Uint8Array;
+  /** District names and where to write them (a built town names only what it has); the classic spots when absent. */
+  labels?: [District, number, number][];
 }
 
 export function tileAt(plan: TownPlan, x: number, y: number): TileKind {
@@ -123,7 +127,7 @@ function baseTiles(): TileKind[] {
   return t;
 }
 
-function makePlaced(id: string, kind: PlacedKind, x: number, y: number, w: number, h: number, district: Placed['district']): Placed {
+export function makePlaced(id: string, kind: PlacedKind, x: number, y: number, w: number, h: number, district: Placed['district']): Placed {
   const door = { x: x + Math.floor(w / 2), y: y + h };
   return { id, kind, x, y, w, h, door, doorAt: { x: door.x + 0.5, y: door.y + 0.5 }, district };
 }

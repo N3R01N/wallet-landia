@@ -17,6 +17,7 @@ import { Backfill } from './backfill.js';
 import type { LedgerStatus } from './ledger.js';
 import { decodeLedgerFile, encodeLedgerFile, LEDGER_FILE_FORMAT, type LedgerFile } from './ledgerFile.js';
 import { realmScope } from './zerion/endpoints.js';
+import { sanitizeLayout, type TownLayout } from '../world/townLayout.js';
 import { walletFingerprints } from './rpc.js';
 import { DailyBudget, type BudgetSnapshot } from './zerion/budget.js';
 import { ZerionError } from './zerion/client.js';
@@ -185,7 +186,9 @@ export class Session {
       wallets.push({ address: a, complete: st.complete, transactions: await loader.ledger.all(a) });
     }
     if (wallets.length === 0) return null;
-    return encodeLedgerFile({ format: LEDGER_FILE_FORMAT, scope: realmScope(), exportedAt: Date.now(), wallets });
+    // the towns you built travel with the history they were built from
+    const towns = Object.fromEntries(Object.entries(this.prefs.towns).map(([realm, t]) => [realm, sanitizeLayout(t)]).filter(([, t]) => (t as TownLayout).placed.length > 0));
+    return encodeLedgerFile({ format: LEDGER_FILE_FORMAT, scope: realmScope(), exportedAt: Date.now(), wallets, ...(Object.keys(towns).length > 0 ? { towns } : {}) });
   }
 
   /** Load a saved history file into your wallets' kept history; what happened, in plain words. */
@@ -206,10 +209,19 @@ export class Session {
       transactions += w.transactions.length;
     }
     const skipped = file.wallets.length - loaded;
+    // a town from the file, for each realm where you have not built one here
+    let towns = 0;
+    for (const [realm, raw] of Object.entries(loaded > 0 ? (file.towns ?? {}) : {})) {
+      const t = sanitizeLayout(raw);
+      if (t.placed.length === 0 || sanitizeLayout(this.prefs.towns[realm]).placed.length > 0) continue;
+      this.prefs.towns[realm] = t;
+      towns++;
+    }
+    if (towns > 0) savePrefs(this.prefs);
     // carry on from there (anything newer, or older if it was not complete)
     if (loaded > 0 && this.shown?.mode === 'live' && this.shown.visiting === null) this.#walkBack(loader, this.prefs.owned);
     if (loaded === 0) return 'None of the wallets in that file are yours here: add them under Your wallets first.';
-    return `Loaded ${transactions.toLocaleString('en-US')} transactions for ${loaded} wallet${loaded === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} not yours here, left out)` : ''}.`;
+    return `Loaded ${transactions.toLocaleString('en-US')} transactions for ${loaded} wallet${loaded === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} not yours here, left out)` : ''}${towns > 0 ? `, and the town${towns === 1 ? '' : 's'} you built` : ''}.`;
   }
 
   // --- names -----------------------------------------------------------------

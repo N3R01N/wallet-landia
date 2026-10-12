@@ -223,7 +223,7 @@ export class Renderer implements WorldView {
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     weather(c, sim, w, h, true);
     const project = (x: number, y: number): [number, number] => this.toScreen(x, y);
-    if (this.scale <= 3) districtLabels(c, project);
+    if (this.scale <= 3) districtLabels(c, project, this.#sim.plan.labels);
     if (sim.route) route(c, sim.route, project, sim.elapsed);
     // the Chronicle Tower shows how busy the chain is: a beacon on top, a toll board at the door
     const tower = sim.plan.tower;

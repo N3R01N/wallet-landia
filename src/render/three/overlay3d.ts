@@ -48,7 +48,7 @@ export class Overlay3D {
     const towerTop = town.tower?.top;
     for (const e of sim.effects) this.#effect(c, e, towerTop, distance);
     weather(c, sim, w, h, false);
-    if (distance > 30) districtLabels(c, this.project);
+    if (distance > 30) districtLabels(c, this.project, sim.plan.labels);
     if (sim.route) route(c, sim.route, this.project, sim.elapsed);
     const tops = new Map<string, [number, number]>();
     for (const b of town.buildings) {

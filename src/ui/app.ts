@@ -18,7 +18,8 @@ import { assets } from '../assets/registry.js';
 import { loadBundledPacks, loadImportedPacks } from '../assets/packs.js';
 import { PROVINCE_POLL_MS, PROVINCE_RPC, setRpcUrl, startHeartbeat, validRpcUrl, type BlockBeat } from '../data/rpc.js';
 import { buildingName } from '../assets/art.js';
-import { planTown } from '../world/layout.js';
+import { planTown, type TownPlan } from '../world/layout.js';
+import { planFromLayout, sanitizeLayout, suggestedLayout } from '../world/townLayout.js';
 import { Sim } from '../world/sim.js';
 import { Renderer } from '../render/renderer.js';
 import type { HitTarget, ViewKind, WorldView } from '../render/view.js';
@@ -356,11 +357,23 @@ export class App {
     return this.#guild.heroes.find((h) => h.address === address)?.suggestedClass ?? 'adventurer';
   }
 
+  /**
+   * The town's plan: your own town as you built it in this realm (it starts
+   * as the bare square); a visited town, which has no layout of its own, as
+   * the classic town lays it out.
+   */
+  #plan(): TownPlan {
+    if (this.#shown?.visiting) return planTown(this.#guild);
+    // test hook: the e2e tests that are not about building start from the suggested town
+    if (autoTown()) return planFromLayout(this.#guild, suggestedLayout(this.#guild));
+    return planFromLayout(this.#guild, sanitizeLayout(this.#prefs.towns[this.#prefs.realm]));
+  }
+
   #rebuild(): void {
     this.#world = buildGuild(this.#raws, this.#prefs.window, { names: this.#names });
     this.#nameHeroes();
     this.#guild = realmGuild(this.#world, this.#prefs.realm);
-    const plan = planTown(this.#guild);
+    const plan = this.#plan();
     this.#sim = new Sim(this.#guild, plan);
     this.#sim.realm = this.#prefs.realm;
     // a province may hold no ETH of its own: price its toll from all the guild holds
@@ -671,8 +684,11 @@ export class App {
           return true;
         },
         onImportHistory: async (data) => {
+          const town = JSON.stringify(this.#prefs.towns[this.#prefs.realm] ?? null);
           const said = await this.#session.importHistory(data);
           void this.#player.refresh();
+          // a town came with it for the realm on show: raise it
+          if (JSON.stringify(this.#prefs.towns[this.#prefs.realm] ?? null) !== town) this.#swapSim();
           return said;
         },
         heroes: this.#guild.heroes,
@@ -1013,4 +1029,13 @@ export class App {
 /** Where a hero's quest stands, as a key: the card is redrawn when it changes. */
 function stageKey(n: HeroNow): string {
   return `${n.journey?.key ?? ''}|${n.phase}|${n.step ?? ''}|${n.busy}`;
+}
+
+/** Test hook (a dev storage key, set by the e2e config): start from the suggested town instead of the one you built. */
+function autoTown(): boolean {
+  try {
+    return localStorage.getItem('wallet-landia-v4/dev/autotown') === '1';
+  } catch {
+    return false;
+  }
 }

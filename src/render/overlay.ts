@@ -26,10 +26,10 @@ const DISTRICT_LABELS: [District, number, number][] = [
   ['harbour', 31, 28],
 ];
 
-export function districtLabels(c: CanvasRenderingContext2D, project: Project): void {
+export function districtLabels(c: CanvasRenderingContext2D, project: Project, labels: readonly [District, number, number][] = DISTRICT_LABELS): void {
   c.font = '600 11px "Trebuchet MS", system-ui, sans-serif';
   c.textAlign = 'center';
-  for (const [d, x, y] of DISTRICT_LABELS) {
+  for (const [d, x, y] of labels) {
     const p = project(x, y);
     if (p === null) continue;
     c.fillStyle = 'rgba(40,30,20,0.55)';

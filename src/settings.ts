@@ -53,6 +53,10 @@ export interface Prefs {
   chains: string[];
   /** The realm whose town is shown (a chain id). */
   realm: string;
+  /** The town the player built in each realm (realm → layout, see world/townLayout.ts); read through `sanitizeLayout`. */
+  towns: Record<string, unknown>;
+  /** Your wallets you are happy to show when sharing your town (lowercase addresses); the rest are private. */
+  publicWallets: string[];
 }
 
 const KEY = 'wallet-landia-v4/prefs/v1';
@@ -82,6 +86,8 @@ const DEFAULTS: Prefs = {
   rpcUrl: '',
   chains: [...DEFAULT_CHAINS],
   realm: 'ethereum',
+  towns: {},
+  publicWallets: [],
 };
 
 export function loadPrefs(): Prefs {

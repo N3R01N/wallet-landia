@@ -17,6 +17,15 @@ describe('history files', () => {
     expect(back.wallets[0]!.complete).toBe(true);
   });
 
+  it('carry the towns built, by realm (an odd realm name is left out; older files have none)', async () => {
+    const town = { v: 1, placed: [{ id: 'b:aave-v3', x: 4, y: 6, rot: 1 }] };
+    const f = { format: LEDGER_FILE_FORMAT, scope: 'ethereum', exportedAt: 1, wallets: [{ address: A, complete: true, transactions: [tx(1)] }], towns: { ethereum: town, '../evil': town } } as LedgerFile;
+    const back = await decodeLedgerFile(new Uint8Array(await (await encodeLedgerFile(f)).arrayBuffer()).buffer);
+    expect(back.towns).toEqual({ ethereum: town });
+    const old = await decodeLedgerFile(new TextEncoder().encode(JSON.stringify({ ...f, towns: undefined })).buffer);
+    expect(old.towns).toBeUndefined();
+  });
+
   it('reads plain JSON too, and keeps only what looks like a transaction', async () => {
     const f = { format: LEDGER_FILE_FORMAT, scope: 'ethereum', wallets: [{ address: A.toUpperCase().replace('0X', '0x'), transactions: [tx(1), { id: 'x' }, { id: 'y', attributes: { hash: 1 } }, tx(2)] }] };
     const back = await decodeLedgerFile(new TextEncoder().encode(JSON.stringify(f)).buffer);

@@ -23,6 +23,8 @@ export interface LedgerFile {
   scope: string;
   exportedAt: number;
   wallets: { address: string; complete: boolean; transactions: TransactionResource[] }[];
+  /** The towns built, by realm (checked again when used: see world/townLayout.ts `sanitizeLayout`). */
+  towns?: Record<string, unknown>;
 }
 
 export async function encodeLedgerFile(f: LedgerFile): Promise<Blob> {
@@ -82,7 +84,9 @@ function validate(raw: unknown): LedgerFile {
     if (!Array.isArray(w.transactions) || w.transactions.length > MAX_PER_WALLET) throw new Error(`The history of ${w.address} is not a list of transactions.`);
     return { address: w.address.toLowerCase(), complete: w.complete === true, transactions: w.transactions.filter(looksLikeTx) };
   });
-  return { format: LEDGER_FILE_FORMAT, scope: raw.scope, exportedAt: typeof raw.exportedAt === 'number' ? raw.exportedAt : 0, wallets };
+  const towns: Record<string, unknown> = {};
+  if (isObj(raw.towns)) for (const [realm, t] of Object.entries(raw.towns)) if (/^[a-z0-9-]{1,40}$/.test(realm)) towns[realm] = t;
+  return { format: LEDGER_FILE_FORMAT, scope: raw.scope, exportedAt: typeof raw.exportedAt === 'number' ? raw.exportedAt : 0, wallets, ...(Object.keys(towns).length > 0 ? { towns } : {}) };
 }
 
 /** The fields the ledger and the mapper rely on, of the right types. */

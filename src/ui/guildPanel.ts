@@ -148,9 +148,21 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
   const owned = p.owned.map((a) =>
     walletRow(a, ctx, [
       (() => {
+        // shown when sharing your town, or kept to yourself (the default)
+        const pub = p.publicWallets.includes(a);
+        const b = el('button', { class: `btn small privacy${pub ? ' public' : ''}`, 'aria-pressed': String(pub), title: pub ? 'Public: shown when you share your town. Click to make it private.' : 'Private: never shared, even when you share your town. Click to make it public.' }, pub ? '🔓 Public' : '🔒 Private');
+        b.onclick = () => {
+          p.publicWallets = pub ? p.publicWallets.filter((x) => x !== a) : [...p.publicWallets, a];
+          savePrefs(p);
+          ctx.refresh();
+        };
+        return b;
+      })(),
+      (() => {
         const b = el('button', { class: 'btn small', title: 'Remove from your guild' }, '✕');
         b.onclick = () => {
           p.owned = p.owned.filter((x) => x !== a);
+          p.publicWallets = p.publicWallets.filter((x) => x !== a);
           savePrefs(p);
           ctx.onHomeChanged();
           ctx.refresh();

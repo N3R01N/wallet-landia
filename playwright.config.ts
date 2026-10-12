@@ -7,6 +7,8 @@ import { defineConfig } from '@playwright/test';
 /** The specs that render themed 3D towns, capture pictures, or rebuild the 3D town over and over (gpu: ~2 min). */
 const SLOW = /(themes|sandbox|visual|gpu)\.spec\.ts$/;
 
+const AUTOTOWN = { name: 'wallet-landia-v4/dev/autotown', value: '1' };
+
 export default defineConfig({
   testDir: 'e2e',
   timeout: 90_000,
@@ -25,8 +27,10 @@ export default defineConfig({
   projects: [
     // fast tests open the town top-down (the app's default is 3D, which costs seconds a page in
     // software WebGL); a test that needs 3D switches to it, or sets its own preferences
-    { name: 'fast', testIgnore: SLOW, use: { storageState: { cookies: [], origins: [{ origin: 'http://localhost:5198', localStorage: [{ name: 'wallet-landia-v4/prefs/v1', value: JSON.stringify({ view: 'top' }) }] }] } } },
-    { name: 'slow', testMatch: SLOW },
+    // both start from the suggested town (the dev autotown key): a player's own town starts empty, and only
+    // the town-building tests (which clear the key) are about building it
+    { name: 'fast', testIgnore: SLOW, use: { storageState: { cookies: [], origins: [{ origin: 'http://localhost:5198', localStorage: [{ name: 'wallet-landia-v4/prefs/v1', value: JSON.stringify({ view: 'top' }) }, AUTOTOWN] }] } } },
+    { name: 'slow', testMatch: SLOW, use: { storageState: { cookies: [], origins: [{ origin: 'http://localhost:5198', localStorage: [AUTOTOWN] }] } } },
   ],
   webServer: {
     command: 'npx vite --port 5198 --strictPort',
