@@ -99,6 +99,7 @@ export class Renderer3D implements WorldView {
       if (this.#town.critters) out.push(this.#town.critters.glow);
       if (this.#town.lamps) out.push(this.#town.lamps.pools);
       if (this.#town.pulse) out.push(this.#town.pulse.mesh);
+      this.#town.beacon?.aoExclusions(out);
       if (this.#buildLayer) out.push(this.#buildLayer.group);
       return out;
     };
