@@ -30,6 +30,8 @@ export interface WorldView {
   /** Keep a hero in view (3D Quest Replay); optional. */
   /** Keep someone in view: a hero's address or any agent's id; `then` (an address) once they are gone. */
   follow?(key: string | null, then?: string | null): void;
+  /** Who the camera keeps in view, if it follows anyone. */
+  readonly following?: string | null;
   /** Orbit the camera; a no-op where the projection is fixed. */
   rotate(dx: number, dy: number): void;
 }

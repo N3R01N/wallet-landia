@@ -77,6 +77,11 @@ export class CameraRig {
     this.#goal.distance = Math.min(this.#goal.distance, 34);
   }
 
+  /** Who the camera keeps in view (null: no one). */
+  get following(): string | null {
+    return this.#follow;
+  }
+
   /** Keep someone in view (an agent id or hero address); `then` once they have gone. Null to stop. */
   follow(key: string | null, then: string | null): void {
     this.#follow = key;

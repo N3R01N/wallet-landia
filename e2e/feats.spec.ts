@@ -18,11 +18,13 @@ test('a medal is announced as the replay plays; the hero wears its title', async
   await expect(sheet.locator('.player-sheet h2')).toContainText(/Level \d+ · /);
   await expect(sheet.locator('.xp-bar')).toBeVisible();
   await expect(sheet.locator('.medal.earned').first()).toBeVisible();
-  await expect(page.locator('.player-btn')).toContainText(/Lv \d+/);
+  await expect(page.locator('.player-medal .medal-level')).toHaveText(/^\d+$/);
 
   // a hero's sheet: the badges that wallet earned first, a link to the player, a title to pick (unlocked by the player's badges)
   await page.locator('.questlog-list .log-row').first().click();
   await page.locator('.inspector a', { hasText: /.+/ }).first().click();
+  // (the hero's link shows their current quest; the whole sheet is one click on)
+  await sheet.locator('.btn', { hasText: 'Hero overview' }).click();
   await expect(sheet.locator('h3', { hasText: 'Badges first earned by this wallet' })).toBeVisible();
   await expect(sheet.locator('.btn', { hasText: 'Your level and all your badges' })).toBeVisible();
   const select = sheet.locator('select[aria-label="Hero title"]');

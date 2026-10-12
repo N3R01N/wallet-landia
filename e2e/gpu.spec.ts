@@ -19,7 +19,7 @@ const buildingsId = (page: Page): Promise<string | undefined> => page.evaluate((
 /** Open the 3D town, rebuild once (caches built lazily on the first one are in), and wait until it settles. */
 async function settled(page: Page): Promise<Stats> {
   await page.goto('/?expose&freeze&quality=low&theme=');
-  await page.locator('.btn', { hasText: '3D' }).click();
+  await page.locator('.view-select').selectOption('3d');
   await expect(page.locator('.stage3d')).toBeVisible({ timeout: 60_000 });
   await page.waitForFunction(() => (window as unknown as { town3d?: Town }).town3d !== undefined, null, { timeout: 60_000 });
   await rebuild(page);

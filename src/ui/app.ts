@@ -37,7 +37,8 @@ import { nightFactor } from '../render/overlay.js';
 import { priceMove, type PriceMove } from '../domain/risk.js';
 import { ethPriceFrom, formatGwei } from '../world/chain.js';
 import { BADGE_TIER_NAMES, type PlayerBadge } from '../domain/player.js';
-import { buildingPanel, heroPanel, playerPanel, questLogRow, questPanel, type PanelContext } from './panels.js';
+import { buildingPanel, heroPanel, heroQuestPanel, playerPanel, questLogRow, questPanel, type PanelContext } from './panels.js';
+import { heroNow, type HeroNow } from '../world/heroNow.js';
 
 export class App {
   readonly element: HTMLElement;
@@ -90,7 +91,9 @@ export class App {
   #dateLabel = el('span', { class: 'date' }, '');
   #modeLabel = el('span', { class: 'mode' }, '');
   #beatLabel = el('span', { class: 'beat muted' }, 'listening for the bell…');
-  #viewBtns = new Map<ViewKind, HTMLButtonElement>();
+  #viewSel: HTMLSelectElement | null = null;
+  /** The hero whose card is open (their current quest, or their whole sheet), and the stage the quest card shows. */
+  #heroCard: { address: string; view: 'quest' | 'overview'; stage: string } | null = null;
   #speedBtns = new Map<number, HTMLButtonElement>();
   #beat: BlockBeat | null = null;
   #scrubbing = false;
@@ -127,6 +130,7 @@ export class App {
     if (new URLSearchParams(location.search).has('expose')) {
       (window as unknown as { soundscape: Soundscape }).soundscape = this.#sound;
       Object.defineProperty(window, 'townSim', { get: () => this.#sim, configurable: true });
+      Object.defineProperty(window, 'townView', { get: () => this.#renderer, configurable: true });
     }
     this.#busy('town', 'Gathering your heroes…');
     this.#session = new Session(this.#prefs, {
@@ -544,7 +548,8 @@ export class App {
     if (target === null) return false;
     if (target.kind === 'hero') {
       if (!this.#guild.heroes.some((h) => h.address === target.address)) return false;
-      this.#selectHero(target.address);
+      if (this.#heroCard?.view === 'overview') this.#heroOverview(target.address);
+      else this.#selectHero(target.address, false);
       return true;
     }
     const placed = this.#sim.plan.buildings.find((b) => b.id === target.placed.id);
@@ -672,7 +677,8 @@ export class App {
         },
         heroes: this.#guild.heroes,
         classOf: (a) => this.#classOf(a),
-        onSelectHero: (a) => this.#selectHero(a),
+        // the Guild's "Character sheet": the whole sheet (a click in town shows the hero's quest)
+        onSelectHero: (a) => this.#heroOverview(a),
         setName: (a, name) => {
           this.#rename(a, name);
           this.#openGuild();
@@ -716,6 +722,8 @@ export class App {
           const reload = el('button', { class: 'btn small' }, 'Reload');
           reload.onclick = () => location.reload();
           this.#toast('⚠', 'The 3D view could not load', 'The town may have been updated since this tab opened. ', 12_000, reload);
+          // the picker goes back to the view still on show
+          if (this.#viewSel !== null) this.#viewSel.value = this.#renderer === this.#r2d ? this.#r2d.view : '3d';
           return;
         } finally {
           this.#busy('3d', null);
@@ -726,8 +734,11 @@ export class App {
       this.#r2d.view = v;
       this.#renderer = this.#r2d;
     }
-    this.#renderer.selected = null;
+    // a hero being watched stays watched in the new view
+    const watched = this.#heroCard?.address ?? null;
+    this.#renderer.selected = watched === null ? null : { kind: 'hero', address: watched };
     this.#renderer.hover = null;
+    if (watched !== null) this.#renderer.follow?.(watched);
     // the Realm Map lives in the stage too: close it properly (replacing it away would leave its animation running)
     this.#closeRealmMap();
     this.#stage.replaceChildren(this.#renderer.element);
@@ -735,7 +746,7 @@ export class App {
       this.#prefs.view = v;
       savePrefs(this.#prefs);
     }
-    for (const [k, b] of this.#viewBtns) b.classList.toggle('on', k === v);
+    if (this.#viewSel !== null) this.#viewSel.value = v;
     requestAnimationFrame(() => {
       this.#renderer.fit();
       if (v === '3d') this.#bookmark?.();
@@ -803,7 +814,7 @@ export class App {
         scrubEnd: () => (this.#scrubbing = false),
       },
     );
-    this.#viewBtns = layout.viewBtns;
+    this.#viewSel = layout.viewSel;
     this.#speedBtns = layout.speedBtns;
     this.#tourRefs = { views: layout.views, guildBtn: layout.guildBtn, legend: layout.legend };
     return layout.element;
@@ -838,6 +849,9 @@ export class App {
       this.#selectedKey = sim.log.at(-1)?.journey.key ?? '';
       this.#log.replaceChildren(...sim.log.slice(-8).reverse().map((e) => questLogRow(e.journey, this.#guild, (j) => this.#openJourney(j))));
     }
+    // a hero's quest card follows them from stop to stop
+    const card = this.#heroCard;
+    if (card !== null && card.view === 'quest' && stageKey(heroNow(sim, card.address)) !== card.stage) this.#selectHero(card.address, false);
   }
 
   // --- what the town shows on hover and click ----------------------------------
@@ -846,7 +860,7 @@ export class App {
     if (t.kind === 'hero') {
       const h = this.#guild.heroes.find((x) => x.address === t.address);
       if (!h) return [];
-      return [el('strong', {}, h.name), el('div', {}, `${CLASS_LABEL[this.#classOf(h.address)]} · ${approxUsd(h.netWorth)} (${TIER_NAMES[h.tier]})`), el('div', { class: 'muted' }, 'a wallet · click for the character sheet')];
+      return [el('strong', {}, h.name), el('div', {}, `${CLASS_LABEL[this.#classOf(h.address)]} · ${approxUsd(h.netWorth)} (${TIER_NAMES[h.tier]})`), el('div', { class: 'muted' }, 'a wallet · click to see their quest and follow them')];
     }
     const b = t.placed;
     if (b.kind === 'home') {
@@ -889,11 +903,11 @@ export class App {
         if (t === null) delete this.#prefs.titles[a];
         else this.#prefs.titles[a] = t;
         savePrefs(this.#prefs);
-        this.#selectHero(a);
+        this.#heroOverview(a);
       },
       setName: (a, name) => {
         this.#rename(a, name);
-        this.#selectHero(a);
+        this.#heroOverview(a);
       },
       bornName: (a) => this.#bornNames.get(a) ?? '',
       portraitOf: (a, cls) => this.#r3d?.portrait(a, cls) ?? null,
@@ -906,7 +920,7 @@ export class App {
         // banners, shields and caravans are built with the crest: redraw the town
         this.#r2d.setSim(this.#sim);
         this.#r3d?.setSim(this.#sim);
-        this.#selectHero(a);
+        this.#heroOverview(a);
       },
     };
   }
@@ -923,6 +937,7 @@ export class App {
       return;
     }
     this.#renderer.selected = target;
+    this.#renderer.follow?.(null);
     if (this.#sim.fogOver(target.placed) > 0.5) {
       this.#openInspector(el('div', { class: 'panel-body' }, el('h2', {}, 'Unexplored'), el('p', {}, 'A bank of mist hides this building. No hero has been here yet in this replay: it lifts when one visits, and the map is fully charted when the replay ends.'), el('p', { class: 'muted' }, 'Fog of war can be turned off in 🎨 Looks.')));
       return;
@@ -949,14 +964,34 @@ export class App {
     if (!this.#sim.playing) this.#togglePlay();
   }
 
-  #selectHero(address: string): void {
+  /**
+   * A hero, clicked: the quest they are on right now, kept current as they
+   * go (see #tick), and the camera follows them (panning by hand stops it).
+   * `follow` false: only redraw the card.
+   */
+  #selectHero(address: string, follow = true): void {
+    const hero = this.#guild.heroes.find((h) => h.address === address);
+    if (!hero) return;
+    const now = heroNow(this.#sim, address);
+    this.#renderer.selected = { kind: 'hero', address };
+    this.#openInspector(heroQuestPanel(hero, now, this.#ctx(), { overview: () => this.#heroOverview(address) }));
+    this.#heroCard = { address, view: 'quest', stage: stageKey(now) };
+    if (follow) this.#renderer.follow?.(address);
+  }
+
+  /** The hero's whole sheet (treasure, class, title, badges, quest log), a click away from their quest. */
+  #heroOverview(address: string): void {
     const hero = this.#guild.heroes.find((h) => h.address === address);
     if (!hero) return;
     this.#renderer.selected = { kind: 'hero', address };
-    this.#openInspector(heroPanel(hero, this.#ctx()));
+    const back = el('button', { class: 'btn back' }, '◀ Current quest');
+    back.onclick = () => this.#selectHero(address, false);
+    this.#openInspector(el('div', {}, back, heroPanel(hero, this.#ctx())));
+    this.#heroCard = { address, view: 'overview', stage: '' };
   }
 
   #openInspector(body: HTMLElement, guild = false): void {
+    this.#heroCard = null;
     this.#guildOpen = guild;
     this.#looksOpen = false;
     this.#playerOpen = false;
@@ -966,6 +1001,7 @@ export class App {
   }
 
   #closeInspector(): void {
+    this.#heroCard = null;
     this.#guildOpen = false;
     this.#looksOpen = false;
     this.#playerOpen = false;
@@ -974,4 +1010,9 @@ export class App {
     this.#inspector.hidden = true;
     this.#renderer.selected = null;
   }
+}
+
+/** Where a hero's quest stands, as a key: the card is redrawn when it changes. */
+function stageKey(n: HeroNow): string {
+  return `${n.journey?.key ?? ''}|${n.phase}|${n.step ?? ''}|${n.busy}`;
 }

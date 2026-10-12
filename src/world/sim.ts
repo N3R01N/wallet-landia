@@ -695,11 +695,15 @@ export class Sim {
         if (task.seconds === 0) {
           // Journey start marker: setting out with what is to be handed over.
           a.journey = task.journey ?? null;
+          delete a.actStep;
           a.carrying = task.journey && task.journey.valueUsd > 0 ? task.journey.tier : null;
           a.goods = task.journey ? this.coins(task.journey.steps[0]?.give ?? []) : [];
           break;
         }
         a.acting = { verb: task.verb, left: task.seconds, total: task.seconds };
+        // (what the hero's quest card shows as under way; idle business is not part of the quest)
+        if (task.journey !== undefined && task.journey === a.journey) a.actStep = task.verb === 'toll' ? -1 : task.step !== undefined ? task.journey.steps.indexOf(task.step) : (a.actStep ?? -1);
+        else delete a.actStep;
         if (task.gesture) a.acting.gesture = task.gesture;
         if (task.face) a.face = task.face;
         this.#exchange(a, task);

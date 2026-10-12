@@ -200,6 +200,11 @@ export class Renderer3D implements WorldView {
     this.#cam.follow(key, then);
   }
 
+  /** Who the camera keeps in view (null: no one; panning lets go). */
+  get following(): string | null {
+    return this.#cam.following;
+  }
+
   // --- scene -----------------------------------------------------------------
 
   /** The whole town anew: its people too. */

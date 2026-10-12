@@ -134,6 +134,11 @@ export class Renderer implements WorldView {
     this.#followThen = then;
   }
 
+  /** Who the camera keeps in view (null: no one; panning lets go). */
+  get following(): string | null {
+    return this.#follow;
+  }
+
   /** Glide towards whoever is followed (a little each frame, so it is easy on the eye). */
   #track(): void {
     if (this.#follow === null) return;

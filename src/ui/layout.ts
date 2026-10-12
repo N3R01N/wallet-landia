@@ -56,7 +56,8 @@ export interface LayoutActions {
 
 export interface Layout {
   element: HTMLElement;
-  viewBtns: Map<ViewKind, HTMLButtonElement>;
+  /** The view picker (top-down, isometric, 3D). */
+  viewSel: HTMLSelectElement;
   speedBtns: Map<number, HTMLButtonElement>;
   /** What the tour points at. */
   views: HTMLElement;
@@ -65,15 +66,16 @@ export interface Layout {
 }
 
 export function buildLayout(prefs: Prefs, parts: LayoutParts, act: LayoutActions): Layout {
-  const viewBtns = new Map<ViewKind, HTMLButtonElement>();
   const speedBtns = new Map<number, HTMLButtonElement>();
-  const views = el('div', { class: 'seg' });
-  for (const [v, label] of [['top', 'Top-down'], ['iso', 'Isometric'], ['3d', '3D']] as const) {
-    const b = el('button', { class: `btn${prefs.view === v ? ' on' : ''}` }, label);
-    b.onclick = () => act.setView(v);
-    viewBtns.set(v, b);
-    views.append(b);
+  // one picker for the three ways of looking at the town (t, i and 3 on the keyboard)
+  const viewSel = el('select', { class: 'view-select', 'aria-label': 'View', title: 'How to look at the town (t, i, 3)' });
+  for (const [v, label] of [['top', '🗺 Top-down'], ['iso', '◇ Isometric'], ['3d', '⛰ 3D']] as const) {
+    const opt = el('option', { value: v }, label);
+    if (prefs.view === v) opt.selected = true;
+    viewSel.append(opt);
   }
+  viewSel.onchange = () => act.setView(viewSel.value as ViewKind);
+  const views = viewSel;
   const windowSel = el('select', { 'aria-label': 'History window' });
   for (const [value, label] of [['days:30', 'Last 30 days'], ['days:7', 'Last 7 days'], ['count:100', 'Last 100 transactions'], ['count:25', 'Last 25 transactions']] as const) {
     const opt = el('option', { value }, label);
@@ -123,7 +125,6 @@ export function buildLayout(prefs: Prefs, parts: LayoutParts, act: LayoutActions
     views,
     windowSel,
     qualitySel,
-    parts.playerBtn,
     parts.realmBtn,
     parts.homeBtn,
     parts.status,
@@ -155,8 +156,8 @@ export function buildLayout(prefs: Prefs, parts: LayoutParts, act: LayoutActions
   const questlog = el('section', { class: 'questlog' }, el('h4', {}, el('span', {}, 'Quest log'), fold), parts.log);
   foldable(questlog, fold, 'the quest log', () => prefs.questlogFolded, (f) => (prefs.questlogFolded = f), prefs);
 
-  const element = el('div', { class: 'app' }, header, el('main', { class: 'world' }, parts.stage, questlog, legend, parts.toasts, parts.veil, parts.inspector, parts.tooltip), timeline);
-  return { element, viewBtns, speedBtns, views, guildBtn, legend };
+  const element = el('div', { class: 'app' }, header, el('main', { class: 'world' }, parts.stage, parts.playerBtn, questlog, legend, parts.toasts, parts.veil, parts.inspector, parts.tooltip), timeline);
+  return { element, viewSel, speedBtns, views, guildBtn, legend };
 }
 
 /** A section that folds to its title when the title is clicked (remembered in the preferences). */

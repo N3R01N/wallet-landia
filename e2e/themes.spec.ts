@@ -9,7 +9,7 @@ test('the 3D town can be drawn with a theme bundle, and the choice is kept', asy
     if (m.type() === 'error' && !/CORS|ERR_|Failed to load resource/.test(m.text())) errors.push(m.text());
   });
   await page.goto('/?quality=low&hour=12');
-  await page.locator('.btn', { hasText: '3D' }).click();
+  await page.locator('.view-select').selectOption('3d');
   await expect(page.locator('.stage3d')).toBeVisible({ timeout: 30_000 });
 
   await page.locator('.btn', { hasText: 'Looks' }).click();
@@ -36,7 +36,7 @@ test('the 3D town can be drawn with a theme bundle, and the choice is kept', asy
 test('a rigged hero in a themed town answers hover and click', async ({ page }) => {
   test.setTimeout(240_000);
   await page.goto('/?theme=medieval&expose&hour=12');
-  await page.locator('.btn', { hasText: '3D' }).click();
+  await page.locator('.view-select').selectOption('3d');
   await expect(page.locator('.stage3d')).toHaveAttribute('data-people', 'rigged', { timeout: 180_000 });
   const where = (): Promise<[number, number] | null> => page.evaluate(() => (window as unknown as { town3d: { heroOnScreen(): [number, number] | null } }).town3d.heroOnScreen());
   // once a hero is out on foot (or horseback), pause so it stands still for the pointer

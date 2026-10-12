@@ -484,6 +484,103 @@ select {
   max-width: 340px;
 }
 
+/* the level medallion: top left of the town, the level in a ring that fills towards the next */
+.player-medal {
+  position: absolute;
+  z-index: 3; /* over the town, under the veil and the panels */
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--parchment);
+  font: inherit;
+  cursor: pointer;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
+.medal-ring {
+  --progress: 0;
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  /* the ring: gold as far as the next level is reached, wood for the rest */
+  background:
+    conic-gradient(var(--gold) calc(var(--progress) * 360deg), var(--wood-dark) 0),
+    var(--wood-dark);
+  box-shadow: 0 0 0 3px var(--wood), 0 3px 10px rgba(0, 0, 0, 0.45);
+  transition: transform 0.15s;
+}
+
+.medal-core {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, var(--parchment), var(--parchment-dark));
+  color: var(--ink);
+  text-shadow: none;
+  box-shadow: inset 0 0 0 2px var(--wood);
+}
+
+.medal-core small {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--wood);
+  line-height: 1;
+}
+
+.medal-level {
+  font-size: 30px;
+  line-height: 1;
+}
+
+/* the rank and the way to the next level on a small plaque, readable over any ground */
+.medal-rank,
+.medal-next {
+  padding: 1px 8px;
+  background: var(--parchment);
+  color: var(--ink);
+  text-shadow: none;
+  white-space: nowrap;
+  box-shadow: 0 0 0 2px var(--wood);
+}
+
+.medal-rank {
+  margin-top: 6px;
+  border-radius: 6px 6px 0 0;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.medal-next {
+  margin-top: -2px;
+  border-radius: 0 0 6px 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.player-medal:hover .medal-ring,
+.player-medal:focus-visible .medal-ring {
+  transform: scale(1.05);
+}
+
+.player-medal:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
 @media (max-width: 900px) {
   .legend,
   .timeline .beat {
@@ -497,6 +594,23 @@ select {
 @media (max-width: 600px) {
   .questlog {
     display: none;
+  }
+  .medal-ring {
+    width: 60px;
+    height: 60px;
+  }
+  .medal-core {
+    width: 48px;
+    height: 48px;
+  }
+  .medal-level {
+    font-size: 20px;
+  }
+  .medal-next {
+    display: none;
+  }
+  .medal-rank {
+    border-radius: 6px;
   }
   .timeline .date {
     min-width: 0;
@@ -598,6 +712,33 @@ select {
 .quest-steps li::marker {
   font-weight: bold;
   color: var(--wood);
+}
+
+/* a hero's quest card: the stop under way stands out, those behind are ticked off */
+.quest-steps.live li.done {
+  opacity: 0.55;
+}
+
+.quest-steps.live li.done strong::after {
+  content: ' ✓';
+  color: #3f8f2a;
+}
+
+.quest-steps.live li.current {
+  margin-left: -8px;
+  padding-left: 8px;
+  border-left: 4px solid var(--gold);
+  background: rgba(245, 197, 24, 0.14);
+}
+
+.quest-steps.live li.current strong::before {
+  content: '➤ ';
+  color: var(--wood);
+}
+
+.hero-doing {
+  font-size: 14px;
+  font-style: italic;
 }
 
 .goods {

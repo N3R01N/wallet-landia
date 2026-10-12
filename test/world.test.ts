@@ -139,6 +139,47 @@ describe('Quest Replay', () => {
   });
 });
 
+describe('what a hero is doing now', () => {
+  const guild = buildGuild(demo);
+  const plan = planTown(guild);
+
+  it('follows a quest stop by stop: the toll, each stop in order, home, then rest', async () => {
+    const { Sim } = await import('../src/world/sim.js');
+    const { heroNow } = await import('../src/world/heroNow.js');
+    const sim = new Sim(guild, plan);
+    const j = guild.journeys.find((x) => x.initiated && x.feeUsd !== null && x.feeUsd > 0 && x.steps.length > 0 && x.steps.every((st) => st.target.kind === 'building'))!;
+    sim.solo(j);
+    const seen: string[] = [];
+    for (let i = 0; i < 4000 && sim.soloing; i++) {
+      sim.step(0.05);
+      const n = heroNow(sim, j.hero);
+      if (n.journey !== j) continue;
+      const stage = n.phase === 'step' ? `step-${n.step}` : n.phase;
+      if (seen.at(-1) !== stage) seen.push(stage);
+    }
+    // (once home the replay carries on, and the hero may set out on the next quest)
+    for (let i = 0; i < 2000; i++) {
+      const n = heroNow(sim, j.hero);
+      if (n.journey !== j || n.phase === 'resting') {
+        if (n.journey === j && seen.at(-1) !== 'resting') seen.push('resting');
+        break;
+      }
+      sim.step(0.05);
+    }
+    expect(seen).toEqual(['toll', ...j.steps.map((_, i) => `step-${i}`), 'returning', 'resting']);
+  });
+
+  it('a hero with no quest under way is resting, with their last quest if the replay has one', async () => {
+    const { Sim } = await import('../src/world/sim.js');
+    const { heroNow } = await import('../src/world/heroNow.js');
+    const sim = new Sim(guild, plan);
+    const hero = guild.heroes[0]!;
+    const n = heroNow(sim, hero.address);
+    expect(n.phase).toBe('resting');
+    expect(n.journey === null || n.journey.hero === hero.address).toBe(true);
+  });
+});
+
 describe('fog of war', () => {
   const guild = buildGuild(demo);
   const plan = planTown(guild);

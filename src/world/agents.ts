@@ -92,6 +92,8 @@ export interface Agent {
   /** Value tier of what is being carried right now, or null when empty-handed. */
   carrying: Tier | null;
   journey: Journey | null;
+  /** What of that journey is being done right now: -1 the toll, else the step's index (undefined: neither). */
+  actStep?: number;
   /** Recent positions, so a caravan can follow the leader. */
   trail: Pt[];
   phase: number;

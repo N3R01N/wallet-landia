@@ -78,11 +78,11 @@ test('a wallet’s whole history is gathered once in the background, and kept', 
 
   // the player's level and badges come from all of it: their first journey is ten years back
   await expect(async () => {
-    await page.locator('.player-btn').click();
+    await page.locator('.player-medal').click();
     await expect(page.locator('.player-sheet')).toContainText('First journey', { timeout: 1000 });
     await expect(page.locator('.player-sheet')).toContainText('2016', { timeout: 1000 });
   }).toPass({ timeout: 30_000 });
-  await expect(page.locator('.player-btn')).toContainText(/Lv \d+/);
+  await expect(page.locator('.player-medal .medal-level')).toHaveText(/^\d+$/);
 
   // a reload: the history is kept; nothing is asked again
   await page.reload();

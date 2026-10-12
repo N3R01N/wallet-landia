@@ -40,7 +40,7 @@ test('a loading veil until the town is ready; heroes are listed in the Guild tab
 
 test('the Chronicle Tower shows how busy the chain is: a beacon on top, a toll board, a queue at its door', async ({ page }) => {
   await page.goto('/?expose&freeze');
-  await page.locator('.btn', { hasText: '3D' }).click();
+  await page.locator('.view-select').selectOption('3d');
   await expect(page.locator('.stage3d')).toBeVisible({ timeout: 60_000 });
   const look = await page.waitForFunction(() => {
     const town = (window as unknown as { town3d?: { debugScene(): { getObjectByName(n: string): unknown }; debugPeople(): { kind: string; x: number; y: number }[] } }).town3d;

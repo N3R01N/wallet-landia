@@ -15,6 +15,7 @@ import { TIER_COLORS, TIER_NAMES, approxUsd, exactUsd, formatQty } from '../doma
 import { MOUNT_NAMES } from '../render/characters.js';
 import { bornCrest, crestColors, hashString, TINCTURES } from '../util/rng.js';
 import type { Placed } from '../world/layout.js';
+import type { HeroNow } from '../world/heroNow.js';
 import type { BlockBeat } from '../data/rpc.js';
 import { formatGwei } from '../world/chain.js';
 import { el, fmtDate, safeHref, shortAddr } from './dom.js';
@@ -512,6 +513,109 @@ function placeName(target: Target, ctx: PanelContext): string {
   }
 }
 
+/**
+ * A quest's stops as list items, each marked with its stage (`toll`,
+ * `step-N`, `home`) so a card can show which one is under way.
+ */
+function questSteps(j: Journey, ctx: PanelContext): HTMLElement[] {
+  const hero = ctx.guild.heroes.find((h) => h.address === j.hero);
+  const steps: HTMLElement[] = [];
+  if (j.initiated) {
+    if (j.feeUsd !== null && j.feeUsd > 0) {
+      steps.push(
+        el(
+          'li',
+          { 'data-stage': 'toll' },
+          el('strong', {}, 'Chronicle Tower: pay the toll'),
+          el('div', { class: 'muted' }, 'Every transaction pays a gas fee to the network.'),
+          el('div', { class: 'goods out' }, el('span', {}, `− ${j.feeNative !== null ? `${formatQty(j.feeNative)} ETH` : 'gas'}`), el('span', {}, exactUsd(j.feeUsd))),
+        ),
+      );
+    }
+    j.steps.forEach((step, i) => {
+      steps.push(
+        el(
+          'li',
+          { 'data-stage': `step-${i}` },
+          el('strong', {}, `${verbText(step.verb)} at ${placeName(step.target, ctx)}`),
+          ...goodsList(step.give, '−'),
+          ...goodsList(step.get, '+'),
+          step.give.length + step.get.length === 0 ? el('div', { class: 'muted' }, 'Nothing changed hands.') : null,
+        ),
+      );
+    });
+    steps.push(el('li', { 'data-stage': 'home' }, el('strong', {}, 'Home again')));
+  } else {
+    const first = j.steps[0];
+    steps.push(el('li', {}, el('strong', {}, `From ${first ? placeName(first.target, ctx) : 'outside'}`)));
+    steps.push(
+      el('li', { 'data-stage': 'home' }, el('strong', {}, `${verbText(j.verb)}: arrives at ${hero?.name ?? 'the hero'}'s home`), ...goodsList(j.steps.flatMap((s) => s.give), '−'), ...goodsList(j.steps.flatMap((s) => s.get), '+')),
+    );
+  }
+  return steps;
+}
+
+/** What the hero card says they are doing. */
+function heroDoing(now: HeroNow, name: string, ctx: PanelContext): string {
+  const j = now.journey;
+  if (j === null) return `${name} is resting at home: no quest in this window yet.`;
+  switch (now.phase) {
+    case 'toll':
+      return now.busy ? 'Paying the toll at the Chronicle Tower.' : 'On the way to the Chronicle Tower to pay the toll.';
+    case 'step': {
+      const step = j.steps[now.step ?? 0];
+      const where = step ? placeName(step.target, ctx) : 'the next stop';
+      return now.busy ? `${verbText(step?.verb ?? j.verb)} at ${where}.` : `On the way to ${where}.`;
+    }
+    case 'returning':
+      return 'The business done, heading home.';
+    case 'resting':
+      return `Resting at home after the last quest.`;
+  }
+}
+
+/**
+ * A hero, clicked in town: the quest they are on right now (or last
+ * finished), the stop under way marked; the full sheet is a click away.
+ */
+export function heroQuestPanel(hero: Hero, now: HeroNow, ctx: PanelContext, act: { overview: () => void }): HTMLElement {
+  const cls = ctx.classOf(hero.address);
+  const j = now.journey;
+  const overview = el('button', { class: 'btn' }, '📜 Hero overview');
+  overview.onclick = () => act.overview();
+  const buttons = el('div', { class: 'form-row' }, overview);
+  let steps: HTMLElement | null = null;
+  if (j !== null) {
+    const details = el('button', { class: 'btn' }, 'Quest details');
+    details.onclick = () => ctx.onJourney(j);
+    buttons.append(details);
+    const items = questSteps(j, ctx);
+    const current = now.phase === 'toll' ? 'toll' : now.phase === 'step' ? `step-${now.step ?? 0}` : now.phase === 'returning' ? 'home' : null;
+    // stops before the current one are done; once home, all of them
+    let reached = current === null;
+    for (const li of [...items].reverse()) {
+      const stage = li.getAttribute('data-stage');
+      if (stage === current) {
+        li.classList.add('current');
+        reached = true;
+      } else if (reached && stage !== null) li.classList.add('done');
+    }
+    if (current === null) for (const li of items) li.classList.add('done');
+    steps = el('ol', { class: 'quest-steps live' }, ...items);
+  }
+  return el(
+    'div',
+    { class: 'panel-body hero-quest', 'data-hero': hero.address },
+    el('div', { class: 'sheet-head' }, portrait(hero, cls, ctx.portraitOf), el('div', {}, el('h2', {}, hero.name), el('div', { class: 'hero-title' }, ctx.titleOf(hero.address)), el('div', { class: 'muted mono' }, shortAddr(hero.address)))),
+    el('p', { class: 'hero-doing' }, heroDoing(now, hero.name, ctx)),
+    j !== null ? el('h3', {}, now.phase === 'resting' ? `Last quest: ${verbText(j.verb)}` : `Current quest: ${verbText(j.verb)}`) : null,
+    j !== null ? el('p', {}, el('strong', {}, j.label)) : null,
+    j !== null ? el('p', { class: 'muted' }, new Date(j.time).toLocaleString('en-GB')) : null,
+    steps,
+    buttons,
+  );
+}
+
 export function questPanel(j: Journey, ctx: PanelContext): HTMLElement {
   const hero = ctx.guild.heroes.find((h) => h.address === j.hero);
   const status = j.status === 'failed' ? chip('Failed', '#ff8a8a') : j.status === 'pending' ? chip('Pending', '#ffd166') : chip('Confirmed', '#9dff8a');
@@ -525,39 +629,7 @@ export function questPanel(j: Journey, ctx: PanelContext): HTMLElement {
     ctx.onSelectHero(j.hero);
   };
 
-  const steps: HTMLElement[] = [];
-  if (j.initiated) {
-    if (j.feeUsd !== null && j.feeUsd > 0) {
-      steps.push(
-        el(
-          'li',
-          {},
-          el('strong', {}, 'Chronicle Tower: pay the toll'),
-          el('div', { class: 'muted' }, 'Every transaction pays a gas fee to the network.'),
-          el('div', { class: 'goods out' }, el('span', {}, `− ${j.feeNative !== null ? `${formatQty(j.feeNative)} ETH` : 'gas'}`), el('span', {}, exactUsd(j.feeUsd))),
-        ),
-      );
-    }
-    for (const step of j.steps) {
-      steps.push(
-        el(
-          'li',
-          {},
-          el('strong', {}, `${verbText(step.verb)} at ${placeName(step.target, ctx)}`),
-          ...goodsList(step.give, '−'),
-          ...goodsList(step.get, '+'),
-          step.give.length + step.get.length === 0 ? el('div', { class: 'muted' }, 'Nothing changed hands.') : null,
-        ),
-      );
-    }
-    steps.push(el('li', {}, el('strong', {}, 'Home again')));
-  } else {
-    const first = j.steps[0];
-    steps.push(el('li', {}, el('strong', {}, `From ${first ? placeName(first.target, ctx) : 'outside'}`)));
-    steps.push(
-      el('li', {}, el('strong', {}, `${verbText(j.verb)}: arrives at ${hero?.name ?? 'the hero'}'s home`), ...goodsList(j.steps.flatMap((s) => s.give), '−'), ...goodsList(j.steps.flatMap((s) => s.get), '+')),
-    );
-  }
+  const steps = questSteps(j, ctx);
 
   return el(
     'div',

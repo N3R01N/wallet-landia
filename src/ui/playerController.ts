@@ -26,7 +26,12 @@ export interface PlayerHost {
 }
 
 export class PlayerController {
-  readonly button = el('button', { class: 'btn player-btn', title: 'You: your level and badges, from all your wallets' }, '🛡 Lv 1');
+  /** The level medallion (top left of the town): the level, a ring filling towards the next, the rank below. */
+  readonly button = el('button', { class: 'player-medal', title: 'You: your level and badges, from all your wallets' });
+  readonly #level = el('b', { class: 'medal-level' }, '1');
+  readonly #ring = el('span', { class: 'medal-ring' }, el('span', { class: 'medal-core' }, el('small', {}, 'Level'), this.#level));
+  readonly #rank = el('span', { class: 'medal-rank' }, 'Wanderer');
+  readonly #next = el('span', { class: 'medal-next' }, '');
   /** Null until first worked out. */
   profile: PlayerProfile | null = null;
   /** Journeys that earned a badge or a tier, to announce them as the replay plays them. */
@@ -45,6 +50,27 @@ export class PlayerController {
 
   constructor(host: PlayerHost) {
     this.#host = host;
+    this.button.append(this.#ring, this.#rank, this.#next);
+    this.#show(null);
+  }
+
+  /** The medallion for this profile (null: not worked out yet). */
+  #show(p: PlayerProfile | null): void {
+    const level = p?.level ?? 1;
+    const into = p === null ? 0 : p.xp - p.levelXp;
+    const span = p === null ? 1 : Math.max(1, p.nextXp - p.levelXp);
+    const share = Math.min(1, Math.max(0, into / span));
+    this.#level.textContent = String(level);
+    this.#ring.style.setProperty('--progress', share.toFixed(3));
+    this.#ring.setAttribute('role', 'progressbar');
+    this.#ring.setAttribute('aria-valuemin', '0');
+    this.#ring.setAttribute('aria-valuemax', String(span));
+    this.#ring.setAttribute('aria-valuenow', String(Math.max(0, into)));
+    this.#ring.setAttribute('aria-label', `Level ${level}: ${Math.round(share * 100)}% of the way to level ${level + 1}`);
+    this.#rank.textContent = p === null ? 'Wanderer' : `${p.rank} · ${p.badges.size} badge${p.badges.size === 1 ? '' : 's'}`;
+    this.#next.textContent = p === null ? 'working out…' : `${Math.max(0, span - into).toLocaleString('en-US')} XP to level ${level + 1}`;
+    this.button.setAttribute('aria-label', `Level ${level} ${p?.rank ?? 'Wanderer'}: open your sheet`);
+    if (p !== null) this.button.title = `You: level ${level} ${p.rank} · ${p.badges.size} badges · ${p.xp.toLocaleString('en-US')} XP — open your sheet`;
   }
 
   /** Badges (and tiers) this journey earned. */
@@ -99,8 +125,7 @@ export class PlayerController {
     if (changed) savePrefs(prefs);
     this.profile = player;
     this.#moments = badgeMoments(player);
-    this.button.textContent = `🛡 Lv ${player.level}`;
-    this.button.title = `You: level ${player.level} ${player.rank} · ${player.badges.size} badges — open your sheet`;
+    this.#show(player);
     host.changed();
     this.#from = { raws, names, at: Date.now() };
     this.#cost = done.ms;
