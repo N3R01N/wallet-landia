@@ -20,7 +20,9 @@ import { ImagePipeline, type DebugView, type Quality } from './pipeline.js';
 import { bundleTheme, type Theme } from './themes.js';
 import type { ThemeBundle } from '../../assets/themeBundles.js';
 import { PortraitStudio } from './portrait.js';
-import type { HitTarget, WorldView } from '../view.js';
+import type { BuildOverlay, HitTarget, WorldView } from '../view.js';
+import { MAP_H, MAP_W } from '../../world/layout.js';
+import { BuildLayer } from './buildLayer.js';
 import { spriteCharacters } from './spriteCharacters.js';
 import { CameraRig } from './cameraRig.js';
 import { TownScene } from './townScene.js';
@@ -35,6 +37,8 @@ export class Renderer3D implements WorldView {
   hover: HitTarget | null = null;
   selected: HitTarget | null = null;
   classOf: (address: string) => HeroClass = () => 'adventurer';
+  /** While the player builds: the grid, the land and the building in hand (null: not building). */
+  build: BuildOverlay | null = null;
 
   #sim: Sim;
   #gl: THREE.WebGLRenderer;
@@ -56,6 +60,11 @@ export class Renderer3D implements WorldView {
   // scratch for picking: no garbage on every pointer move
   #ndc = new THREE.Vector2();
   #pickList: THREE.Object3D[] = [];
+  /** The town's ground (flat where the town stands, y = 0), for `groundAt`. */
+  #groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  #groundHit = new THREE.Vector3();
+  /** Build mode's drawing, while it lasts (made on entering, freed on leaving). */
+  #buildLayer: BuildLayer | null = null;
 
   constructor(sim: Sim, quality: Quality = 'medium') {
     this.#sim = sim;
@@ -84,6 +93,7 @@ export class Renderer3D implements WorldView {
       if (this.#town.critters) out.push(this.#town.critters.glow);
       if (this.#town.lamps) out.push(this.#town.lamps.pools);
       if (this.#town.pulse) out.push(this.#town.pulse.mesh);
+      if (this.#buildLayer) out.push(this.#buildLayer.group);
       return out;
     };
 
@@ -136,6 +146,8 @@ export class Renderer3D implements WorldView {
     this.element.dataset.theme = theme?.id ?? '';
     this.element.dataset.people = 'sprites';
     this.#light.setTheme(theme);
+    // ghosts in hand were built in the old look (and draw on its materials, freed below)
+    this.#buildLayer?.dropGhosts();
     this.#build();
     // nothing draws with the old theme now (its town and people are gone): free its materials and textures
     old?.dispose?.();
@@ -246,9 +258,27 @@ export class Renderer3D implements WorldView {
     this.#cam.place(dt, this.#sim);
     this.#people.sync(this.#sim, dt, this.#cam.yaw);
     this.#highlight();
+    this.#drawBuild();
     if (this.#frame++ % 10 === 0) this.#overlay.occludeSigns(town);
     this.#pipeline.render();
     this.#overlay.draw(dpr, w, h, this.#sim, town, this.#cam.distance);
+  }
+
+  /** Build mode's grid, land and ghost; freed as soon as build mode ends. */
+  #drawBuild(): void {
+    const build = this.build;
+    if (build === null) {
+      if (this.#buildLayer) {
+        this.#buildLayer.dispose();
+        this.#buildLayer = null;
+      }
+      return;
+    }
+    if (!this.#buildLayer) {
+      this.#buildLayer = new BuildLayer();
+      this.#scene.add(this.#buildLayer.group);
+    }
+    this.#buildLayer.update(build, this.#town, this.#sim, this.themeId, performance.now() / 1000);
   }
 
   #highlight(): void {
@@ -329,6 +359,18 @@ export class Renderer3D implements WorldView {
       if (p && p[0] > 40 && p[1] > 40 && p[0] < w - 40 && p[1] < h - 40) return p;
     }
     return null;
+  }
+
+  /**
+   * The ground point under a screen point, in tiles (x east, y south; as the sim and plan),
+   * or null off the town's ground. The town stands on flat ground at y = 0 (terrain rises only
+   * beyond the map), so the ray meets that plane; outside the map there is no town ground.
+   */
+  groundAt(sx: number, sy: number): { x: number; y: number } | null {
+    this.#raycaster.setFromCamera(this.#ndc.set((sx / this.canvas.clientWidth) * 2 - 1, -(sy / this.canvas.clientHeight) * 2 + 1), this.#cam.camera);
+    const p = this.#raycaster.ray.intersectPlane(this.#groundPlane, this.#groundHit);
+    if (p === null || p.x < 0 || p.z < 0 || p.x >= MAP_W || p.z >= MAP_H) return null;
+    return { x: p.x, y: p.z };
   }
 
   hitTest(sx: number, sy: number): HitTarget | null {

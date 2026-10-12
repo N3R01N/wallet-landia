@@ -12,12 +12,13 @@ import type { Tier } from '../../domain/tiers.js';
 import { crestColors } from '../../util/rng.js';
 import { MAP_H, MAP_W, type Placed, type Pt } from '../../world/layout.js';
 import type { Effect, Sim } from '../../world/sim.js';
+import type { Rot } from '../../world/townLayout.js';
 import { heatColor, tollOf } from '../../world/chain.js';
 import { brandColor } from '../buildings.js';
 import { bakeTopGround, scatterProps } from '../ground.js';
 import { marketLines, tollLines } from '../overlay.js';
 import { P } from '../pixel.js';
-import { BuildingFactory, type BuildingSpec } from './buildingFactory.js';
+import { BuildingFactory, type BuildingSpec, type BuiltBuilding } from './buildingFactory.js';
 import { buildGrass, buildLamps, buildPropMeshes, placeLamps, type LampSet } from './scenery.js';
 import type { Theme } from './themes.js';
 import { FogBank } from './fogBank.js';
@@ -36,6 +37,26 @@ import { shadeClouds } from './clouds.js';
 // scratch for merging cloth
 const _lin = new THREE.Matrix3();
 const _ax = new THREE.Vector3();
+
+/** The turn about y (radians) that brings a building's front (+z) to face `rot` (quarter turns from facing south: 1 west, 2 north, 3 east). */
+export const turnAngle = (rot: Rot): number => (-rot * Math.PI) / 2;
+
+/** An offset (x, z) in a building's own frame (front +z), in the town's frame once turned `rot`. */
+export function turnOffset(x: number, z: number, rot: Rot): { x: number; z: number } {
+  switch (rot) {
+    case 0:
+      return { x, z };
+    case 1:
+      return { x: -z, z: x };
+    case 2:
+      return { x: -x, z: -z };
+    case 3:
+      return { x: z, z: -x };
+  }
+}
+
+/** A building turned a quarter is built across: its own width runs along the footprint's depth. */
+export const ownSize = (w: number, h: number, rot: Rot): { w: number; h: number } => (rot % 2 === 1 ? { w: h, h: w } : { w, h });
 
 export interface BuildingInfo {
   placed: Placed;
@@ -148,14 +169,20 @@ export class TownScene {
       const t = tower.placed;
       this.#beacon = new Beacon3D();
       this.#beacon.object.position.set(t.x + t.w / 2, towerTip + 0.05, t.y + t.h / 2);
+      // either side of its door, in front (turned with the tower)
+      const rot = t.rot ?? 0;
+      const own = ownSize(t.w, t.h, rot);
+      const stand = (board: TollBoard3D, x: number, z: number, yaw: number): void => {
+        const o = turnOffset(x, z, rot);
+        board.object.position.set(t.x + t.w / 2 + o.x, 0, t.y + t.h / 2 + o.z);
+        board.object.rotation.y = yaw + turnAngle(rot);
+      };
       this.#tollBoard = new TollBoard3D(theme?.board ?? 'wood');
-      this.#tollBoard.object.position.set(t.x + t.w + 0.25, 0, t.y + t.h + 0.75);
-      this.#tollBoard.object.rotation.y = -0.35; // turned a little towards the street
+      stand(this.#tollBoard, own.w / 2 + 0.25, own.h / 2 + 0.75, -0.35); // turned a little towards the street
       this.world.add(this.#beacon.object, this.#tollBoard.object);
       this.#marketBoard = new TollBoard3D(theme?.board ?? 'wood');
       this.#marketBoard.object.name = 'market-board';
-      this.#marketBoard.object.position.set(t.x - 2.2, 0, t.y + t.h + 0.75);
-      this.#marketBoard.object.rotation.y = 0.35;
+      stand(this.#marketBoard, -own.w / 2 - 2.2, own.h / 2 + 0.75, 0.35);
       this.world.add(this.#marketBoard.object);
     } else {
       this.#beacon = null;
@@ -280,15 +307,19 @@ export class TownScene {
     b.rotation.x = envelope < 0.01 ? 0 : st.amp * envelope * Math.sin((st.t * Math.PI * 2) / 1.05);
   }
 
-  /** What a building is built from: its tier (the hero's), brand colour and logo, the guild's banner. */
-  #specOf(b: Placed, sim: Sim): BuildingSpec {
+  /**
+   * What a building is built from: its tier (the hero's), brand colour and logo, the guild's banner.
+   * Its size is its own (turned a quarter, it is built across the footprint).
+   */
+  specOf(b: Pick<Placed, 'kind' | 'w' | 'h' | 'protocolId' | 'heroAddress' | 'rot'>, sim: Sim): BuildingSpec {
     const protocol = b.protocolId !== undefined ? sim.guild.protocols.get(b.protocolId) : undefined;
     const hero = b.heroAddress !== undefined ? sim.guild.heroes.find((h) => h.address === b.heroAddress) : undefined;
     const guildColor = sim.guild.heroes[0] ? crestColors(sim.guild.heroes[0].address)[0] : P.red;
+    const own = ownSize(b.w, b.h, b.rot ?? 0);
     return {
       kind: b.kind,
-      w: b.w,
-      h: b.h,
+      w: own.w,
+      h: own.h,
       tier: (hero?.tier ?? 0) as Tier,
       roof: protocol ? brandColor(protocol.id) : '#a0522d',
       banner: b.kind === 'guildhall' || hero ? guildColor : P.red,
@@ -302,7 +333,7 @@ export class TownScene {
    */
   #keyOf(sim: Sim, theme: Theme | null): string {
     const plan = sim.plan;
-    return `${theme?.id ?? ''}|${plan.tiles.join(',')}|${JSON.stringify(plan.buildings.map((b) => [b, this.#specOf(b, sim)]))}`;
+    return `${theme?.id ?? ''}|${plan.tiles.join(',')}|${JSON.stringify(plan.buildings.map((b) => [b, this.specOf(b, sim)]))}`;
   }
 
   /** Harvest piles by the doors, laid again only when the harvests changed. */
@@ -319,7 +350,9 @@ export class TownScene {
       const b = sim.plan.buildings.find((x) => x.id === id);
       if (!b) continue;
       const pile = harvestPile(crop.size);
-      pile.position.set(b.doorAt.x + 0.85, 0, b.doorAt.y - 0.15);
+      // beside the door, along the street (turned with the building)
+      const o = turnOffset(0.85, -0.15, b.rot ?? 0);
+      pile.position.set(b.doorAt.x + o.x, 0, b.doorAt.y + o.z);
       this.world.add(pile);
       this.#harvestPiles.push({ placed: b, object: pile });
     }
@@ -373,7 +406,8 @@ export class TownScene {
         bucket.sources.push(mesh);
       });
       // the stand-in the pointer and the sign rays hit
-      const proxy = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.5, b.placed.w - 0.4), Math.max(0.5, b.top), Math.max(0.5, b.placed.h - 0.4)), this.#proxyMat);
+      const own = ownSize(b.placed.w, b.placed.h, b.placed.rot ?? 0); // (in the group's own, turned frame)
+      const proxy = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.5, own.w - 0.4), Math.max(0.5, b.top), Math.max(0.5, own.h - 0.4)), this.#proxyMat);
       proxy.position.set(0, Math.max(0.5, b.top) / 2, 0);
       proxy.userData.target = b.target;
       b.group.add(proxy);
@@ -419,24 +453,37 @@ export class TownScene {
     return { spots: [...near, { x: tx, y: towerTip * 0.8, z: tz }], tower: { x: tx, z: tz, top: towerTip } };
   }
 
+  /** A building as the town would build it now (the build mode's ghost): at the origin, unturned, built across if `rot` is odd. */
+  makeBuilding(b: Pick<Placed, 'kind' | 'w' | 'h' | 'protocolId' | 'heroAddress' | 'rot'>, sim: Sim): BuiltBuilding {
+    const spec = this.specOf(b, sim);
+    return this.#theme ? this.#theme.building(spec) : this.#factory.build(spec);
+  }
+
   #buildBuilding(b: Placed, sim: Sim): BuildingInfo {
-    const spec = this.#specOf(b, sim);
-    const built = this.#theme ? this.#theme.building(spec) : this.#factory.build(spec);
+    const rot = b.rot ?? 0;
+    const built = this.makeBuilding(b, sim);
     const g = built.group;
+    // turned about the footprint's middle: its front (+z) to the door tile
     g.position.set(b.x + b.w / 2, 0, b.y + b.h / 2);
+    g.rotation.y = turnAngle(rot);
+    const at = (p: { x: number; z: number }): { x: number; z: number } => {
+      const o = turnOffset(p.x, p.z, rot);
+      return { x: g.position.x + o.x, z: g.position.z + o.z };
+    };
     const target: BuildingInfo['target'] = { kind: 'building', placed: b };
     g.traverse((o) => {
       o.userData.target = target;
     });
     if (built.bell) this.#bell = built.bell;
     const info: BuildingInfo = { placed: b, target, group: g, top: built.top, doorway: null };
-    if (built.smoke) info.smoke = built.smoke.map((e) => ({ ...e, x: g.position.x + e.x, y: g.position.y + e.y, z: g.position.z + e.z }));
-    if (built.sign) info.sign = { ...built.sign, x: g.position.x + built.sign.x, z: g.position.z + built.sign.z };
+    if (built.smoke) info.smoke = built.smoke.map((e) => ({ ...e, ...at(e), y: g.position.y + e.y }));
+    if (built.sign) info.sign = { ...built.sign, ...at(built.sign) };
     // the door nearest the door tile is the one people use; the sim walks them in through it
     let door: DoorRig | undefined;
     let best = Infinity;
     for (const d of built.doors ?? []) {
-      const dist = Math.hypot(g.position.x + d.at.x - b.doorAt.x, g.position.z + d.at.z - b.doorAt.y);
+      const p = at(d.at);
+      const dist = Math.hypot(p.x - b.doorAt.x, p.z - b.doorAt.y);
       if (dist < best) {
         best = dist;
         door = d;
@@ -445,7 +492,8 @@ export class TownScene {
     if (door) {
       info.door = door;
       // a step out from the leaf, so whoever goes in vanishes into the open doorway, not the wall
-      info.doorway = { x: g.position.x + door.at.x + door.out.x * 0.12, y: g.position.z + door.at.z + door.out.z * 0.12 };
+      const p = at({ x: door.at.x + door.out.x * 0.12, z: door.at.z + door.out.z * 0.12 });
+      info.doorway = { x: p.x, y: p.z };
     }
     sim.setDoorway(b.id, info.doorway);
     return info;

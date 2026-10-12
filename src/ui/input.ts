@@ -17,6 +17,15 @@ export interface InputHost {
   setView(v: ViewKind): void;
   toggleSound(): void;
   closeInspector(): void;
+  /** Build mode: with a building in hand, the pointer places it (see buildMode.ts). */
+  build?: {
+    toggle(): void;
+    holding(): boolean;
+    /** The pointer is over the town at (sx, sy) in stage pixels. */
+    move(sx: number, sy: number): void;
+    /** A key while building: true if it was build mode's. */
+    key(e: KeyboardEvent): boolean;
+  };
 }
 
 /** Listen for good: the app lives as long as the page. */
@@ -125,7 +134,12 @@ export function bindInput(host: InputHost): void {
     if (t instanceof HTMLElement && (t.isContentEditable || t.matches('input, select, textarea'))) return;
     // Space and Enter press a button or follow a link reached with the keyboard
     if ((e.key === ' ' || e.key === 'Enter') && t instanceof HTMLElement && t !== clicked && t.matches(CONTROL)) return;
-    if (e.key === ' ') {
+    if (host.build?.key(e) === true) {
+      e.preventDefault();
+      return;
+    }
+    if (e.key === 'b') host.build?.toggle();
+    else if (e.key === ' ') {
       e.preventDefault();
       host.togglePlay();
     } else if (e.key === 't') host.setView('top');
@@ -145,6 +159,14 @@ function hover(host: InputHost, e: PointerEvent): void {
   const { stage, tooltip } = host;
   const renderer = host.renderer();
   const r = stage.getBoundingClientRect();
+  // a building in hand: it follows the pointer, and nothing else answers it
+  if (host.build?.holding() === true) {
+    tooltip.hidden = true;
+    renderer.hover = null;
+    stage.style.cursor = 'crosshair';
+    host.build.move(e.clientX - r.left, e.clientY - r.top);
+    return;
+  }
   const target = renderer.hitTest(e.clientX - r.left, e.clientY - r.top);
   renderer.hover = target;
   stage.style.cursor = target ? 'pointer' : 'grab';

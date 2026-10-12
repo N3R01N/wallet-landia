@@ -157,3 +157,24 @@ describe('land', () => {
     expect(landFor(20)).toEqual({ x0: 0, y0: 0, x1: MAP_W, y1: MAP_H, nextAt: null });
   });
 });
+
+describe('trying a building in hand', () => {
+  it('says where it may stand, why not elsewhere, and the road it would get, without building it', async () => {
+    const { BuildPlanner } = await import('../src/world/townLayout.js');
+    const [home, shop] = buildables(guild);
+    const planner = new BuildPlanner(guild, { v: 1, placed: [{ id: home!.id, x: 4, y: 24, rot: 0 }] });
+    expect(planner.placed.has(home!.id)).toBe(true);
+    const ok = planner.preview(shop!.id, 32, 6, 0);
+    expect(ok.ok).toBe(true);
+    expect(ok.road.length).toBeGreaterThan(0);
+    expect(ok.door).toEqual({ x: 33, y: 9 });
+    // trying changed nothing: the same try again, the same answer
+    expect(planner.preview(shop!.id, 32, 6, 0)).toEqual(ok);
+    expect(planner.preview(shop!.id, 5, 25, 0).reason).toMatch(/already built/i);
+    expect(planner.preview(home!.id, 10, 6, 0).reason).toBe('Already built');
+    expect(planner.preview('b:nope', 10, 6, 0).reason).toBe('Not yours to build');
+    const small = landFor(1);
+    expect(planner.preview(shop!.id, 2, 2, 0, small).reason).toBe('Outside your land: more land at level 5');
+    expect(planner.preview(shop!.id, small.x0, small.y0, 0, small).ok).toBe(true);
+  });
+});

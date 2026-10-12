@@ -13,7 +13,7 @@ import { bakeIsoGround, bakeTopGround, scatterProps, type Ground, type Prop } fr
 import type { Sprite } from './pixel.js';
 import { harvestSprite } from './characters.js';
 import { bubbles, carriedGoods, districtLabels, marketBoard, tollBoard, towerBeacon, floatingText, markers, nameTags, route, transfers, weather } from './overlay.js';
-import type { HitTarget, WorldView } from './view.js';
+import type { BuildGhost, BuildOverlay, HitTarget, WorldView } from './view.js';
 
 export type { HitTarget } from './view.js';
 export type Projection = 'top' | 'iso';
@@ -49,6 +49,7 @@ export class Renderer implements WorldView {
   hover: HitTarget | null = null;
   selected: HitTarget | null = null;
   classOf: (address: string) => HeroClass = () => 'adventurer';
+  build: BuildOverlay | null = null;
 
   #sim: Sim;
   #grounds = new Map<Projection, Ground>();
@@ -86,6 +87,15 @@ export class Renderer implements WorldView {
   toScreen(x: number, y: number): [number, number] {
     const [ax, ay] = this.toArt(x, y);
     return [ax * this.scale + this.ox, ay * this.scale + this.oy];
+  }
+
+  /** The ground point (tile units) under a screen point: the projection undone; null off the map. */
+  groundAt(sx: number, sy: number): { x: number; y: number } | null {
+    const ax = (sx - this.ox) / this.scale;
+    const ay = (sy - this.oy) / this.scale;
+    const x = this.view === 'top' ? ax / TOP_T : (ax / ISO_W + ay / ISO_H) / 2;
+    const y = this.view === 'top' ? ay / TOP_T : (ay / ISO_H - ax / ISO_W) / 2;
+    return x >= 0 && y >= 0 && x < MAP_W && y < MAP_H ? { x, y } : null;
   }
 
   #depth(x: number, y: number): number {
@@ -197,6 +207,7 @@ export class Renderer implements WorldView {
     this.#water(c);
     // a new block: light runs out over the ground from the tower (under the buildings and people)
     for (const e of sim.effects) if (e.kind === 'ring') this.#groundPulse(c, e, sim.chain.busy);
+    if (this.build !== null) this.#buildGround(c, this.build);
 
     this.#hits = [];
     const items: Drawable[] = [];
@@ -214,6 +225,8 @@ export class Renderer implements WorldView {
       items.push({ depth: this.#depth(at.x, at.y), draw: () => this.#blit(harvestSprite(crop.size, glint), at.x, at.y) });
     }
     for (const a of sim.agents) items.push(...this.#agentDrawables(a));
+    const ghost = this.build?.ghost ?? null;
+    if (ghost !== null) items.push(this.#ghostDrawable(ghost));
     items.sort((p, q) => p.depth - q.depth);
     for (const d of items) d.draw();
 
@@ -290,6 +303,83 @@ export class Renderer implements WorldView {
       this.ctx.drawImage(s.canvas, left, top);
     }
     return [left, top];
+  }
+
+  // --- build mode ---------------------------------------------------------------
+
+  /** A tile rectangle as a path, in art space (both projections). */
+  #tiles(c: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number): void {
+    const pts = [this.toArt(x0, y0), this.toArt(x1, y0), this.toArt(x1, y1), this.toArt(x0, y1)];
+    c.moveTo(pts[0]![0], pts[0]![1]);
+    for (const p of pts.slice(1)) c.lineTo(p[0], p[1]);
+    c.closePath();
+  }
+
+  /** The grid, the land (darker beyond it, a gold line round it), and the road the building in hand would get. */
+  #buildGround(c: CanvasRenderingContext2D, b: BuildOverlay): void {
+    const { x0, y0, x1, y1 } = b.land;
+    c.fillStyle = 'rgba(10, 8, 20, 0.38)';
+    c.beginPath();
+    this.#tiles(c, 0, 0, MAP_W, y0);
+    this.#tiles(c, 0, y1, MAP_W, MAP_H);
+    this.#tiles(c, 0, y0, x0, y1);
+    this.#tiles(c, x1, y0, MAP_W, y1);
+    c.fill();
+    c.lineWidth = 1 / this.scale;
+    c.strokeStyle = 'rgba(255, 248, 220, 0.16)';
+    c.beginPath();
+    for (let x = 0; x <= MAP_W; x++) {
+      const a = this.toArt(x, 0);
+      const z = this.toArt(x, MAP_H);
+      c.moveTo(a[0], a[1]);
+      c.lineTo(z[0], z[1]);
+    }
+    for (let y = 0; y <= MAP_H; y++) {
+      const a = this.toArt(0, y);
+      const z = this.toArt(MAP_W, y);
+      c.moveTo(a[0], a[1]);
+      c.lineTo(z[0], z[1]);
+    }
+    c.stroke();
+    c.lineWidth = 2 / this.scale;
+    c.strokeStyle = 'rgba(245, 197, 24, 0.9)';
+    c.setLineDash([6 / this.scale, 4 / this.scale]);
+    c.beginPath();
+    this.#tiles(c, x0, y0, x1, y1);
+    c.stroke();
+    c.setLineDash([]);
+    const g = b.ghost;
+    if (g === null) return;
+    // its road to be, and its footprint and door, tinted for yes or no
+    c.fillStyle = 'rgba(240, 205, 130, 0.6)';
+    c.beginPath();
+    for (const i of g.road) this.#tiles(c, i % MAP_W, Math.floor(i / MAP_W), (i % MAP_W) + 1, Math.floor(i / MAP_W) + 1);
+    c.fill();
+    c.fillStyle = g.ok ? 'rgba(90, 220, 110, 0.35)' : 'rgba(235, 70, 60, 0.4)';
+    c.beginPath();
+    this.#tiles(c, g.x, g.y, g.x + g.w, g.y + g.h);
+    c.fill();
+    c.fillStyle = g.ok ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 190, 180, 0.75)';
+    c.beginPath();
+    this.#tiles(c, g.door.x + 0.25, g.door.y + 0.25, g.door.x + 0.75, g.door.y + 0.75);
+    c.fill();
+  }
+
+  /** The building in hand, see-through, where it would stand (sorted among the others). */
+  #ghostDrawable(g: BuildGhost): Drawable {
+    const b: Placed = { id: 'ghost', kind: g.kind, x: g.x, y: g.y, w: g.w, h: g.h, door: g.door, doorAt: { x: g.door.x + 0.5, y: g.door.y + 0.5 }, district: 'square', rot: g.rot };
+    if (g.protocolId !== undefined) b.protocolId = g.protocolId;
+    if (g.heroAddress !== undefined) b.heroAddress = g.heroAddress;
+    const depth = this.view === 'top' ? b.y + b.h - 0.05 : b.x + b.w / 2 + b.y + b.h / 2;
+    return {
+      depth,
+      draw: () => {
+        const s = this.#buildingSprite(b);
+        this.ctx.globalAlpha = g.ok ? 0.72 : 0.45;
+        this.#blit(s, b.x, this.view === 'top' ? b.y + b.h : b.y);
+        this.ctx.globalAlpha = 1;
+      },
+    };
   }
 
   #buildingSprite(b: Placed): Sprite {

@@ -4,7 +4,7 @@
  */
 
 import type { HeroClass } from '../domain/model.js';
-import type { Placed } from '../world/layout.js';
+import type { Placed, PlacedKind } from '../world/layout.js';
 import type { Sim } from '../world/sim.js';
 
 export type ViewKind = 'top' | 'iso' | '3d';
@@ -34,4 +34,34 @@ export interface WorldView {
   readonly following?: string | null;
   /** Orbit the camera; a no-op where the projection is fixed. */
   rotate(dx: number, dy: number): void;
+  /** The ground point (tile units, fractional) under a screen point, or null off the ground. */
+  groundAt(sx: number, sy: number): { x: number; y: number } | null;
+  /** While the player builds: what to draw over the town (null: not building). */
+  build: BuildOverlay | null;
+}
+
+/** What build mode draws: the tile grid, the player's land, and the building in hand (if any). */
+export interface BuildOverlay {
+  /** The land the player may build on (tiles, x1/y1 exclusive); outside it is drawn darker. */
+  land: { x0: number; y0: number; x1: number; y1: number };
+  ghost: BuildGhost | null;
+}
+
+/** A building held over the town, where it would stand. */
+export interface BuildGhost {
+  /** What it is (drawn as that building, see-through), and the protocol or hero it is for. */
+  kind: PlacedKind;
+  protocolId?: string;
+  heroAddress?: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Quarter turns from facing south. */
+  rot: 0 | 1 | 2 | 3;
+  /** The door tile, and the tiles its new road would take (tile indices y * MAP_W + x). */
+  door: { x: number; y: number };
+  road: number[];
+  /** It may stand here (tinted green), or not (red). */
+  ok: boolean;
 }

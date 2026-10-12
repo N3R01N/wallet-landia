@@ -19,7 +19,8 @@ import { loadBundledPacks, loadImportedPacks } from '../assets/packs.js';
 import { PROVINCE_POLL_MS, PROVINCE_RPC, setRpcUrl, startHeartbeat, validRpcUrl, type BlockBeat } from '../data/rpc.js';
 import { buildingName } from '../assets/art.js';
 import { planTown, type TownPlan } from '../world/layout.js';
-import { planFromLayout, sanitizeLayout, suggestedLayout } from '../world/townLayout.js';
+import { landFor, planFromLayout, rememberProtocols, sanitizeLayout, suggestedLayout } from '../world/townLayout.js';
+import { BuildMode } from './buildMode.js';
 import { Sim } from '../world/sim.js';
 import { Renderer } from '../render/renderer.js';
 import type { HitTarget, ViewKind, WorldView } from '../render/view.js';
@@ -72,6 +73,23 @@ export class App {
   #guild!: Guild;
   #sim!: Sim;
   #realmBtn = el('button', { class: 'btn realm-btn', title: 'The Realm Map: Ethereum and its L2 provinces' }, '🗺');
+  /** Build mode: the player raises their own town (see buildMode.ts). */
+  #build = new BuildMode({
+    guild: () => this.#guild,
+    layout: () => sanitizeLayout(this.#prefs.towns[this.#prefs.realm]),
+    setLayout: (layout) => {
+      this.#prefs.towns[this.#prefs.realm] = layout;
+      savePrefs(this.#prefs);
+      this.#swapSim({ keepTime: true, bell: false });
+    },
+    land: () => landFor(this.#player.profile?.level ?? 1),
+    view: () => this.#renderer,
+    changed: () => this.#buildChanged(),
+  });
+  #buildBtn = el('button', { class: 'btn build-btn', title: 'Build your town (B)', 'aria-pressed': 'false' }, '🔨 Build');
+  /** While building the replay rests and the fog lifts; how they were, to put them back. */
+  #beforeBuild: { playing: boolean; fog: boolean } | null = null;
+  readonly #autoTown = autoTown();
   #realmMap: { element: HTMLElement; dispose: () => void } | null = null;
   /** Your wallets' lifetime history, as the walk back last reported it. */
   #history: { statuses: LedgerStatus[]; paused: string | null } | null = null;
@@ -168,6 +186,8 @@ export class App {
       classOf: (a) => this.#classOf(a),
       changed: () => {
         if (this.#playerOpen && !this.#editingInspector()) this.#openPlayer();
+        // a new level may bring more land
+        this.#build.refresh();
       },
     });
     this.#onBudget(this.#session.budget.snapshot());
@@ -187,7 +207,14 @@ export class App {
       setView: (v) => void this.#setView(v),
       toggleSound: () => this.#setSound(!this.#sound.on),
       closeInspector: () => this.#closeInspector(),
+      build: {
+        toggle: () => this.#toggleBuild(),
+        holding: () => this.#build.holding(),
+        move: (sx, sy) => this.#build.move(sx, sy),
+        key: (e) => this.#build.key(e),
+      },
     });
+    this.#buildBtn.onclick = () => this.#toggleBuild();
     void this.#setView(this.#prefs.view, false);
     startHeartbeat((beat) => {
       this.#beat = beat;
@@ -365,14 +392,36 @@ export class App {
   #plan(): TownPlan {
     if (this.#shown?.visiting) return planTown(this.#guild);
     // test hook: the e2e tests that are not about building start from the suggested town
-    if (autoTown()) return planFromLayout(this.#guild, suggestedLayout(this.#guild));
+    if (this.#autoTown) return planFromLayout(this.#guild, suggestedLayout(this.#guild));
     return planFromLayout(this.#guild, sanitizeLayout(this.#prefs.towns[this.#prefs.realm]));
+  }
+
+  /**
+   * Your own town may hold every protocol its realm's history ever showed,
+   * not only those in today's window: remembered (and kept), and a new one
+   * announced (not the first time a realm is seen: then all are new).
+   */
+  #remember(): void {
+    const realm = this.#prefs.realm;
+    const known = (this.#prefs.unlocked[realm] ??= {});
+    const first = Object.keys(known).length === 0;
+    const { guild, fresh } = rememberProtocols(this.#guild, known);
+    this.#guild = guild;
+    if (fresh.length === 0) return;
+    savePrefs(this.#prefs);
+    if (first || this.#autoTown) return;
+    const name = (id: string): string => guild.protocols.get(id)?.name ?? id;
+    const what = fresh.length === 1 ? name(fresh[0]!) : `${name(fresh[0]!)} and ${fresh.length - 1} more`;
+    this.#toast('🔨', 'New building to build', `${what}: open 🔨 Build to put it up.`, 8000).onclick = () => {
+      if (!this.#build.open) this.#toggleBuild();
+    };
   }
 
   #rebuild(): void {
     this.#world = buildGuild(this.#raws, this.#prefs.window, { names: this.#names });
     this.#nameHeroes();
     this.#guild = realmGuild(this.#world, this.#prefs.realm);
+    if (!this.#shown?.visiting) this.#remember();
     const plan = this.#plan();
     this.#sim = new Sim(this.#guild, plan);
     this.#sim.realm = this.#prefs.realm;
@@ -390,10 +439,19 @@ export class App {
    * with the latest block (`bell: false` for a quiet update, which plays only
    * what is new). `seek`: honour ?at=<seconds> (a link to a moment; tests).
    */
-  #swapSim(o: { seek?: boolean; bell?: boolean } = {}): void {
+  #swapSim(o: { seek?: boolean; bell?: boolean; keepTime?: boolean } = {}): void {
+    // (`keepTime`: the same story at the same moment, in a town built anew)
+    const was = o.keepTime === true ? { t: this.#sim.t, playing: this.#sim.playing } : null;
     this.#rebuild();
     const at = o.seek === true ? Number(new URLSearchParams(location.search).get('at')) : 0;
     if (at > 0) this.#sim.seek(at);
+    if (was !== null) {
+      this.#sim.seek(was.t);
+      if (this.#sim.playing !== was.playing) this.#sim.playing = was.playing;
+      if (this.#build.open) this.#sim.fog = false;
+    }
+    this.#build.refresh();
+    this.#buildChanged();
     this.#r2d.setSim(this.#sim);
     this.#r3d?.setSim(this.#sim);
     if (o.bell !== false) this.#bell();
@@ -755,6 +813,12 @@ export class App {
     this.#renderer.selected = watched === null ? null : { kind: 'hero', address: watched };
     this.#renderer.hover = null;
     if (watched !== null) this.#renderer.follow?.(watched);
+    // building goes on in the new view (the old one stops drawing it)
+    if (this.#build.open) {
+      if (this.#renderer !== this.#r2d) this.#r2d.build = null;
+      if (this.#r3d !== null && this.#renderer !== this.#r3d) this.#r3d.build = null;
+      this.#build.refresh();
+    }
     // the Realm Map lives in the stage too: close it properly (replacing it away would leave its animation running)
     this.#closeRealmMap();
     this.#stage.replaceChildren(this.#renderer.element);
@@ -787,6 +851,8 @@ export class App {
         playerBtn: this.#player.button,
         realmBtn: this.#realmBtn,
         homeBtn: this.#homeBtn,
+        buildBtn: this.#buildBtn,
+        buildDrawer: this.#build.drawer,
         soundBtn: this.#soundBtn,
         inkBtn: this.#inkEl,
         tourBtn: this.#tourBtn,
@@ -839,6 +905,44 @@ export class App {
   #togglePlay(): void {
     this.#sim.playing = !this.#sim.playing;
     this.#playBtn.textContent = this.#sim.playing ? '❚❚' : '▶';
+  }
+
+  /**
+   * Into build mode and out again (your own town only: a visited town is
+   * someone else's). While building, the replay rests and the fog lifts;
+   * both come back as they were.
+   */
+  #toggleBuild(): void {
+    if (this.#build.open) {
+      this.#build.close();
+      return;
+    }
+    if (this.#shown?.visiting) return;
+    this.#closeInspector();
+    this.#closeRealmMap();
+    this.#beforeBuild = { playing: this.#sim.playing, fog: this.#sim.fog };
+    if (this.#sim.playing) this.#togglePlay();
+    this.#sim.fog = false;
+    this.#build.enter();
+  }
+
+  /** Build mode opened, closed, or what may be built changed: the button (and its count) and the page follow. */
+  #buildChanged(): void {
+    const open = this.#build.open;
+    if (!open && this.#beforeBuild !== null) {
+      const was = this.#beforeBuild;
+      this.#beforeBuild = null;
+      this.#sim.fog = was.fog && this.#prefs.fog;
+      if (this.#sim.playing !== was.playing) this.#togglePlay();
+    }
+    document.querySelector('.app')?.classList.toggle('building', open);
+    this.#buildBtn.classList.toggle('on', open);
+    this.#buildBtn.setAttribute('aria-pressed', String(open));
+    this.#buildBtn.hidden = Boolean(this.#shown?.visiting);
+    const n = this.#build.unbuilt();
+    this.#buildBtn.textContent = open ? '🔨 Building' : '🔨 Build';
+    if (!open && n > 0) this.#buildBtn.append(el('span', { class: 'count', 'aria-label': `${n} to build` }, String(n)));
+    this.#buildBtn.title = open ? 'Done building (B)' : n > 0 ? `Build your town (B): ${n} building${n === 1 ? '' : 's'} waiting` : 'Build your town (B)';
   }
 
   /** Was the timeline last shown live (null: not shown yet)? */
@@ -941,6 +1045,7 @@ export class App {
 
   #click(e: PointerEvent): void {
     const r = this.#stage.getBoundingClientRect();
+    if (this.#build.click(e.clientX - r.left, e.clientY - r.top, e.shiftKey)) return;
     const target = this.#renderer.hitTest(e.clientX - r.left, e.clientY - r.top);
     if (target === null) {
       this.#closeInspector();

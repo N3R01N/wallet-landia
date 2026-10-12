@@ -20,7 +20,8 @@
  */
 
 import type { BuildingKind } from '../domain/catalog.js';
-import type { Guild } from '../domain/model.js';
+import type { Guild, Protocol } from '../domain/model.js';
+import type { ProtocolCategory } from '../domain/catalog.js';
 import { DISTRICT_OF, makePlaced, MAP_H, MAP_W, planTown, type District, type Placed, type PlacedKind, type TileKind, type TownPlan } from './layout.js';
 
 export type Rot = 0 | 1 | 2 | 3;
@@ -286,6 +287,24 @@ class TownBuilder {
     return true;
   }
 
+  /**
+   * Could `what` stand here, and with what road? Changes nothing: the town
+   * as built is tried with this one more building on a copy.
+   */
+  preview(what: Buildable, x: number, y: number, rot: Rot, land?: Land): Preview {
+    const door = doorTile(x, y, what.w, what.h, rot);
+    const no = (reason: string): Preview => ({ ok: false, reason, door, road: [] });
+    if (this.placed.has(what.id)) return no('Already built');
+    if (land !== undefined && !onLand(land, { x, y, w: what.w, h: what.h })) return no(land.nextAt === null ? 'Outside your land' : `Outside your land: more land at level ${land.nextAt}`);
+    const why = blockedReason(this.tiles, this.taken, { x, y, w: what.w, h: what.h, rot });
+    if (why !== null) return no(why);
+    const taken = this.taken.slice();
+    for (let yy = y; yy < y + what.h; yy++) for (let xx = x; xx < x + what.w; xx++) taken[yy * MAP_W + xx] = 1;
+    const road = roadFrom(this.tiles, taken, door);
+    if (road === null) return no("The door can't reach a street");
+    return { ok: true, reason: null, door, road: road.filter((i) => this.tiles[i] !== 'road' && this.tiles[i] !== 'plaza') };
+  }
+
   plan(guild: Guild): TownPlan {
     const { tower, guildhall, gate } = this.fixed;
     const homes = new Map(this.homes);
@@ -298,6 +317,42 @@ class TownBuilder {
     // the gate is walked through
     for (let y = gate.y; y < gate.y + gate.h; y++) for (let x = gate.x; x < gate.x + gate.w; x++) if (inMap(x, y)) walkable[y * MAP_W + x] = this.tiles[y * MAP_W + x] === 'water' ? 0 : 1;
     return { tiles: [...this.tiles], buildings: [...this.buildings], byProtocol, homes, tower, guildhall, gate, walkable, labels: districtLabelsFor(this.buildings, tower) };
+  }
+}
+
+/** Where a building in hand would stand: may it, why not, and the new road it would get (tile indices). */
+export interface Preview {
+  ok: boolean;
+  reason: string | null;
+  door: { x: number; y: number };
+  road: number[];
+}
+
+/**
+ * The town as built, ready to try one more building on every pointer move
+ * (the layout is built once; each try is one road search).
+ */
+export class BuildPlanner {
+  readonly #t = new TownBuilder();
+  readonly buildables: Map<string, Buildable>;
+
+  constructor(guild: Guild, layout: TownLayout) {
+    this.buildables = new Map(buildables(guild).map((b) => [b.id, b]));
+    for (const e of layout.placed) {
+      const what = this.buildables.get(e.id);
+      if (what !== undefined) this.#t.place(what, e.x, e.y, e.rot);
+    }
+  }
+
+  /** What stands in town now (ids). */
+  get placed(): ReadonlySet<string> {
+    return this.#t.placed;
+  }
+
+  preview(id: string, x: number, y: number, rot: Rot, land?: Land): Preview {
+    const what = this.buildables.get(id);
+    if (what === undefined) return { ok: false, reason: 'Not yours to build', door: doorTile(x, y, 3, 3, rot), road: [] };
+    return this.#t.preview(what, x, y, rot, land);
   }
 }
 
@@ -459,4 +514,32 @@ export function landFor(level: number): Land {
 /** Is this footprint (and its door) on the player's land? */
 export function onLand(land: Land, b: { x: number; y: number; w: number; h: number }): boolean {
   return b.x >= land.x0 && b.y >= land.y0 && b.x + b.w <= land.x1 && b.y + b.h <= land.y1;
+}
+
+// --- what may be built, remembered -----------------------------------------------
+
+/** What a protocol's building needs, kept once its history has shown it. */
+export type Known = Record<string, { name: string; iconUrl: string | null; url: string | null; category: string; building: string }>;
+
+const BUILDINGS = new Set<string>(Object.keys(DISTRICT_OF));
+
+/**
+ * Remember every protocol this guild shows, and give the guild back those it
+ * no longer shows (an older history window) as protocols with no visits: what
+ * may be built never shrinks. `known` is updated in place; `fresh` lists the
+ * ids seen for the first time.
+ */
+export function rememberProtocols(guild: Guild, known: Known): { guild: Guild; fresh: string[] } {
+  const fresh: string[] = [];
+  for (const p of guild.protocols.values()) {
+    if (known[p.id] === undefined) fresh.push(p.id);
+    known[p.id] = { name: p.name, iconUrl: p.iconUrl, url: p.url, category: p.category, building: p.building };
+  }
+  const protocols = new Map(guild.protocols);
+  for (const [id, k] of Object.entries(known)) {
+    if (protocols.has(id) || !BUILDINGS.has(k.building)) continue;
+    const p: Protocol = { id, name: k.name, iconUrl: k.iconUrl, url: k.url, category: k.category as ProtocolCategory, building: k.building as BuildingKind, visits: 0 };
+    protocols.set(id, p);
+  }
+  return { guild: { ...guild, protocols }, fresh };
 }
