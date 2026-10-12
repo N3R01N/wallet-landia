@@ -1473,6 +1473,64 @@ select {
   border-left-color: #5fcf6a;
 }
 
+.history-row.walking {
+  border-left-color: var(--gold);
+}
+
+.history-row.waiting {
+  border-left-color: #6fa8dc;
+}
+
+.history-row.problem {
+  border-left-color: #e0503c;
+}
+
+.history-row.partial {
+  border-left-color: #9a9a9a;
+}
+
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.history-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: var(--parchment-dark);
+  white-space: nowrap;
+}
+
+.history-row.done .history-badge {
+  background: #5fcf6a;
+  color: #10230f;
+}
+
+.history-row.walking .history-badge {
+  background: var(--gold);
+  animation: history-pulse 1.4s ease-in-out infinite;
+}
+
+.history-row.problem .history-badge {
+  background: #e0503c;
+  color: #fff;
+}
+
+@keyframes history-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-row.walking .history-badge {
+    animation: none;
+  }
+}
+
 /* --- the player (level and badges) ---------------------------------------- */
 
 .xp-bar {

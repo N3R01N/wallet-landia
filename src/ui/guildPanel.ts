@@ -358,6 +358,26 @@ const RESTING: Record<string, string> = {
   stopped: 'not running',
 };
 
+/** At a glance, how a wallet's walk back stands: its row's colour and badge. */
+export type HistoryKind = 'done' | 'walking' | 'waiting' | 'problem' | 'partial';
+
+export const HISTORY_BADGE: Record<HistoryKind, string> = {
+  done: 'complete',
+  walking: 'reaching back',
+  waiting: 'waiting',
+  problem: 'needs attention',
+  partial: 'partial',
+};
+
+/** `paused` as the walk back reports it (null: running now). Pure, so the kinds can be tested. */
+export function historyKind(s: Pick<LedgerStatus, 'complete' | 'capped'>, paused: string | null): HistoryKind {
+  if (s.complete) return 'done';
+  if (s.capped) return 'partial';
+  if (paused === null) return 'walking';
+  if (paused === 'error' || paused === 'auth') return 'problem';
+  return 'waiting';
+}
+
 /**
  * How far back each wallet's history reaches. Its own element: while history
  * arrives the app replaces just this (every 2 s), keeping the rest of the
@@ -374,10 +394,11 @@ export function historyRows(ctx: Pick<GuildPanelContext, 'history' | 'prefs'>): 
       const name = ctx.prefs.ens[s.address] || shortAddr(s.address);
       const reach = s.oldest !== null ? ` · back to ${new Date(s.oldest).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : '';
       const state = s.complete ? '✓ all of it, from the very first' : s.capped ? 'partial: a very busy wallet, kept to the newest 50,000' : paused === null ? 'reaching back…' : (RESTING[paused] ?? 'resting');
+      const kind = historyKind(s, paused);
       return el(
         'div',
-        { class: `history-row${s.complete ? ' done' : ''}`, 'data-address': s.address },
-        el('strong', {}, name),
+        { class: `history-row ${kind}`, 'data-address': s.address, 'data-state': kind },
+        el('span', { class: 'history-head' }, el('strong', {}, name), el('span', { class: 'history-badge' }, HISTORY_BADGE[kind])),
         el('span', {}, `${s.count.toLocaleString('en-US')} transactions${s.spam > 0 ? ` (${s.spam.toLocaleString('en-US')} spam)` : ''}${reach}`),
         el('span', { class: 'muted small' }, `${state} · ${s.backfillRequests} request${s.backfillRequests === 1 ? '' : 's'} so far`),
       );
