@@ -10,13 +10,21 @@ test('a medal is announced as the replay plays; the hero wears its title', async
   await page.locator('.btn', { hasText: '8×' }).click();
   const toast = page.locator('.toast').first();
   await expect(toast).toBeVisible({ timeout: 90_000 });
-  await expect(toast).toContainText('earned');
+  await expect(toast).toContainText(/You earned|bronze|silver|gold/);
   await toast.click();
 
-  // the hero's sheet: a medal case with that medal earned, teaching quests, a title to pick
+  // badges belong to the player: the toast opens their sheet, with a level and the badge earned
   const sheet = page.locator('.inspector');
-  await expect(sheet.locator('h3', { hasText: 'Medals' })).toBeVisible();
+  await expect(sheet.locator('.player-sheet h2')).toContainText(/Level \d+ · /);
+  await expect(sheet.locator('.xp-bar')).toBeVisible();
   await expect(sheet.locator('.medal.earned').first()).toBeVisible();
+  await expect(page.locator('.player-btn')).toContainText(/Lv \d+/);
+
+  // a hero's sheet: the badges that wallet earned first, a link to the player, a title to pick (unlocked by the player's badges)
+  await page.locator('.questlog-list .log-row').first().click();
+  await page.locator('.inspector a', { hasText: /.+/ }).first().click();
+  await expect(sheet.locator('h3', { hasText: 'Badges first earned by this wallet' })).toBeVisible();
+  await expect(sheet.locator('.btn', { hasText: 'Your level and all your badges' })).toBeVisible();
   const select = sheet.locator('select[aria-label="Hero title"]');
   const options = await select.locator('option').allTextContents();
   expect(options.length).toBeGreaterThan(1);

@@ -30,11 +30,11 @@ export interface Earned {
   journey: string | null;
 }
 
-type JourneyRule = (j: Journey, seen: Seen) => boolean;
-type HoldingRule = (hero: Hero) => boolean;
+export type JourneyRule = (j: Journey, seen: Seen) => boolean;
+export type HoldingRule = (hero: Hero) => boolean;
 
 /** What a hero has done so far, walking their journeys oldest first. */
-interface Seen {
+export interface Seen {
   initiated: number;
   places: Set<string>;
   liquidated: boolean;
@@ -271,6 +271,14 @@ const MEDALS: MedalDef[] = [
 
 export const ALL_MEDALS: readonly Medal[] = MEDALS;
 
+/** The rule behind each medal, for the player's lifetime badges (`player.ts`). */
+export function medalRules(): { medal: Medal; journey?: JourneyRule; holding?: HoldingRule }[] {
+  return MEDALS.map((m) => {
+    const medal: Medal = { id: m.id, name: m.name, icon: m.icon, hint: m.hint, lesson: m.lesson, title: m.title };
+    return { medal: ALL_MEDALS.find((x) => x.id === m.id) ?? medal, ...(m.journey ? { journey: m.journey } : {}), ...(m.holding ? { holding: m.holding } : {}) };
+  });
+}
+
 /** A hero's journeys (theirs, or a guild-mate's send to them), oldest first. */
 function journeysOf(hero: Hero, guild: Guild): Journey[] {
   return guild.journeys.filter((j) => j.hero === hero.address);
@@ -292,20 +300,6 @@ export function earnedMedals(hero: Hero, guild: Guild): Map<string, Earned> {
   return out;
 }
 
-/** Medals earned by each journey: journey key → [hero, medal]. For announcing them as the replay plays. */
-export function medalsByJourney(guild: Guild): Map<string, { hero: string; medal: Medal }[]> {
-  const out = new Map<string, { hero: string; medal: Medal }[]>();
-  for (const hero of guild.heroes) {
-    for (const [id, e] of earnedMedals(hero, guild)) {
-      if (e.journey === null) continue;
-      const medal = MEDALS.find((m) => m.id === id)!;
-      const list = out.get(e.journey) ?? [];
-      list.push({ hero: hero.address, medal });
-      out.set(e.journey, list);
-    }
-  }
-  return out;
-}
 
 export function medalById(id: string): Medal | undefined {
   return MEDALS.find((m) => m.id === id);

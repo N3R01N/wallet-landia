@@ -1303,3 +1303,89 @@ select {
     display: none;
   }
 }
+
+/* --- lifetime history (Guild panel) ---------------------------------------- */
+
+.history-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--parchment-dark);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.history-row.done {
+  border-left-color: #5fcf6a;
+}
+
+/* --- the player (level and badges) ---------------------------------------- */
+
+.xp-bar {
+  height: 12px;
+  margin: 6px 0 2px;
+  background: var(--parchment-dark);
+  border: 2px solid var(--wood-dark);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.xp-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #f0b030, var(--gold));
+}
+
+button.medal {
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.medal .medal-tier {
+  font-size: 10px;
+  font-weight: normal;
+  text-transform: capitalize;
+  color: var(--muted);
+}
+
+/* tier rings: bronze, silver, gold */
+.medal.earned.tier-1 {
+  border-color: #b87333;
+}
+
+.medal.earned.tier-2 {
+  border-color: #a8b0b8;
+  box-shadow: 0 0 0 2px #d8dde2 inset;
+}
+
+.medal.earned.tier-3 {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px #ffe680 inset, 0 0 6px rgba(245, 197, 24, 0.6);
+}
+
+/* clicked, but the quest that earned it is older than the town's window */
+.medal.far {
+  animation: medal-far 0.4s;
+}
+
+@keyframes medal-far {
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .medal.far {
+    animation: none;
+  }
+}
+
+/* a milestone or a holding: earned, with no tiers to climb */
+.medal.earned.tier-single {
+  border-color: var(--wood-light);
+}

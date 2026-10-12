@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildGuild } from '../src/domain/mappers.js';
 import type { Guild, Hero, Journey } from '../src/domain/model.js';
-import { ALL_MEDALS, defaultTitle, earnedMedals, medalsByJourney, teachingQuests, titleOptions } from '../src/domain/feats.js';
+import { ALL_MEDALS, defaultTitle, earnedMedals, teachingQuests, titleOptions } from '../src/domain/feats.js';
+import { badgeMoments, playerProfile } from '../src/domain/player.js';
 import type { RawWallet } from '../src/data/zerion/endpoints.js';
 
 const demoDir = resolve(__dirname, '../fixtures/demo');
@@ -100,9 +101,11 @@ describe('medals', () => {
     const g = buildGuild(demo);
     const total = g.heroes.reduce((s, h) => s + earnedMedals(h, g).size, 0);
     expect(total).toBeGreaterThan(3);
-    // each journey-earned medal can be announced when its journey plays
-    const announced = [...medalsByJourney(g).values()].flat().length;
-    const fromJourneys = g.heroes.reduce((s, h) => s + [...earnedMedals(h, g).values()].filter((e) => e.journey !== null).length, 0);
+    // as the player's badges (all wallets together), each journey-earned tier can be announced when its journey plays
+    const player = playerProfile(g);
+    expect(player.badges.size).toBeGreaterThan(3);
+    const announced = [...badgeMoments(player).values()].flat().length;
+    const fromJourneys = [...player.badges.values()].reduce((s, b) => s + b.tiers.filter((t) => t.journey !== null).length, 0);
     expect(announced).toBe(fromJourneys);
   });
 });

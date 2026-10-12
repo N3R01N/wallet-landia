@@ -9,6 +9,7 @@ import { TIER_COLORS, TIER_FLOORS, TIER_NAMES, approxUsd } from '../domain/tiers
 import { setRealmChains, type RawWallet } from '../data/zerion/endpoints.js';
 import { realmGuild, realmOf, realmSummaries } from '../domain/realms.js';
 import { realmMap } from './realmMap.js';
+import type { LedgerStatus } from '../data/ledger.js';
 import { Session, type Shown } from '../data/session.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { guildPanel } from './guildPanel.js';
@@ -31,8 +32,9 @@ import { Tour, type TourStep } from './tour.js';
 import { nightFactor } from '../render/overlay.js';
 import { priceMove, type PriceMove } from '../domain/risk.js';
 import { ethPriceFrom, formatGwei } from '../world/chain.js';
-import { defaultTitle, earnedMedals, medalById, medalsByJourney, titleOptions, type Earned, type Medal } from '../domain/feats.js';
-import { buildingPanel, heroPanel, questLogRow, questPanel, type PanelContext } from './panels.js';
+import { defaultTitle, medalById, titleOptions, type Earned } from '../domain/feats.js';
+import { badgeMoments, BADGE_TIER_NAMES, playerProfile, type PlayerBadge, type PlayerProfile, type Provenance } from '../domain/player.js';
+import { buildingPanel, heroPanel, playerPanel, questLogRow, questPanel, type PanelContext } from './panels.js';
 
 const SPEEDS = [0.5, 1, 2, 4, 8];
 
@@ -68,6 +70,9 @@ export class App {
   #sim!: Sim;
   #realmBtn = el('button', { class: 'btn realm-btn', title: 'The Realm Map: Ethereum and its L2 provinces' }, '🗺');
   #realmMap: HTMLElement | null = null;
+  /** Your wallets' lifetime history, as the walk back last reported it. */
+  #history: { statuses: LedgerStatus[]; paused: string | null } | null = null;
+  #historyRedraw: ReturnType<typeof setTimeout> | null = null;
   /** The view currently on screen. */
   #renderer: WorldView;
   #r2d: Renderer;
@@ -90,10 +95,15 @@ export class App {
   #scrubbing = false;
   #logCount = -1;
   #selectedKey = '';
-  /** Each hero's medals: earned in the loaded guild, plus those remembered from before. */
-  #medals = new Map<string, Map<string, Earned>>();
-  /** Which journeys earn which medals, to announce them as the replay plays. */
-  #medalJourneys = new Map<string, { hero: string; medal: Medal }[]>();
+  /** You: the level and badges of all your wallets' whole history (null until first worked out). */
+  #player: PlayerProfile | null = null;
+  /** Journeys that earned a badge or a tier, to announce them as the replay plays them. */
+  #badgeMoments = new Map<string, { badge: PlayerBadge; tier: number }[]>();
+  #playerOpen = false;
+  #playerBtn = el('button', { class: 'btn player-btn', title: 'You: your level and badges, from all your wallets' }, '🛡 Lv 1');
+  /** When the player was last worked out (the walk back through history updates it now and then). */
+  #playerAt = 0;
+  #playerTimer: ReturnType<typeof setTimeout> | null = null;
   #toasts = el('div', { class: 'toasts', 'aria-live': 'polite' });
   /** What is still loading (reason → what to tell the player); the veil shows while any is. */
   #loading = new Map<string, string>();
@@ -132,6 +142,18 @@ export class App {
         if (kind === 'error') this.#busy('town', null); // never hide the town behind a failed load
       },
       onBudget: (snap) => this.#onBudget(snap),
+      onHistory: (statuses, paused) => {
+        // history arriving: the level and badges grow with it
+        const before = this.#history?.statuses.reduce((n, x) => n + x.count, 0) ?? 0;
+        this.#history = { statuses, paused };
+        if (statuses.reduce((n, x) => n + x.count, 0) !== before) this.#playerSoon();
+        // the open Guild panel follows along: at most every 2 s, always ending on the latest (not while the player types in it)
+        if (this.#historyRedraw !== null) return;
+        this.#historyRedraw = setTimeout(() => {
+          this.#historyRedraw = null;
+          if (this.#guildOpen && !this.#editingInspector()) this.#openGuild();
+        }, 2000);
+      },
     });
     this.#onBudget(this.#session.budget.snapshot());
     this.#rebuild();
@@ -318,7 +340,6 @@ export class App {
     this.#sim.fog = this.#prefs.fog;
     this.#sim.setPriceMove(this.#priceMove);
     this.#logCount = -1;
-    this.#countMedals();
   }
 
   /** How ETH moved since the player's last visit (settled from the first home town of the session). */
@@ -463,40 +484,95 @@ export class App {
     if (last !== undefined) this.#veilText.textContent = last;
   }
 
-  /** Medals from the loaded guild, merged with (and added to) the ones remembered. */
-  #countMedals(): void {
-    this.#medals.clear();
+  /**
+   * Work out the player (level and badges) from everything kept of your own
+   * wallets' history. Only at home: a visited town is someone else's.
+   */
+  async #refreshPlayer(): Promise<void> {
+    const shown = this.#shown;
+    if (shown === null || shown.visiting !== null) return;
+    this.#playerAt = Date.now();
+    const raws = await this.#session.lifetime(shown).catch(() => shown.raws);
+    if (this.#shown !== shown) return;
+    const life = buildGuild(raws, { kind: 'count', count: Number.MAX_SAFE_INTEGER }, { names: this.#names });
+    // badges seen before that the kept history no longer shows (prefs.medals, by wallet) are kept
+    const remembered = new Map<string, Provenance>();
+    for (const [wallet, ids] of Object.entries(this.#prefs.medals)) for (const [id, at] of Object.entries(ids)) if (medalById(id) && !remembered.has(id)) remembered.set(id, { at, wallet, journey: null });
+    const player = playerProfile(life, remembered);
+    // and new ones are remembered, under the wallet that earned them
     let changed = false;
-    for (const hero of this.#world.heroes) {
-      const earned = earnedMedals(hero, this.#world);
-      const kept = (this.#prefs.medals[hero.address] ??= {});
-      for (const [id, e] of earned) {
-        if (!(id in kept) || (kept[id] === null && e.at !== null)) {
-          kept[id] = e.at;
-          changed = true;
-        }
+    for (const [id, b] of player.badges) {
+      const first = b.tiers[0]!;
+      const kept = (this.#prefs.medals[first.wallet] ??= {});
+      if (!(id in kept)) {
+        kept[id] = first.at;
+        changed = true;
       }
-      for (const [id, at] of Object.entries(kept)) if (!earned.has(id) && medalById(id)) earned.set(id, { at, journey: null });
-      this.#medals.set(hero.address, earned);
     }
     if (changed) savePrefs(this.#prefs);
-    this.#medalJourneys = medalsByJourney(this.#world);
+    this.#player = player;
+    this.#badgeMoments = badgeMoments(player);
+    this.#playerBtn.textContent = `🛡 Lv ${player.level}`;
+    this.#playerBtn.title = `You: level ${player.level} ${player.rank} · ${player.badges.size} badges — open your sheet`;
+    if (this.#playerOpen && !this.#editingInspector()) this.#openPlayer();
   }
 
+  /** Work the player out again soon (history arriving), at most every 15 s. */
+  #playerSoon(): void {
+    if (this.#playerTimer !== null) return;
+    this.#playerTimer = setTimeout(() => {
+      this.#playerTimer = null;
+      void this.#refreshPlayer();
+    }, Math.max(1500, 15_000 - (Date.now() - this.#playerAt)));
+  }
+
+  /** Badges this wallet earned first (for its hero's sheet). */
+  #firstEarnedBy(address: string): Map<string, Earned> {
+    const out = new Map<string, Earned>();
+    for (const [id, b] of this.#player?.badges ?? []) {
+      const first = b.tiers[0]!;
+      if (first.wallet === address) out.set(id, { at: first.at, journey: first.journey });
+    }
+    return out;
+  }
+
+  #openPlayer(): void {
+    const p = this.#player;
+    if (p === null) return;
+    this.#renderer.selected = null;
+    const walking = this.#history?.statuses.filter((s) => !s.complete) ?? [];
+    const reach = walking.length > 0 && walking.some((s) => s.oldest !== null) ? `back to ${new Date(Math.min(...walking.map((s) => s.oldest ?? Infinity))).getFullYear()} so far` : null;
+    this.#openInspector(
+      playerPanel(p, {
+        walletName: (a) => this.#world.heroes.find((h) => h.address === a)?.name ?? `${a.slice(0, 6)}…${a.slice(-4)}`,
+        openQuest: (key) => {
+          const j = this.#guild.journeys.find((x) => x.key === key) ?? this.#world.journeys.find((x) => x.key === key);
+          if (!j) return false;
+          this.#openJourney(j);
+          return true;
+        },
+        reach,
+      }),
+    );
+    this.#playerOpen = true;
+  }
+
+  /** A hero's title: any badge of yours unlocks its title for every one of your heroes. */
   #titleOf(address: string): string {
-    const medals = this.#medals.get(address)?.keys() ?? [];
+    const medals = [...(this.#player?.badges.keys() ?? [])];
     const cls = this.#classOf(address);
     const picked = this.#prefs.titles[address];
-    const options = titleOptions(cls, this.#medals.get(address)?.keys() ?? []);
+    const options = titleOptions(cls, medals);
     return picked !== undefined && options.includes(picked) ? picked : defaultTitle(cls, medals);
   }
 
-  /** A medal earned as the replay plays: a moment of glory in the corner of the town. */
-  #announce(address: string, medal: Medal): void {
-    const hero = this.#guild.heroes.find((h) => h.address === address);
-    if (!hero) return;
-    const toast = el('div', { class: 'toast' }, el('span', { class: 'toast-icon' }, medal.icon), el('div', {}, el('strong', {}, `${hero.name} earned ${medal.name}`), el('div', { class: 'muted' }, `New title: ${medal.title}`)));
-    toast.onclick = () => this.#selectHero(address);
+  /** A badge (or a new tier of one) earned as the replay plays: a moment of glory in the corner of the town. */
+  #announce(b: PlayerBadge, tier: number): void {
+    const m = b.medal;
+    const what = tier === 1 ? `You earned ${m.name}` : `${m.name}: ${BADGE_TIER_NAMES[tier]}`;
+    const sub = tier === 1 ? `New title: ${m.title}` : `${b.single ? '' : `${tier === 2 ? 10 : 100} times now`}`;
+    const toast = el('div', { class: 'toast' }, el('span', { class: 'toast-icon' }, m.icon), el('div', {}, el('strong', {}, what), el('div', { class: 'muted' }, sub)));
+    toast.onclick = () => this.#openPlayer();
     this.#toasts.append(toast);
     this.#sound.fanfare();
     while (this.#toasts.children.length > 3) this.#toasts.firstElementChild?.remove();
@@ -521,6 +597,8 @@ export class App {
     this.#sourceEl.textContent = shown.label;
     this.#homeBtn.hidden = shown.visiting === null;
     this.#rebuild();
+    // you, from all your wallets' history (at home; a visited town leaves your level as it was)
+    void this.#refreshPlayer();
     // ?at=<seconds>: start the replay at that moment (a link to it; tests)
     const at = Number(new URLSearchParams(location.search).get('at'));
     if (at > 0) this.#sim.seek(at);
@@ -564,6 +642,7 @@ export class App {
     this.#r3d?.setSim(this.#sim);
     this.#sim.goLive();
     for (const j of this.#guild.journeys) if (!before.has(j.key)) this.#sim.playNow(j);
+    this.#playerSoon();
     if (this.#realmMap) this.#openRealmMap();
   }
 
@@ -571,7 +650,9 @@ export class App {
   #editingInspector(): boolean {
     const active = document.activeElement;
     if (active instanceof HTMLElement && this.#inspector.contains(active) && active.matches('input, select, textarea')) return true;
-    return [...this.#inspector.querySelectorAll('input')].some((i) => i.type !== 'file' && i.value !== '');
+    // text typed and not yet submitted (a checkbox's value is always "on": not typing)
+    // (against what the field was drawn with: a saved RPC address is not something being typed)
+    return [...this.#inspector.querySelectorAll('input')].some((i) => !['file', 'checkbox', 'radio'].includes(i.type) && i.value !== i.defaultValue);
   }
 
   #onBudget(snap: BudgetSnapshot): void {
@@ -655,6 +736,20 @@ export class App {
           void this.#session.home();
         },
         refresh: () => this.#openGuild(),
+        history: this.#history,
+        onExportHistory: async () => {
+          const blob = await this.#session.exportHistory();
+          if (blob === null) return false;
+          const a = el('a', { href: URL.createObjectURL(blob), download: `wallet-landia-history-${new Date().toISOString().slice(0, 10)}.json.gz` });
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+          return true;
+        },
+        onImportHistory: async (data) => {
+          const said = await this.#session.importHistory(data);
+          void this.#refreshPlayer();
+          return said;
+        },
         heroes: this.#guild.heroes,
         classOf: (a) => this.#classOf(a),
         onSelectHero: (a) => this.#selectHero(a),
@@ -799,6 +894,7 @@ export class App {
     const guildBtn = el('button', { class: 'btn' }, '⚙ Guild');
     guildBtn.onclick = () => (this.#guildOpen ? this.#closeInspector() : this.#openGuild());
     this.#inkEl.onclick = () => this.#openGuild();
+    this.#playerBtn.onclick = () => (this.#playerOpen ? this.#closeInspector() : this.#openPlayer());
     this.#realmBtn.onclick = () => (this.#realmMap ? this.#closeRealmMap() : this.#openRealmMap());
     this.#homeBtn.onclick = () => {
       this.#busy('town', 'Heading home…');
@@ -811,6 +907,7 @@ export class App {
       views,
       windowSel,
       qualitySel,
+      this.#playerBtn,
       this.#realmBtn,
       this.#homeBtn,
       this.#statusEl,
@@ -874,7 +971,7 @@ export class App {
     if (sim.played !== this.#logCount || sim.log.at(-1)?.journey.key !== this.#selectedKey) {
       // medals for journeys just played (not for a jump along the timeline)
       const fresh = sim.played - this.#logCount;
-      if (this.#logCount >= 0 && fresh > 0 && fresh <= 3) for (const e of sim.log.slice(-fresh)) for (const m of this.#medalJourneys.get(e.journey.key) ?? []) this.#announce(m.hero, m.medal);
+      if (this.#logCount >= 0 && fresh > 0 && fresh <= 3) for (const e of sim.log.slice(-fresh)) for (const m of this.#badgeMoments.get(e.journey.key) ?? []) this.#announce(m.badge, m.tier);
       this.#logCount = sim.played;
       this.#selectedKey = sim.log.at(-1)?.journey.key ?? '';
       this.#log.replaceChildren(...sim.log.slice(-8).reverse().map((e) => questLogRow(e.journey, this.#guild, (j) => this.#openJourney(j))));
@@ -1027,7 +1124,9 @@ export class App {
       onJourney: (j) => this.#openJourney(j),
       onReplay: (j) => this.#replay(j),
       beat: this.#beat,
-      medalsOf: (a) => this.#medals.get(a) ?? new Map(),
+      medalsOf: (a) => this.#firstEarnedBy(a),
+      playerBadges: () => [...(this.#player?.badges.keys() ?? [])],
+      onPlayer: () => this.#openPlayer(),
       titleOf: (a) => this.#titleOf(a),
       setTitle: (a, t) => {
         if (t === null) delete this.#prefs.titles[a];
@@ -1103,6 +1202,7 @@ export class App {
   #openInspector(body: HTMLElement, guild = false): void {
     this.#guildOpen = guild;
     this.#looksOpen = false;
+    this.#playerOpen = false;
     this.#sim.route = null;
     this.#inspectorBody.replaceChildren(body);
     this.#inspector.hidden = false;
@@ -1111,6 +1211,7 @@ export class App {
   #closeInspector(): void {
     this.#guildOpen = false;
     this.#looksOpen = false;
+    this.#playerOpen = false;
     this.#sim.route = null;
     this.#renderer.follow?.(null);
     this.#inspector.hidden = true;

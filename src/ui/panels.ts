@@ -10,6 +10,7 @@ import { CLASS_LABEL, type Stash, type Goods, type Guild, type Hero, type HeroCl
 import { verbText } from '../domain/mappers.js';
 import { harvestOf, LOAN_COLORS, LOAN_WORDS, loanHealth } from '../domain/risk.js';
 import { ALL_MEDALS, teachingQuests, titleOptions, type Earned } from '../domain/feats.js';
+import { BADGE_TIERS, BADGE_TIER_NAMES, type PlayerProfile } from '../domain/player.js';
 import { TIER_COLORS, TIER_NAMES, approxUsd, exactUsd, formatQty } from '../domain/tiers.js';
 import { MOUNT_NAMES } from '../render/characters.js';
 import { bornCrest, crestColors, hashString, TINCTURES } from '../util/rng.js';
@@ -45,8 +46,12 @@ export interface PanelContext {
   onJourney: (j: Journey) => void;
   onReplay: (j: Journey) => void;
   beat: BlockBeat | null;
-  /** A hero's medals (earned now, or remembered). */
+  /** The badges this wallet earned first (badges belong to the player: see the player sheet). */
   medalsOf: (address: string) => Map<string, Earned>;
+  /** Every badge the player has (they unlock titles for all their heroes). */
+  playerBadges: () => string[];
+  /** Open the player's sheet (level and badges). */
+  onPlayer: () => void;
   /** The title a hero wears. */
   titleOf: (address: string) => string;
   /** Pick a title (null: back to the one the town chooses). */
@@ -218,6 +223,13 @@ function stashHealth(s: Stash): HTMLElement | null {
   return out;
 }
 
+/** Badges and the level belong to the player, across all their wallets. */
+function playerLink(ctx: PanelContext): HTMLElement {
+  const b = el('button', { class: 'btn' }, '🛡 Your level and all your badges →');
+  b.onclick = () => ctx.onPlayer();
+  return el('div', { class: 'form-row' }, b);
+}
+
 /** The medal case: every medal, earned ones bright, the rest showing how to earn them. */
 function medalCase(medals: Map<string, Earned>): HTMLElement {
   return el(
@@ -262,7 +274,7 @@ export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
   const medals = ctx.medalsOf(hero.address);
   const title = ctx.titleOf(hero.address);
   const titleSelect = el('select', { 'aria-label': 'Hero title' });
-  for (const t of titleOptions(cls, medals.keys())) {
+  for (const t of titleOptions(cls, ctx.playerBadges())) {
     const opt = el('option', { value: t }, t);
     if (t === title) opt.selected = true;
     titleSelect.append(opt);
@@ -323,7 +335,8 @@ export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
     el('h3', {}, 'Stashes abroad'),
     hero.stashes.length > 0 ? stashes : el('p', { class: 'muted' }, 'Nothing stored in any building.'),
     hero.spamCount > 0 ? el('p', { class: 'muted' }, `🗑 ${hero.spamCount} pieces of cursed junk lie in the midden by the fence (spam tokens, hidden).`) : null,
-    el('h3', {}, `Medals (${medals.size} of ${ALL_MEDALS.length})`),
+    el('h3', {}, `Badges first earned by this wallet (${medals.size})`),
+    playerLink(ctx),
     medalCase(medals),
     quests.length > 0 ? el('h3', {}, `Teaching quests (${quests.filter((q) => q.done).length} of ${quests.length} done)`) : null,
     quests.length > 0 ? el('div', { class: 'tquests' }, ...quests.map(questCard)) : null,
@@ -559,5 +572,75 @@ export function questPanel(j: Journey, ctx: PanelContext): HTMLElement {
     el('div', { class: 'form-row' }, replay, link),
     el('h3', {}, j.steps.length > 1 ? `Expedition: ${j.steps.length} stops` : 'The journey'),
     el('ol', { class: 'quest-steps' }, ...steps),
+  );
+}
+
+// --- the player ------------------------------------------------------------------
+
+export interface PlayerPanelContext {
+  /** A wallet's name (the hero's), for where a badge came from. */
+  walletName: (address: string) => string;
+  /** Open that quest if the town has it (false: it is older than the town's window). */
+  openQuest: (key: string) => boolean;
+  /** How far back the kept history reaches, if a walk back is under way (null: complete, or no ledger). */
+  reach: string | null;
+}
+
+const fmtDay = (t: number): string => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/** The player's sheet: their level and their badges, from everything all their wallets ever did. */
+export function playerPanel(p: PlayerProfile, ctx: PlayerPanelContext): HTMLElement {
+  const span = Math.max(1, p.nextXp - p.levelXp);
+  const fill = el('i', {});
+  fill.style.width = `${Math.round(((p.xp - p.levelXp) / span) * 100)}%`;
+  const bar = el('div', { class: 'xp-bar', role: 'progressbar', 'aria-valuemin': String(p.levelXp), 'aria-valuemax': String(p.nextXp), 'aria-valuenow': String(p.xp) }, fill);
+  const s = p.stats;
+  const earned = [...p.badges.values()];
+  const parts = el('details', {}, el('summary', {}, 'Where your XP comes from'), el('div', {}, ...p.parts.map((x) => el('div', { class: 'stat-row' }, el('span', {}, x.label), el('span', { class: 'mono' }, `${x.xp.toLocaleString('en-US')} XP`)))));
+  return el(
+    'div',
+    { class: 'panel-body player-sheet' },
+    el('h2', {}, `Level ${p.level} · ${p.rank}`),
+    bar,
+    el('div', { class: 'muted small' }, `${p.xp.toLocaleString('en-US')} XP · ${(p.nextXp - p.xp).toLocaleString('en-US')} to level ${p.level + 1}`),
+    el('p', { class: 'muted' }, `Everything your ${s.wallets === 1 ? 'wallet' : `${s.wallets} wallets`} ever did, as far back as the history reaches. The level grows with what you try and for how long, never with what you own.`),
+    ctx.reach !== null ? el('p', { class: 'muted small' }, `Still gathering your history (${ctx.reach}): the level and badges grow as it arrives.`) : null,
+    el('div', { class: 'stat-row' }, el('span', {}, 'Journeys signed'), el('span', {}, s.signed.toLocaleString('en-US'))),
+    el('div', { class: 'stat-row' }, el('span', {}, 'Things that came to you'), el('span', {}, s.received.toLocaleString('en-US'))),
+    s.firstAt !== null ? el('div', { class: 'stat-row' }, el('span', {}, 'First journey'), el('span', {}, fmtDay(s.firstAt))) : null,
+    el('div', { class: 'stat-row' }, el('span', {}, 'Realms travelled'), el('span', {}, s.chains.length > 0 ? s.chains.map((c) => realmOf(c).name).join(', ') : '—')),
+    el('div', { class: 'stat-row' }, el('span', {}, 'Buildings visited · kinds of journey'), el('span', {}, `${s.protocols} · ${s.kinds}`)),
+    el('div', { class: 'stat-row' }, el('span', {}, 'Months active'), el('span', {}, String(s.activeMonths))),
+    parts,
+    el('h3', {}, `Badges (${earned.length} of ${ALL_MEDALS.length})`),
+    el(
+      'div',
+      { class: 'medals badges' },
+      ...ALL_MEDALS.map((m) => {
+        const b = p.badges.get(m.id);
+        if (b === undefined) {
+          const dim = el('div', { class: 'medal', 'data-medal': m.id }, el('span', { class: 'medal-icon' }, m.icon), el('span', { class: 'medal-name' }, m.name));
+          dim.title = `${m.name} (not yet)\n${m.hint}`;
+          return dim;
+        }
+        const tierName = BADGE_TIER_NAMES[b.tier];
+        const first = b.tiers[0]!;
+        const from = `${first.at === null ? 'For what' : `Earned ${fmtDay(first.at)} by`} ${ctx.walletName(first.wallet)}${first.at === null ? ' holds' : ''}.`;
+        const ups = b.tiers.slice(1).map((t, i) => `${BADGE_TIER_NAMES[i + 2]}: ${t.at !== null ? fmtDay(t.at) : ''} (${ctx.walletName(t.wallet)})`);
+        const next = b.single || b.tier === 3 ? '' : `\n${BADGE_TIERS[b.tier]! - b.count} more for ${BADGE_TIER_NAMES[b.tier + 1]}.`;
+        const badge = el(
+          'button',
+          { class: `medal earned tier-${b.single ? 'single' : b.tier}`, 'data-medal': m.id, 'data-tier': String(b.tier) },
+          el('span', { class: 'medal-icon' }, m.icon),
+          el('span', { class: 'medal-name' }, m.name),
+          b.single ? null : el('span', { class: 'medal-tier' }, `${tierName} · ${b.count.toLocaleString('en-US')}`),
+        );
+        badge.title = `${m.name}${b.single ? '' : ` (${tierName}, ×${b.count})`}\n${from}${ups.length > 0 ? `\n${ups.join('\n')}` : ''}${next}\nTitle: ${m.title}\n\n${m.lesson}`;
+        badge.onclick = () => {
+          if (first.journey === null || !ctx.openQuest(first.journey)) badge.classList.add('far');
+        };
+        return badge;
+      }),
+    ),
   );
 }

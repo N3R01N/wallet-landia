@@ -13,6 +13,7 @@ import { CLASS_LABEL, type Hero, type HeroClass } from '../domain/model.js';
 import { approxUsd, TIER_COLORS } from '../domain/tiers.js';
 import { el, shortAddr } from './dom.js';
 import { heroNameEditor, portrait } from './panels.js';
+import type { LedgerStatus } from '../data/ledger.js';
 
 export interface GuildPanelContext {
   prefs: Prefs;
@@ -31,6 +32,12 @@ export interface GuildPanelContext {
   onRefresh: (() => Promise<void>) | null;
   /** Re-render the panel (after a local change). */
   refresh(): void;
+  /** Your wallets' lifetime history: how far back each reaches, and why the walk back rests (null: not running). */
+  history: { statuses: LedgerStatus[]; paused: string | null } | null;
+  /** Save your wallets' gathered history to a file (false: nothing to save). */
+  onExportHistory(): Promise<boolean>;
+  /** Load a saved history file; what happened, in plain words. */
+  onImportHistory(data: ArrayBuffer): Promise<string>;
   /** The heroes of the town on show, to open or rename. */
   heroes: Hero[];
   classOf(address: string): HeroClass;
@@ -199,7 +206,7 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
 
   // --- the Ethereum node (the bell, the queue, wallet checks)
   const rpcInput = el('input', { type: 'text', placeholder: DEFAULT_RPC, spellcheck: 'false', autocomplete: 'off', 'aria-label': 'Ethereum RPC address' });
-  rpcInput.value = p.rpcUrl;
+  rpcInput.defaultValue = p.rpcUrl;
   const rpcMsg = el('div', { class: 'form-msg' });
   const rpcSave = el('button', { class: 'btn' }, 'Use');
   rpcSave.onclick = () => {
@@ -304,6 +311,8 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
     el('div', { class: 'form-row' }, rpcInput, rpcSave, rpcReset),
     rpcMsg,
 
+    ...historySection(ctx),
+
     el('h3', {}, 'Scribe’s ink (requests today)'),
     el(
       'div',
@@ -314,4 +323,60 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
     el('p', { class: 'muted small' }, 'A new wallet costs ~5 requests. After that, towns come from this browser’s cache: the free public RPC tells us whether a wallet moved, and only then is Zerion asked for what changed. Unmoved wallets are re-checked every 30 minutes (1 request) and re-measured hourly (4).'),
     el('div', { class: 'form-row' }, refresh, clear),
   );
+}
+
+/** Why the walk back through history is resting, in plain words. */
+const RESTING: Record<string, string> = {
+  hidden: 'resting while the tab is hidden',
+  budget: 'resting: the rest of today’s requests are kept for the town',
+  error: 'resting after an error; trying again soon',
+  auth: 'stopped: Zerion did not accept the key',
+  stopped: 'not running',
+};
+
+/** Lifetime history: every transaction your wallets ever made, gathered once and kept in this browser. */
+function historySection(ctx: GuildPanelContext): (HTMLElement | null)[] {
+  const h = ctx.history;
+  const live = loadApiKey() !== null && ctx.prefs.owned.length > 0;
+  if (!live && (h === null || h.statuses.length === 0)) return [];
+  const rows = (h?.statuses ?? []).map((s) => {
+    const name = ctx.prefs.ens[s.address] || shortAddr(s.address);
+    const reach = s.oldest !== null ? ` · back to ${new Date(s.oldest).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : '';
+    const paused = h?.paused ?? 'stopped';
+    const state = s.complete ? '✓ all of it, from the very first' : s.capped ? 'partial: a very busy wallet, kept to the newest 50,000' : paused === null ? 'reaching back…' : (RESTING[paused] ?? 'resting');
+    return el(
+      'div',
+      { class: `history-row${s.complete ? ' done' : ''}`, 'data-address': s.address },
+      el('strong', {}, name),
+      el('span', {}, `${s.count.toLocaleString('en-US')} transactions${reach}`),
+      el('span', { class: 'muted small' }, `${state} · ${s.backfillRequests} request${s.backfillRequests === 1 ? '' : 's'} so far`),
+    );
+  });
+  // save and load: the history survives a new browser without asking Zerion again
+  const msg = el('div', { class: 'form-msg' });
+  const save = el('button', { class: 'btn' }, '⬇ Save to a file');
+  save.onclick = async () => {
+    msg.textContent = (await ctx.onExportHistory()) ? 'Saved.' : 'Nothing gathered yet to save.';
+  };
+  const file = el('input', { type: 'file', accept: '.gz,.json,application/gzip,application/json', 'aria-label': 'History file to load', hidden: '' });
+  const load = el('button', { class: 'btn' }, '⬆ Load from a file');
+  load.onclick = () => file.click();
+  file.onchange = async () => {
+    const f = file.files?.[0];
+    if (!f) return;
+    msg.textContent = 'Loading…';
+    try {
+      msg.textContent = await ctx.onImportHistory(await f.arrayBuffer());
+    } catch (e) {
+      msg.textContent = e instanceof Error ? e.message : String(e);
+    }
+    file.value = '';
+  };
+  return [
+    el('h3', {}, 'Lifetime history'),
+    el('p', { class: 'muted small' }, 'Every transaction your wallets ever made, gathered once (a request per hundred) and kept in this browser; afterwards only what is new is asked for. It walks back a page at a time while the tab is open, leaving 40% of each day’s requests for the town. Save it to a file to take it to another browser.'),
+    ...rows,
+    el('div', { class: 'form-row' }, save, load, file),
+    msg,
+  ];
 }

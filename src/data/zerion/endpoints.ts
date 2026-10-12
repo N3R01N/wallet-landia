@@ -85,7 +85,7 @@ export function getNftPositions(
 export function getTransactions(
   client: ZerionClient,
   address: string,
-  options: ChainScope & { pages?: number; since?: number; signal?: AbortSignal } = {},
+  options: ChainScope & { pages?: number; since?: number; until?: number; signal?: AbortSignal } = {},
 ): Promise<TransactionResource[]> {
   const params: Record<string, string | number | undefined> = {
     currency: client.currency,
@@ -94,6 +94,8 @@ export function getTransactions(
     'filter[chain_ids]': chainFilter(options),
   };
   if (options.since !== undefined) params['filter[min_mined_at]'] = Math.floor(options.since);
+  // (both ends inclusive: walking back in time, `until` is the oldest one already kept)
+  if (options.until !== undefined) params['filter[max_mined_at]'] = Math.floor(options.until);
   const paging: { maxPages: number; signal?: AbortSignal } = { maxPages: options.pages ?? 1 };
   if (options.signal !== undefined) paging.signal = options.signal;
   return client.getAll<TransactionResource>(`/wallets/${address}/transactions/`, params, paging);
@@ -115,7 +117,7 @@ export interface RawWallet {
 export async function fetchRawWallet(
   client: ZerionClient,
   address: string,
-  options: { label?: string; signal?: AbortSignal; onWarn?: (msg: string) => void } = {},
+  options: { label?: string; signal?: AbortSignal; onWarn?: (msg: string) => void; transactions?: () => Promise<TransactionResource[]> } = {},
 ): Promise<RawWallet> {
   const warn = options.onWarn ?? (() => undefined);
   // The portfolio and NFT calls are allowed to fail: a wallet Zerion has never
@@ -125,7 +127,8 @@ export async function fetchRawWallet(
     getPositions(client, address, 'only_simple'),
     getPositions(client, address, 'only_complex'),
     getNftPositions(client, address).catch((e: unknown) => (warn(`nfts: ${String(e)}`), [])),
-    getTransactions(client, address, options.signal ? { signal: options.signal } : {}),
+    // (the lifetime ledger fetches them when there is one, and keeps them)
+    options.transactions ? options.transactions() : getTransactions(client, address, options.signal ? { signal: options.signal } : {}),
   ]);
   return {
     address: address.toLowerCase(),

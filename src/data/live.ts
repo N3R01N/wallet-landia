@@ -25,6 +25,7 @@ import {
 } from './zerion/endpoints.js';
 import type { TransactionResource } from './zerion/types.js';
 import type { KV } from './cache.js';
+import { Ledger } from './ledger.js';
 
 export const VALUATION_TTL = 5 * 60_000;
 /** Reloading within this window does not even ask for the tail. */
@@ -32,8 +33,6 @@ export const HISTORY_TTL = 2 * 60_000;
 /** When the fingerprint shows the wallet did not move: incoming tokens and prices still drift, slowly. */
 export const QUIET_HISTORY_TTL = 30 * 60_000;
 export const QUIET_VALUATION_TTL = 60 * 60_000;
-/** Reach back a little, so a pending tx that has since settled is corrected. */
-const OVERLAP_MS = 10 * 60_000;
 /** Kept per wallet; the world shows up to 100. */
 export const HISTORY_CAP = 250;
 
@@ -81,6 +80,8 @@ export interface LiveOptions {
 
 export class LiveLoader {
   readonly client: ZerionClient;
+  /** Every transaction each wallet ever made, kept in the browser (the town's own history requests feed it). */
+  readonly ledger: Ledger;
   readonly #cache: KV;
   readonly #now: () => number;
 
@@ -88,6 +89,7 @@ export class LiveLoader {
     this.client = o.client ?? new ZerionClient({ apiKey: o.apiKey, budget: o.budget }); // the configured transport
     this.#cache = o.cache;
     this.#now = o.now ?? Date.now;
+    this.ledger = new Ledger(o.cache, (address, q) => getTransactions(this.client, address, { pages: q.pages, ...(q.since !== undefined ? { since: q.since } : {}), ...(q.until !== undefined ? { until: q.until } : {}) }), () => currentChains().join('+'));
   }
 
   /**
@@ -99,7 +101,8 @@ export class LiveLoader {
     const now = this.#now();
     const cached = await this.#cache.get<Entry>(key(addr));
     if (cached === undefined || opts.force === true) {
-      const raw = await fetchRawWallet(this.client, addr, { label });
+      // the newest page comes through the ledger, which keeps it (and later reaches back from it)
+      const raw = await fetchRawWallet(this.client, addr, { label, transactions: () => this.ledger.head(addr) });
       raw.capturedAt = now;
       await this.#cache.put(key(addr), { raw, valuationsAt: now, historyAt: now, ...(opts.print ? { print: opts.print } : {}) } satisfies Entry);
       return raw;
@@ -141,8 +144,8 @@ export class LiveLoader {
   }
 
   async #refreshTail(raw: RawWallet): Promise<{ raw: RawWallet; added: number; fresh: TransactionResource[] }> {
-    const newest = raw.transactions.reduce((m, t) => Math.max(m, Date.parse(t.attributes.mined_at) || 0), 0);
-    const fetched = await getTransactions(this.client, raw.address, newest > 0 ? { since: newest - OVERLAP_MS } : {});
+    // through the ledger: one request for what is new, kept for good (it asks from its own newest, so nothing is missed)
+    const fetched = await this.ledger.head(raw.address);
     const known = new Set(raw.transactions.map(txKey));
     const fresh = fetched.filter((t) => !known.has(txKey(t)));
     return { raw: { ...raw, transactions: mergeHistory(raw.transactions, fetched) }, added: fresh.length, fresh };
