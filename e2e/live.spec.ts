@@ -13,11 +13,13 @@ const ADDR: string = demo.address;
 interface Fake {
   zerionRequests: string[];
   nonce: string;
+  /** Times the page asked a wallet's nonce (its fingerprint). */
+  nonceAsks: number;
   transactions: unknown[];
 }
 
 async function fakeNetwork(page: Page): Promise<Fake> {
-  const fake: Fake = { zerionRequests: [], nonce: '0x1', transactions: [...demo.transactions] };
+  const fake: Fake = { zerionRequests: [], nonce: '0x1', nonceAsks: 0, transactions: [...demo.transactions] };
   await page.route('https://api.zerion.io/**', async (route) => {
     const url = route.request().url();
     fake.zerionRequests.push(url);
@@ -37,6 +39,7 @@ async function fakeNetwork(page: Page): Promise<Fake> {
           block++;
           return { jsonrpc: '2.0', id: c.id, result: { number: `0x${block.toString(16)}`, gasUsed: '0x1', gasLimit: '0x2', baseFeePerGas: '0x3b9aca00', timestamp: '0x1', transactions: [] } };
         case 'eth_getTransactionCount':
+          fake.nonceAsks++;
           return { jsonrpc: '2.0', id: c.id, result: fake.nonce };
         case 'eth_getBalance':
           return { jsonrpc: '2.0', id: c.id, result: '0x10' };
@@ -67,13 +70,15 @@ test('loads live, caches, and plays a new transaction when the chain moves', asy
   await expect(page.locator('.btn.ink')).toHaveText('✒ 295');
 
   // A reload within the cache window costs nothing.
+  const beforeReload = fake.nonceAsks;
   await page.reload();
   await expect(page.locator('.brand')).toContainText('live', { timeout: 20_000 });
   expect(fake.zerionRequests).toHaveLength(5);
 
-  // Let the session take its baseline of the chain, then the wallet sends
-  // something: its nonce moves, and Zerion has a new tx.
-  await page.waitForTimeout(1500);
+  // Let the reloaded page take its baseline of the chain (the load's look at the
+  // nonce, then the baseline's), then the wallet sends something: its nonce
+  // moves, and Zerion has a new tx.
+  await expect.poll(() => fake.nonceAsks, { timeout: 15_000 }).toBeGreaterThanOrEqual(beforeReload + 2);
   const fresh = structuredClone(demo.transactions[0]);
   delete fresh.attributes.flags;
   delete fresh.relationships.dapp;
@@ -105,7 +110,7 @@ test('the Guild panel adds a wallet and rejects nonsense', async ({ page }) => {
   const follow = page.locator('.inspector input[aria-label="0x… or name.eth"]').nth(1);
   await follow.fill('not an address');
   await page.locator('.inspector .btn', { hasText: 'Follow' }).click();
-  await expect(page.locator('.inspector .form-msg').nth(1)).toContainText('0x… address or an ENS name');
+  await expect(page.locator('.inspector .form-msg').nth(2)).toContainText('0x… address or an ENS name');
   await follow.fill('0x1111111111111111111111111111111111111111');
   await page.locator('.inspector .btn', { hasText: 'Follow' }).click();
   await expect(page.locator('.inspector')).toContainText('Followed towns (1)');

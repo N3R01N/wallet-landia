@@ -136,6 +136,8 @@ Every part shares one skeleton, so no retargeting is needed. The only rig so far
   "skeleton": "ue5-universal",
   "animations": "anim/ual.glb",                       // one glTF with all clips
   "clips": { "idle": "Idle_Loop", "walk": "Walk_Loop", "run": "Jog_Fwd_Loop", "sit": "Sitting_Idle_Loop" },
+  // optional gestures: chatting, handing over at a door, catching what is handed out, cheering, pushing a door
+  // "clips": { …, "talk": "Idle_Talking_Loop", "interact": "Interact", "pickup": "PickUp_Table", "cheer": "Dance_Loop", "push": "Push_Loop" },
   "speeds": { "walk": 1.25, "run": 3.0 },              // m/s at normal playback, so feet don't slide
   "bodies": { "male": "base/M.glb", "female": "base/F.glb" },
   "bodyParts": "head",                                 // keep only the head (outfits cover the body) or "full"

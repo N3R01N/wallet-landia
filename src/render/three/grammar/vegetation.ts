@@ -16,6 +16,7 @@ import { makeRng } from '../../../util/rng.js';
 import { applyWind } from '../wind.js';
 import type { MaterialLibrary } from './materials.js';
 import { METRES_PER_TILE } from './medieval.js';
+import { keep } from '../dispose.js';
 
 export interface PlantSpot {
   x: number;
@@ -330,7 +331,7 @@ export class Vegetation {
 
   constructor(lib: MaterialLibrary) {
     this.#lib = lib;
-    const foliage = (map: THREE.Texture): THREE.MeshStandardMaterial => new THREE.MeshStandardMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
+    const foliage = (map: THREE.Texture): THREE.MeshStandardMaterial => keep(new THREE.MeshStandardMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 }));
     this.#leafMat = foliage(leafTexture());
     this.#needleMat = foliage(needleTexture());
     this.#flowerMat = foliage(flowerTexture());
@@ -346,6 +347,23 @@ export class Vegetation {
       fir: [fir(31, true), fir(32, true)],
       bush: [bush(41), bush(42)],
     };
+    // the prototypes outlive every town built from them
+    for (const set of [this.#species, this.#far]) for (const list of Object.values(set)) for (const sp of list) {
+      keep(sp.wood);
+      keep(sp.foliage);
+    }
+  }
+
+  /** Free the prototypes and foliage (the theme is gone). */
+  dispose(): void {
+    for (const m of [this.#leafMat, this.#needleMat, this.#flowerMat]) {
+      m.map?.dispose();
+      m.dispose();
+    }
+    for (const set of [this.#species, this.#far]) for (const list of Object.values(set)) for (const sp of list) {
+      sp.wood.dispose();
+      sp.foliage.dispose();
+    }
   }
 
   /** Instanced meshes for one kind of plant at the given spots. */

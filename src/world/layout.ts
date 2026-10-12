@@ -31,7 +31,7 @@ export const DISTRICT_NAMES: Record<District, string> = {
   harbour: 'Harbour',
 };
 
-const DISTRICT_OF: Record<BuildingKind, District> = {
+export const DISTRICT_OF: Record<BuildingKind, District> = {
   temple: 'temple',
   barracks: 'temple',
   alchemist: 'alchemy',
@@ -80,6 +80,8 @@ export interface Placed {
   protocolId?: string;
   heroAddress?: string;
   district: District | 'gate';
+  /** Quarter turns clockwise from facing south (the door below): 1 west, 2 north, 3 east. */
+  rot?: 0 | 1 | 2 | 3;
 }
 
 export interface TownPlan {
@@ -91,10 +93,13 @@ export interface TownPlan {
   guildhall: Placed;
   gate: Placed;
   walkable: Uint8Array;
+  /** District names and where to write them (a built town names only what it has); the classic spots when absent. */
+  labels?: [District, number, number][];
 }
 
 export function tileAt(plan: TownPlan, x: number, y: number): TileKind {
-  return plan.tiles[y * MAP_W + x] ?? 'grass';
+  // x is bounded too: x = MAP_W would otherwise read the next row's first tile
+  return x >= 0 && x < MAP_W ? (plan.tiles[y * MAP_W + x] ?? 'grass') : 'grass';
 }
 
 function baseTiles(): TileKind[] {
@@ -122,7 +127,7 @@ function baseTiles(): TileKind[] {
   return t;
 }
 
-function makePlaced(id: string, kind: PlacedKind, x: number, y: number, w: number, h: number, district: Placed['district']): Placed {
+export function makePlaced(id: string, kind: PlacedKind, x: number, y: number, w: number, h: number, district: Placed['district']): Placed {
   const door = { x: x + Math.floor(w / 2), y: y + h };
   return { id, kind, x, y, w, h, door, doorAt: { x: door.x + 0.5, y: door.y + 0.5 }, district };
 }
@@ -166,8 +171,9 @@ export function planTown(guild: Guild): TownPlan {
     for (const d of OVERFLOW) {
       if (slot !== null) break;
       slot = claim(SLOTS[d], protocol.id, used);
-      placedIn = d;
+      if (slot !== null) placedIn = d;
     }
+    // a spare edge plot belongs to no district: it keeps its own, not the last full one tried
     slot ??= claimAny(used);
     if (slot === null) {
       unplaced.push(protocol.id);
@@ -274,53 +280,158 @@ const STEP_COST: Record<TileKind, number> = { road: 1, plaza: 1, path: 1, sand: 
 /**
  * A* on the tile grid, returning tile *centres* (a tile spans [x, x+1]).
  * Positions are world points; the tile under a point is its floor.
+ *
+ * The open set is a binary heap ordered by f, then by when an entry was
+ * pushed (first pushed wins a tie, as the list it replaced did, so paths are
+ * the same). Step costs are whole numbers of at least 1 and the heuristic is
+ * Manhattan distance, which never overestimates: a tile taken off the heap is
+ * done, so later entries for it are skipped (closed). The grids are reused
+ * between calls, told apart by a stamp per call instead of being refilled.
  */
 export function findPath(plan: TownPlan, from: Pt, to: Pt): Pt[] {
-  const idx = (x: number, y: number): number => y * MAP_W + x;
   const sx = clampX(Math.floor(from.x));
   const sy = clampY(Math.floor(from.y));
   const tx = clampX(Math.floor(to.x));
   const ty = clampY(Math.floor(to.y));
-  const start = idx(sx, sy);
-  const goal = idx(tx, ty);
-  const g = new Float32Array(MAP_W * MAP_H).fill(Infinity);
-  const came = new Int32Array(MAP_W * MAP_H).fill(-1);
-  const open: { i: number; f: number }[] = [{ i: start, f: 0 }];
-  g[start] = 0;
+  const start = sy * MAP_W + sx;
+  const goal = ty * MAP_W + tx;
+  const s = scratch;
+  // a new stamp: g, came and closed hold nothing for this call yet (wrapping round, wipe them for real)
+  if (++s.stamp === 0x7fffffff) {
+    s.seen.fill(0);
+    s.shut.fill(0);
+    s.stamp = 1;
+  }
+  const stamp = s.stamp;
+  const g = (i: number): number => (s.seen[i] === stamp ? s.g[i]! : Infinity);
+  const heap = s.heap;
+  heap.clear();
+  s.seen[start] = stamp;
+  s.g[start] = 0;
+  s.came[start] = -1;
+  heap.push(start, 0);
   const h = (i: number): number => Math.abs((i % MAP_W) - tx) + Math.abs(Math.floor(i / MAP_W) - ty);
 
-  while (open.length > 0) {
-    let best = 0;
-    for (let k = 1; k < open.length; k++) if ((open[k]?.f ?? Infinity) < (open[best]?.f ?? Infinity)) best = k;
-    const cur = open.splice(best, 1)[0];
-    if (cur === undefined) break;
-    if (cur.i === goal) break;
-    const cx = cur.i % MAP_W;
-    const cy = Math.floor(cur.i / MAP_W);
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-      const nx = cx + dx;
-      const ny = cy + dy;
+  while (heap.size > 0) {
+    const cur = heap.pop();
+    if (cur === goal) break;
+    if (s.shut[cur] === stamp) continue;
+    s.shut[cur] = stamp;
+    const cx = cur % MAP_W;
+    const cy = Math.floor(cur / MAP_W);
+    const gc = g(cur);
+    for (let k = 0; k < 4; k++) {
+      const nx = cx + DX[k]!;
+      const ny = cy + DY[k]!;
       if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) continue;
-      const ni = idx(nx, ny);
+      const ni = ny * MAP_W + nx;
+      if (s.shut[ni] === stamp) continue;
       if (plan.walkable[ni] === 0 && ni !== goal) continue;
-      const cost = STEP_COST[plan.tiles[ni] ?? 'grass'];
-      const ng = (g[cur.i] ?? Infinity) + cost;
-      if (ng < (g[ni] ?? Infinity)) {
-        g[ni] = ng;
-        came[ni] = cur.i;
-        open.push({ i: ni, f: ng + h(ni) });
+      const ng = gc + STEP_COST[plan.tiles[ni] ?? 'grass'];
+      if (ng < g(ni)) {
+        s.seen[ni] = stamp;
+        s.g[ni] = ng;
+        s.came[ni] = cur;
+        heap.push(ni, ng + h(ni));
       }
     }
   }
 
-  if (came[goal] === -1 && goal !== start) return [from, to];
+  if (s.seen[goal] !== stamp && goal !== start) return [from, to];
   const path: Pt[] = [];
-  for (let i = goal; i !== -1; i = came[i] ?? -1) {
+  for (let i = goal; i !== -1; i = s.came[i]!) {
     path.push({ x: (i % MAP_W) + 0.5, y: Math.floor(i / MAP_W) + 0.5 });
     if (i === start) break;
   }
   return path.reverse();
 }
+
+/** Right, left, down, up: the order neighbours are tried in (it decides between equally good paths). */
+const DX = [1, -1, 0, 0] as const;
+const DY = [0, 0, 1, -1] as const;
+
+/** Does entry 1 come off the heap before entry 2: a lower f, or the same f pushed earlier? */
+const earlier = (f1: number, order1: number, f2: number, order2: number): boolean => f1 < f2 || (f1 === f2 && order1 < order2);
+
+/** A min-heap of tiles by f, ties to the earliest pushed. */
+class TileHeap {
+  #tile = new Int32Array(1024);
+  #f = new Float64Array(1024);
+  #order = new Float64Array(1024);
+  #pushed = 0;
+  size = 0;
+
+  clear(): void {
+    this.size = 0;
+    this.#pushed = 0;
+  }
+
+  push(tile: number, f: number): void {
+    if (this.size === this.#tile.length) this.#grow();
+    let i = this.size++;
+    const order = this.#pushed++;
+    while (i > 0) {
+      const up = (i - 1) >> 1;
+      if (!earlier(f, order, this.#f[up]!, this.#order[up]!)) break;
+      this.#move(up, i);
+      i = up;
+    }
+    this.#tile[i] = tile;
+    this.#f[i] = f;
+    this.#order[i] = order;
+  }
+
+  pop(): number {
+    const top = this.#tile[0]!;
+    const n = --this.size;
+    if (n > 0) {
+      const tile = this.#tile[n]!;
+      const f = this.#f[n]!;
+      const order = this.#order[n]!;
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1;
+        if (l >= n) break;
+        const r = l + 1;
+        const c = r < n && earlier(this.#f[r]!, this.#order[r]!, this.#f[l]!, this.#order[l]!) ? r : l;
+        if (!earlier(this.#f[c]!, this.#order[c]!, f, order)) break;
+        this.#move(c, i);
+        i = c;
+      }
+      this.#tile[i] = tile;
+      this.#f[i] = f;
+      this.#order[i] = order;
+    }
+    return top;
+  }
+
+  #move(from: number, to: number): void {
+    this.#tile[to] = this.#tile[from]!;
+    this.#f[to] = this.#f[from]!;
+    this.#order[to] = this.#order[from]!;
+  }
+
+  #grow(): void {
+    const n = this.#tile.length * 2;
+    const tile = new Int32Array(n);
+    const f = new Float64Array(n);
+    const order = new Float64Array(n);
+    tile.set(this.#tile);
+    f.set(this.#f);
+    order.set(this.#order);
+    [this.#tile, this.#f, this.#order] = [tile, f, order];
+  }
+}
+
+/** findPath's working grids, kept between calls (paths are found many times a second). */
+const scratch = {
+  stamp: 0,
+  seen: new Int32Array(MAP_W * MAP_H),
+  shut: new Int32Array(MAP_W * MAP_H),
+  g: new Float32Array(MAP_W * MAP_H),
+  came: new Int32Array(MAP_W * MAP_H),
+  heap: new TileHeap(),
+};
 
 const clampX = (x: number): number => Math.max(0, Math.min(MAP_W - 1, x));
 const clampY = (y: number): number => Math.max(0, Math.min(MAP_H - 1, y));

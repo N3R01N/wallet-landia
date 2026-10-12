@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildGuild } from '../src/domain/mappers.js';
 import type { Guild, Hero, Journey } from '../src/domain/model.js';
-import { ALL_MEDALS, defaultTitle, earnedMedals, medalsByJourney, teachingQuests, titleOptions } from '../src/domain/feats.js';
+import { ALL_MEDALS, defaultTitle, teachingQuests, titleOptions } from '../src/domain/feats.js';
+import { badgeMoments, playerProfile } from '../src/domain/player.js';
 import type { RawWallet } from '../src/data/zerion/endpoints.js';
 
 const demoDir = resolve(__dirname, '../fixtures/demo');
@@ -52,13 +53,16 @@ const journey = (over: Partial<Journey>): Journey => ({
 });
 
 const guildOf = (h: Hero, journeys: Journey[]): Guild => ({ heroes: [h], protocols: new Map(), journeys, windowStart: 0, windowEnd: 0 });
+/** The badges the player earns from this hero's journeys (badges are the player's, not the hero's): when, and by which journey. */
+const earned = (h: Hero, journeys: Journey[]): Map<string, { at: number | null; journey: string | null }> =>
+  new Map([...playerProfile(guildOf(h, journeys)).badges].map(([id, b]) => [id, { at: b.tiers[0]!.at, journey: b.tiers[0]!.journey }]));
 
-describe('medals', () => {
+describe('badges (the player\'s, earned through the heroes\' journeys)', () => {
   it('are earned by the first journey that qualifies', () => {
     const h = hero();
     const swap1 = journey({ verb: 'swap' });
     const swap2 = journey({ verb: 'swap' });
-    const m = earnedMedals(h, guildOf(h, [swap1, swap2]));
+    const m = earned(h, [swap1, swap2]);
     expect(m.get('barter')).toEqual({ at: swap1.time, journey: swap1.key });
     expect(m.get('first-steps')?.journey).toBe(swap1.key);
     expect(m.has('keys')).toBe(false);
@@ -66,7 +70,7 @@ describe('medals', () => {
 
   it('need the hero to have signed, and to have succeeded', () => {
     const h = hero();
-    const m = earnedMedals(h, guildOf(h, [journey({ verb: 'swap', initiated: false }), journey({ verb: 'revoke', status: 'failed' })]));
+    const m = earned(h, [journey({ verb: 'swap', initiated: false }), journey({ verb: 'revoke', status: 'failed' })]);
     expect(m.has('barter')).toBe(false);
     expect(m.has('keys')).toBe(false);
     expect(m.has('scarred')).toBe(true);
@@ -75,15 +79,15 @@ describe('medals', () => {
   it('surviving the bailiffs takes a journey after the liquidation', () => {
     const h = hero();
     const liq = journey({ verb: 'liquidated', initiated: false });
-    expect(earnedMedals(h, guildOf(h, [liq])).has('survived')).toBe(false);
+    expect(earned(h, [liq]).has('survived')).toBe(false);
     const after = journey({ verb: 'repay' });
-    expect(earnedMedals(h, guildOf(h, [liq, after])).get('survived')?.journey).toBe(after.key);
+    expect(earned(h, [liq, after]).get('survived')?.journey).toBe(after.key);
   });
 
   it('can come from what a hero holds', () => {
     const items = ['ETH', 'USDC', 'LINK', 'UNI'].map((symbol, i) => ({ id: symbol, chainId: 'ethereum', name: symbol, symbol, category: i === 1 ? ('stable' as const) : ('token' as const), quantity: 1, usd: 100, tier: 2 as const, iconUrl: null }));
     const h = hero({ items, tier: 5 });
-    const m = earnedMedals(h, guildOf(h, []));
+    const m = earned(h, []);
     expect(m.get('steward')).toEqual({ at: null, journey: null });
     expect(m.has('hoard')).toBe(true);
   });
@@ -98,11 +102,11 @@ describe('medals', () => {
     expect(new Set(ALL_MEDALS.map((m) => m.id)).size).toBe(ALL_MEDALS.length);
     for (const m of ALL_MEDALS) expect(m.lesson.length).toBeGreaterThan(20);
     const g = buildGuild(demo);
-    const total = g.heroes.reduce((s, h) => s + earnedMedals(h, g).size, 0);
-    expect(total).toBeGreaterThan(3);
-    // each journey-earned medal can be announced when its journey plays
-    const announced = [...medalsByJourney(g).values()].flat().length;
-    const fromJourneys = g.heroes.reduce((s, h) => s + [...earnedMedals(h, g).values()].filter((e) => e.journey !== null).length, 0);
+    // the player's badges (all wallets together); each journey-earned tier can be announced when its journey plays
+    const player = playerProfile(g);
+    expect(player.badges.size).toBeGreaterThan(3);
+    const announced = [...badgeMoments(player).values()].flat().length;
+    const fromJourneys = [...player.badges.values()].reduce((s, b) => s + b.tiers.filter((t) => t.journey !== null).length, 0);
     expect(announced).toBe(fromJourneys);
   });
 });

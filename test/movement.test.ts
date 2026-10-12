@@ -155,20 +155,130 @@ describe('door slots', () => {
 });
 
 describe('the living town', () => {
-  it('never puts a walker inside a building, over a long replay', () => {
+  it('never puts a walker inside a building, over a long replay (only through its own doorway)', () => {
     const guild = buildGuild(demo);
     const sim = new Sim(guild, planTown(guild));
     sim.speed = 4;
     let checks = 0;
+    let doorways = 0;
     for (let i = 0; i < 4000; i++) {
       sim.step(0.05);
       for (const a of sim.agents) {
         if (a.alt > 0.5) continue; // high in the air is fine
+        if (a.inside) continue; // indoors: out of sight
         const inside = inFootprint(sim.plan, a);
+        if (inside && a.doorway === inside.id) {
+          // going in or out: only the front strip by the door
+          expect(a.y, `${a.kind} ${a.id} deep inside ${inside.id}`).toBeGreaterThan(inside.y + inside.h - 0.3);
+          doorways++;
+          continue;
+        }
         expect(inside, `${a.kind} ${a.id} inside ${inside?.id} at ${a.x.toFixed(2)},${a.y.toFixed(2)} (alt ${a.alt.toFixed(2)})`).toBeUndefined();
         checks++;
       }
     }
     expect(checks).toBeGreaterThan(10_000);
+    expect(doorways).toBeGreaterThan(0);
+  });
+});
+
+describe('doors', () => {
+  it('open while people go in and out, and close behind them', () => {
+    const guild = buildGuild(demo);
+    const sim = new Sim(guild, planTown(guild));
+    const opened = new Set<string>();
+    let indoors = 0;
+    let cameOut = 0;
+    const wasInside = new Set<string>();
+    for (let i = 0; i < 3000; i++) {
+      sim.step(0.05);
+      for (const b of sim.plan.buildings) if (sim.doorOpen(b.id)) opened.add(b.id);
+      for (const a of sim.agents) {
+        if (a.inside) {
+          indoors++;
+          wasInside.add(a.id);
+        } else if (wasInside.has(a.id)) {
+          cameOut++;
+          wasInside.delete(a.id);
+        }
+      }
+    }
+    expect(indoors).toBeGreaterThan(0);
+    expect(cameOut).toBeGreaterThan(0);
+    expect(opened.size).toBeGreaterThan(2);
+    expect(opened.has('tower')).toBe(true); // the line goes in on every block… or at least now and then
+    // a door stands open only while someone is (or just was) at it
+    const lastAt = new Map<string, number>();
+    for (let i = 0; i < 400; i++) {
+      sim.step(0.05);
+      for (const b of sim.plan.buildings) {
+        const door = sim.doorway(b) ?? b.doorAt;
+        if (sim.agents.some((a) => a.doorway === b.id || a.acting?.door === b.id || Math.hypot(a.x - door.x, a.y - door.y) < 1.6)) lastAt.set(b.id, sim.elapsed);
+        if (sim.doorOpen(b.id)) expect(sim.elapsed - (lastAt.get(b.id) ?? -1e9), `${b.id} open with nobody at it`).toBeLessThan(0.8);
+      }
+    }
+  });
+
+  it('nobody goes in where the view built no door', () => {
+    const guild = buildGuild(demo);
+    const sim = new Sim(guild, planTown(guild));
+    for (const b of sim.plan.buildings) sim.setDoorway(b.id, null);
+    for (let i = 0; i < 2000; i++) {
+      sim.step(0.05);
+      expect(sim.agents.filter((a) => a.inside || a.doorway !== null)).toEqual([]);
+    }
+  });
+
+  it('a hero on foot goes in to trade and the goods change hands at the door', () => {
+    const g = buildGuild(demo);
+    const guild = { ...g, heroes: g.heroes.map((h) => ({ ...h, tier: 1 as const })) };
+    const sim = new Sim(guild, planTown(guild));
+    sim.goLive();
+    const j = guild.journeys.find((x) => x.initiated && x.status === 'confirmed' && x.steps.some((s) => s.target.kind === 'building' && s.give.length > 0 && s.get.length > 0))!;
+    expect(j).toBeDefined();
+    sim.solo(j);
+    const hero = sim.heroAgent(j.hero)!;
+    let wentIn = false;
+    let carried = false;
+    const flown: { dir: string; symbols: string[]; toAgent?: string; fromAgent?: string }[] = [];
+    const seen = new Set<object>();
+    for (let i = 0; i < 4000 && sim.soloing; i++) {
+      sim.step(0.05);
+      if (hero.inside) wentIn = true;
+      if (hero.goods.length > 0) carried = true;
+      for (const e of sim.effects) {
+        if (e.kind !== 'transfer' || seen.has(e)) continue;
+        seen.add(e);
+        flown.push({ dir: e.dir!, symbols: e.coins!.map((c) => c.symbol), ...(e.toAgent ? { toAgent: e.toAgent } : {}), ...(e.fromAgent ? { fromAgent: e.fromAgent } : {}) });
+      }
+    }
+    expect(wentIn).toBe(true);
+    expect(carried).toBe(true);
+    const step = j.steps.find((s) => s.target.kind === 'building' && s.give.length > 0 && s.get.length > 0)!;
+    // handed in on the way in, handed back out to the hero after
+    expect(flown).toContainEqual(expect.objectContaining({ dir: 'in', fromAgent: hero.id, symbols: step.give.slice(0, 3).map((x) => x.symbol) }));
+    expect(flown).toContainEqual(expect.objectContaining({ dir: 'out', toAgent: hero.id, symbols: step.get.slice(0, 3).map((x) => x.symbol) }));
+    expect(hero.inside).toBe(false);
+  });
+
+  it('a rider trades at the door, which opens for it', () => {
+    const guild = buildGuild(demo);
+    const sim = new Sim(guild, planTown(guild));
+    sim.goLive();
+    const j = guild.journeys.find((x) => x.initiated && x.status === 'confirmed' && x.steps.some((s) => s.target.kind === 'building' && s.give.length > 0 && s.get.length > 0))!;
+    const step = j.steps.find((s) => s.target.kind === 'building')!;
+    const place = step.target.kind === 'building' ? sim.plan.byProtocol.get(step.target.protocolId)! : sim.plan.gate;
+    sim.solo(j);
+    const hero = sim.heroAgent(j.hero)!;
+    let opened = false;
+    let dirs = new Set<string>();
+    for (let i = 0; i < 4000 && sim.soloing; i++) {
+      sim.step(0.05);
+      expect(hero.inside).toBe(false);
+      if (hero.acting !== null && sim.doorOpen(place.id)) opened = true;
+      for (const e of sim.effects) if (e.kind === 'transfer') dirs = dirs.add(e.dir!);
+    }
+    expect(opened).toBe(true);
+    expect([...dirs].sort()).toEqual(['in', 'out']);
   });
 });

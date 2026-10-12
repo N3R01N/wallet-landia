@@ -3,17 +3,21 @@
  * building's interior. Approximate values live in the world; exact ones here.
  */
 
+import { realmOf } from '../domain/realms.js';
 import { CATEGORY_LABEL } from '../domain/catalog.js';
 import { buildingName, districtName, heroArt, itemArt } from '../assets/art.js';
 import { CLASS_LABEL, type Stash, type Goods, type Guild, type Hero, type HeroClass, type Item, type Journey, type Target, type Verb } from '../domain/model.js';
 import { verbText } from '../domain/mappers.js';
 import { harvestOf, LOAN_COLORS, LOAN_WORDS, loanHealth } from '../domain/risk.js';
-import { ALL_MEDALS, teachingQuests, titleOptions, type Earned } from '../domain/feats.js';
+import { ALL_MEDALS, teachingQuests, titleOptions } from '../domain/feats.js';
+import { BADGE_TIERS, BADGE_TIER_NAMES, type PlayerProfile } from '../domain/player.js';
 import { TIER_COLORS, TIER_NAMES, approxUsd, exactUsd, formatQty } from '../domain/tiers.js';
 import { MOUNT_NAMES } from '../render/characters.js';
 import { bornCrest, crestColors, hashString, TINCTURES } from '../util/rng.js';
 import type { Placed } from '../world/layout.js';
+import type { HeroNow } from '../world/heroNow.js';
 import type { BlockBeat } from '../data/rpc.js';
+import { formatGwei } from '../world/chain.js';
 import { el, fmtDate, safeHref, shortAddr } from './dom.js';
 
 const EXPLAIN: Record<string, string> = {
@@ -43,9 +47,10 @@ export interface PanelContext {
   onSelectHero: (address: string) => void;
   onJourney: (j: Journey) => void;
   onReplay: (j: Journey) => void;
+  /** The latest block of the realm on show (a province's own chain in its town). */
   beat: BlockBeat | null;
-  /** A hero's medals (earned now, or remembered). */
-  medalsOf: (address: string) => Map<string, Earned>;
+  /** Every badge the player has (they unlock titles for all their heroes). */
+  playerBadges: () => string[];
   /** The title a hero wears. */
   titleOf: (address: string) => string;
   /** Pick a title (null: back to the one the town chooses). */
@@ -58,6 +63,29 @@ export interface PanelContext {
   bornName: (address: string) => string;
   /** A portrait in the chosen theme's look (an image URL), if it has one. */
   portraitOf?: (address: string, cls: HeroClass) => string | null;
+  /** Go to another realm's town, and open that quest there (the far side of a crossing). */
+  onCrossing?: (realm: string, key: string) => void;
+}
+
+/** A crossing between realms: where it went (or came from), and a way to follow it there. */
+function crossingRow(j: Journey, ctx: PanelContext): HTMLElement | null {
+  const b = j.bridge;
+  if (b === undefined) return null;
+  const outbound = b.from === j.chainId;
+  const other = outbound ? b.to : b.from;
+  const text = outbound
+    ? other === null
+      ? 'Sent across a bridge; its arrival is not among the loaded quests yet.'
+      : `Sent across a bridge to ${realmOf(other).name}.`
+    : `Arrived across a bridge from ${realmOf(b.from).name}.`;
+  const row = el('div', { class: 'crossing' }, el('span', {}, `⛵ ${text}`));
+  if (other !== null && b.pair !== null && ctx.onCrossing) {
+    const go = el('button', { class: 'btn' }, outbound ? `Follow it to ${realmOf(other).name} →` : `← Back to where it left, in ${realmOf(other).name}`);
+    const pair = b.pair;
+    go.onclick = () => ctx.onCrossing?.(other, pair);
+    row.append(go);
+  }
+  return row;
 }
 
 /** A hero's name with a ✎ to rename them in place (Enter saves, Escape cancels, empty restores). */
@@ -147,7 +175,7 @@ function itemSlot(item: Item | null, opts: { pouch?: { count: number; usd: numbe
     }
     slot.append(el('span', { class: 'slot-qty' }, item.category === 'nft' ? '' : formatQty(item.quantity)));
     slot.title = `${item.name} (${item.symbol})\n${formatQty(item.quantity)} · ${exactUsd(item.usd)}\n${TIER_NAMES[item.tier]} · ${item.category}`;
-    slot.append(el('span', { class: 'slot-name' }, item.category === 'nft' ? item.symbol : item.symbol));
+    slot.append(el('span', { class: 'slot-name' }, item.symbol));
   } else if (opts.pouch) {
     slot.title = `A pouch of odds and ends: ${opts.pouch.count} tiny holdings worth ${exactUsd(opts.pouch.usd)} together`;
     slot.append(el('span', { class: 'slot-qty' }, `×${opts.pouch.count}`));
@@ -194,21 +222,6 @@ function stashHealth(s: Stash): HTMLElement | null {
   return out;
 }
 
-/** The medal case: every medal, earned ones bright, the rest showing how to earn them. */
-function medalCase(medals: Map<string, Earned>): HTMLElement {
-  return el(
-    'div',
-    { class: 'medals' },
-    ...ALL_MEDALS.map((m) => {
-      const e = medals.get(m.id);
-      const when = e === undefined ? '' : e.at === null ? 'Earned for what this hero holds.' : `Earned ${new Date(e.at).toLocaleDateString('en-GB')}.`;
-      const badge = el('div', { class: `medal${e ? ' earned' : ''}`, 'data-medal': m.id }, el('span', { class: 'medal-icon' }, m.icon), el('span', { class: 'medal-name' }, m.name));
-      badge.title = e ? `${m.name}: ${when}\nTitle: ${m.title}\n\n${m.lesson}` : `${m.name} (not yet)\n${m.hint}`;
-      return badge;
-    }),
-  );
-}
-
 function questCard(q: ReturnType<typeof teachingQuests>[number]): HTMLElement {
   return el(
     'div',
@@ -235,10 +248,9 @@ function crestPicker(hero: Hero, ctx: PanelContext): HTMLElement {
 
 export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
   const cls = ctx.classOf(hero.address);
-  const medals = ctx.medalsOf(hero.address);
   const title = ctx.titleOf(hero.address);
   const titleSelect = el('select', { 'aria-label': 'Hero title' });
-  for (const t of titleOptions(cls, medals.keys())) {
+  for (const t of titleOptions(cls, ctx.playerBadges())) {
     const opt = el('option', { value: t }, t);
     if (t === title) opt.selected = true;
     titleSelect.append(opt);
@@ -299,8 +311,6 @@ export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
     el('h3', {}, 'Stashes abroad'),
     hero.stashes.length > 0 ? stashes : el('p', { class: 'muted' }, 'Nothing stored in any building.'),
     hero.spamCount > 0 ? el('p', { class: 'muted' }, `🗑 ${hero.spamCount} pieces of cursed junk lie in the midden by the fence (spam tokens, hidden).`) : null,
-    el('h3', {}, `Medals (${medals.size} of ${ALL_MEDALS.length})`),
-    medalCase(medals),
     quests.length > 0 ? el('h3', {}, `Teaching quests (${quests.filter((q) => q.done).length} of ${quests.length} done)`) : null,
     quests.length > 0 ? el('div', { class: 'tquests' }, ...quests.map(questCard)) : null,
     el('h3', {}, 'Quest log'),
@@ -337,7 +347,7 @@ export function buildingPanel(b: Placed, ctx: PanelContext): HTMLElement {
               el('div', { class: 'stat-row' }, el('span', {}, 'Latest page (block)'), el('strong', {}, `#${beat.number.toLocaleString('en-US')}`)),
               el('div', { class: 'stat-row' }, el('span', {}, 'Entries on it (transactions)'), el('strong', {}, String(beat.txCount))),
               el('div', { class: 'stat-row' }, el('span', {}, 'Crowd at the gate (block fullness)'), el('strong', {}, `${Math.round(beat.busy * 100)}%`)),
-              el('div', { class: 'stat-row' }, el('span', {}, 'Base toll (base fee)'), el('strong', {}, beat.baseFeeGwei === null ? '?' : `${beat.baseFeeGwei.toFixed(2)} gwei`)),
+              el('div', { class: 'stat-row' }, el('span', {}, 'Base toll (base fee)'), el('strong', {}, beat.baseFeeGwei === null ? '?' : `${formatGwei(beat.baseFeeGwei)} gwei`)),
             ),
       );
     }
@@ -346,7 +356,7 @@ export function buildingPanel(b: Placed, ctx: PanelContext): HTMLElement {
       body.append(
         el('div', { class: 'stat-row' }, el('span', {}, 'Guild treasury'), el('strong', {}, exactUsd(total))),
         ...ctx.guild.heroes.map((h) => {
-          const row = el('div', { class: 'stat-row clickable' }, el('span', {}, `${h.name}, ${ctx.titleOf(h.address)}`), el('span', { class: 'muted' }, `🏅 ${ctx.medalsOf(h.address).size}`), chip(approxUsd(h.netWorth), TIER_COLORS[h.tier] ?? '#888'));
+          const row = el('div', { class: 'stat-row clickable' }, el('span', {}, `${h.name}, ${ctx.titleOf(h.address)}`), chip(approxUsd(h.netWorth), TIER_COLORS[h.tier] ?? '#888'));
           row.onclick = () => ctx.onSelectHero(h.address);
           return row;
         }),
@@ -473,6 +483,109 @@ function placeName(target: Target, ctx: PanelContext): string {
   }
 }
 
+/**
+ * A quest's stops as list items, each marked with its stage (`toll`,
+ * `step-N`, `home`) so a card can show which one is under way.
+ */
+function questSteps(j: Journey, ctx: PanelContext): HTMLElement[] {
+  const hero = ctx.guild.heroes.find((h) => h.address === j.hero);
+  const steps: HTMLElement[] = [];
+  if (j.initiated) {
+    if (j.feeUsd !== null && j.feeUsd > 0) {
+      steps.push(
+        el(
+          'li',
+          { 'data-stage': 'toll' },
+          el('strong', {}, 'Chronicle Tower: pay the toll'),
+          el('div', { class: 'muted' }, 'Every transaction pays a gas fee to the network.'),
+          el('div', { class: 'goods out' }, el('span', {}, `− ${j.feeNative !== null ? `${formatQty(j.feeNative)} ETH` : 'gas'}`), el('span', {}, exactUsd(j.feeUsd))),
+        ),
+      );
+    }
+    j.steps.forEach((step, i) => {
+      steps.push(
+        el(
+          'li',
+          { 'data-stage': `step-${i}` },
+          el('strong', {}, `${verbText(step.verb)} at ${placeName(step.target, ctx)}`),
+          ...goodsList(step.give, '−'),
+          ...goodsList(step.get, '+'),
+          step.give.length + step.get.length === 0 ? el('div', { class: 'muted' }, 'Nothing changed hands.') : null,
+        ),
+      );
+    });
+    steps.push(el('li', { 'data-stage': 'home' }, el('strong', {}, 'Home again')));
+  } else {
+    const first = j.steps[0];
+    steps.push(el('li', {}, el('strong', {}, `From ${first ? placeName(first.target, ctx) : 'outside'}`)));
+    steps.push(
+      el('li', { 'data-stage': 'home' }, el('strong', {}, `${verbText(j.verb)}: arrives at ${hero?.name ?? 'the hero'}'s home`), ...goodsList(j.steps.flatMap((s) => s.give), '−'), ...goodsList(j.steps.flatMap((s) => s.get), '+')),
+    );
+  }
+  return steps;
+}
+
+/** What the hero card says they are doing. */
+function heroDoing(now: HeroNow, name: string, ctx: PanelContext): string {
+  const j = now.journey;
+  if (j === null) return `${name} is resting at home: no quest in this window yet.`;
+  switch (now.phase) {
+    case 'toll':
+      return now.busy ? 'Paying the toll at the Chronicle Tower.' : 'On the way to the Chronicle Tower to pay the toll.';
+    case 'step': {
+      const step = j.steps[now.step ?? 0];
+      const where = step ? placeName(step.target, ctx) : 'the next stop';
+      return now.busy ? `${verbText(step?.verb ?? j.verb)} at ${where}.` : `On the way to ${where}.`;
+    }
+    case 'returning':
+      return 'The business done, heading home.';
+    case 'resting':
+      return `Resting at home after the last quest.`;
+  }
+}
+
+/**
+ * A hero, clicked in town: the quest they are on right now (or last
+ * finished), the stop under way marked; the full sheet is a click away.
+ */
+export function heroQuestPanel(hero: Hero, now: HeroNow, ctx: PanelContext, act: { overview: () => void }): HTMLElement {
+  const cls = ctx.classOf(hero.address);
+  const j = now.journey;
+  const overview = el('button', { class: 'btn' }, '📜 Hero overview');
+  overview.onclick = () => act.overview();
+  const buttons = el('div', { class: 'form-row' }, overview);
+  let steps: HTMLElement | null = null;
+  if (j !== null) {
+    const details = el('button', { class: 'btn' }, 'Quest details');
+    details.onclick = () => ctx.onJourney(j);
+    buttons.append(details);
+    const items = questSteps(j, ctx);
+    const current = now.phase === 'toll' ? 'toll' : now.phase === 'step' ? `step-${now.step ?? 0}` : now.phase === 'returning' ? 'home' : null;
+    // stops before the current one are done; once home, all of them
+    let reached = current === null;
+    for (const li of [...items].reverse()) {
+      const stage = li.getAttribute('data-stage');
+      if (stage === current) {
+        li.classList.add('current');
+        reached = true;
+      } else if (reached && stage !== null) li.classList.add('done');
+    }
+    if (current === null) for (const li of items) li.classList.add('done');
+    steps = el('ol', { class: 'quest-steps live' }, ...items);
+  }
+  return el(
+    'div',
+    { class: 'panel-body hero-quest', 'data-hero': hero.address },
+    el('div', { class: 'sheet-head' }, portrait(hero, cls, ctx.portraitOf), el('div', {}, el('h2', {}, hero.name), el('div', { class: 'hero-title' }, ctx.titleOf(hero.address)), el('div', { class: 'muted mono' }, shortAddr(hero.address)))),
+    el('p', { class: 'hero-doing' }, heroDoing(now, hero.name, ctx)),
+    j !== null ? el('h3', {}, now.phase === 'resting' ? `Last quest: ${verbText(j.verb)}` : `Current quest: ${verbText(j.verb)}`) : null,
+    j !== null ? el('p', {}, el('strong', {}, j.label)) : null,
+    j !== null ? el('p', { class: 'muted' }, new Date(j.time).toLocaleString('en-GB')) : null,
+    steps,
+    buttons,
+  );
+}
+
 export function questPanel(j: Journey, ctx: PanelContext): HTMLElement {
   const hero = ctx.guild.heroes.find((h) => h.address === j.hero);
   const status = j.status === 'failed' ? chip('Failed', '#ff8a8a') : j.status === 'pending' ? chip('Pending', '#ffd166') : chip('Confirmed', '#9dff8a');
@@ -486,39 +599,7 @@ export function questPanel(j: Journey, ctx: PanelContext): HTMLElement {
     ctx.onSelectHero(j.hero);
   };
 
-  const steps: HTMLElement[] = [];
-  if (j.initiated) {
-    if (j.feeUsd !== null && j.feeUsd > 0) {
-      steps.push(
-        el(
-          'li',
-          {},
-          el('strong', {}, 'Chronicle Tower: pay the toll'),
-          el('div', { class: 'muted' }, 'Every transaction pays a gas fee to the network.'),
-          el('div', { class: 'goods out' }, el('span', {}, `− ${j.feeNative !== null ? `${formatQty(j.feeNative)} ETH` : 'gas'}`), el('span', {}, exactUsd(j.feeUsd))),
-        ),
-      );
-    }
-    for (const step of j.steps) {
-      steps.push(
-        el(
-          'li',
-          {},
-          el('strong', {}, `${verbText(step.verb)} at ${placeName(step.target, ctx)}`),
-          ...goodsList(step.give, '−'),
-          ...goodsList(step.get, '+'),
-          step.give.length + step.get.length === 0 ? el('div', { class: 'muted' }, 'Nothing changed hands.') : null,
-        ),
-      );
-    }
-    steps.push(el('li', {}, el('strong', {}, 'Home again')));
-  } else {
-    const first = j.steps[0];
-    steps.push(el('li', {}, el('strong', {}, `From ${first ? placeName(first.target, ctx) : 'outside'}`)));
-    steps.push(
-      el('li', {}, el('strong', {}, `${verbText(j.verb)}: arrives at ${hero?.name ?? 'the hero'}'s home`), ...goodsList(j.steps.flatMap((s) => s.give), '−'), ...goodsList(j.steps.flatMap((s) => s.get), '+')),
-    );
-  }
+  const steps = questSteps(j, ctx);
 
   return el(
     'div',
@@ -531,8 +612,79 @@ export function questPanel(j: Journey, ctx: PanelContext): HTMLElement {
     j.counterparty !== null ? el('div', { class: 'stat-row' }, el('span', {}, 'Other party'), el('span', { class: 'mono' }, ctx.guild.heroes.find((h) => h.address === j.counterparty)?.name ?? shortAddr(j.counterparty))) : null,
     j.method !== null ? el('div', { class: 'stat-row' }, el('span', {}, 'Contract method'), el('span', { class: 'mono' }, j.method)) : null,
     j.block !== null ? el('div', { class: 'stat-row' }, el('span', {}, 'Page of the Chronicle (block)'), el('span', { class: 'mono' }, `#${j.block.toLocaleString('en-US')}`)) : null,
+    crossingRow(j, ctx),
     el('div', { class: 'form-row' }, replay, link),
     el('h3', {}, j.steps.length > 1 ? `Expedition: ${j.steps.length} stops` : 'The journey'),
     el('ol', { class: 'quest-steps' }, ...steps),
+  );
+}
+
+// --- the player ------------------------------------------------------------------
+
+export interface PlayerPanelContext {
+  /** A wallet's name (the hero's), for where a badge came from. */
+  walletName: (address: string) => string;
+  /** Open that quest if the town has it (false: it is older than the town's window). */
+  openQuest: (key: string) => boolean;
+  /** How far back the kept history reaches, if a walk back is under way (null: complete, or no ledger). */
+  reach: string | null;
+}
+
+const fmtDay = (t: number): string => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/** The player's sheet: their level and their badges, from everything all their wallets ever did. */
+export function playerPanel(p: PlayerProfile, ctx: PlayerPanelContext): HTMLElement {
+  const span = Math.max(1, p.nextXp - p.levelXp);
+  const fill = el('i', {});
+  fill.style.width = `${Math.round(((p.xp - p.levelXp) / span) * 100)}%`;
+  const bar = el('div', { class: 'xp-bar', role: 'progressbar', 'aria-valuemin': String(p.levelXp), 'aria-valuemax': String(p.nextXp), 'aria-valuenow': String(p.xp) }, fill);
+  const s = p.stats;
+  const earned = [...p.badges.values()];
+  const parts = el('details', {}, el('summary', {}, 'Where your XP comes from'), el('div', {}, ...p.parts.map((x) => el('div', { class: 'stat-row' }, el('span', {}, x.label), el('span', { class: 'mono' }, `${x.xp.toLocaleString('en-US')} XP`)))));
+  return el(
+    'div',
+    { class: 'panel-body player-sheet' },
+    el('h2', {}, `Level ${p.level} · ${p.rank}`),
+    bar,
+    el('div', { class: 'muted small' }, `${p.xp.toLocaleString('en-US')} XP · ${(p.nextXp - p.xp).toLocaleString('en-US')} to level ${p.level + 1}`),
+    el('p', { class: 'muted' }, `Everything your ${s.wallets === 1 ? 'wallet' : `${s.wallets} wallets`} ever did, as far back as the history reaches. The level grows with what you try and for how long, never with what you own.`),
+    ctx.reach !== null ? el('p', { class: 'muted small' }, `Still gathering your history (${ctx.reach}): the level and badges grow as it arrives.`) : null,
+    el('div', { class: 'stat-row' }, el('span', {}, 'Journeys signed'), el('span', {}, s.signed.toLocaleString('en-US'))),
+    el('div', { class: 'stat-row' }, el('span', {}, 'Things that came to you'), el('span', {}, s.received.toLocaleString('en-US'))),
+    s.firstAt !== null ? el('div', { class: 'stat-row' }, el('span', {}, 'First journey'), el('span', {}, fmtDay(s.firstAt))) : null,
+    el('div', { class: 'stat-row' }, el('span', {}, 'Realms travelled'), el('span', {}, s.chains.length > 0 ? s.chains.map((c) => realmOf(c).name).join(', ') : '—')),
+    el('div', { class: 'stat-row' }, el('span', {}, 'Buildings visited · kinds of journey'), el('span', {}, `${s.protocols} · ${s.kinds}`)),
+    el('div', { class: 'stat-row' }, el('span', {}, 'Months active'), el('span', {}, String(s.activeMonths))),
+    parts,
+    el('h3', {}, `Badges (${earned.length} of ${ALL_MEDALS.length})`),
+    el(
+      'div',
+      { class: 'medals badges' },
+      ...ALL_MEDALS.map((m) => {
+        const b = p.badges.get(m.id);
+        if (b === undefined) {
+          const dim = el('div', { class: 'medal', 'data-medal': m.id }, el('span', { class: 'medal-icon' }, m.icon), el('span', { class: 'medal-name' }, m.name));
+          dim.title = `${m.name} (not yet)\n${m.hint}`;
+          return dim;
+        }
+        const tierName = BADGE_TIER_NAMES[b.tier];
+        const first = b.tiers[0]!;
+        const from = `${first.at === null ? 'For what' : `Earned ${fmtDay(first.at)} by`} ${ctx.walletName(first.wallet)}${first.at === null ? ' holds' : ''}.`;
+        const ups = b.tiers.slice(1).map((t, i) => `${BADGE_TIER_NAMES[i + 2]}: ${t.at !== null ? fmtDay(t.at) : ''} (${ctx.walletName(t.wallet)})`);
+        const next = b.single || b.tier === 3 ? '' : `\n${BADGE_TIERS[b.tier]! - b.count} more for ${BADGE_TIER_NAMES[b.tier + 1]}.`;
+        const badge = el(
+          'button',
+          { class: `medal earned tier-${b.single ? 'single' : b.tier}`, 'data-medal': m.id, 'data-tier': String(b.tier) },
+          el('span', { class: 'medal-icon' }, m.icon),
+          el('span', { class: 'medal-name' }, m.name),
+          b.single ? null : el('span', { class: 'medal-tier' }, `${tierName} · ${b.count.toLocaleString('en-US')}`),
+        );
+        badge.title = `${m.name}${b.single ? '' : ` (${tierName}, ×${b.count})`}\n${from}${ups.length > 0 ? `\n${ups.join('\n')}` : ''}${next}\nTitle: ${m.title}\n\n${m.lesson}`;
+        badge.onclick = () => {
+          if (first.journey === null || !ctx.openQuest(first.journey)) badge.classList.add('far');
+        };
+        return badge;
+      }),
+    ),
   );
 }

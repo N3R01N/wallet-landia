@@ -4,7 +4,7 @@
  */
 
 import type { HeroClass } from '../domain/model.js';
-import { MAP_H, MAP_W, type Placed, type Pt } from '../world/layout.js';
+import { MAP_H, MAP_W, type Placed, type Pt, type TownPlan } from '../world/layout.js';
 import { CARAVAN_BACK, type Agent, type Effect, type Sim } from '../world/sim.js';
 import { crestColors, hashString, makeRng } from '../util/rng.js';
 import { brandColor, ISO_H, ISO_W } from './buildings.js';
@@ -12,8 +12,9 @@ import { buildingArt, caravanArt, heroArt, npcArt, propArt, villagerArt } from '
 import { bakeIsoGround, bakeTopGround, scatterProps, type Ground, type Prop } from './ground.js';
 import type { Sprite } from './pixel.js';
 import { harvestSprite } from './characters.js';
-import { districtLabels, marketBoard, tollBoard, towerBeacon, floatingText, markers, nameTags, route, weather } from './overlay.js';
-import type { HitTarget, WorldView } from './view.js';
+import { bubbles, carriedGoods, districtLabels, marketBoard, tollBoard, towerBeacon, floatingText, markers, nameTags, route, transfers, weather } from './overlay.js';
+import type { BuildGhost, BuildOverlay, HitTarget, LandRect, WorldView } from './view.js';
+import { stakePoints } from './stakes.js';
 
 export type { HitTarget } from './view.js';
 export type Projection = 'top' | 'iso';
@@ -49,6 +50,10 @@ export class Renderer implements WorldView {
   hover: HitTarget | null = null;
   selected: HitTarget | null = null;
   classOf: (address: string) => HeroClass = () => 'adventurer';
+  build: BuildOverlay | null = null;
+  land: LandRect | null = null;
+  /** Where the land's stakes stand, for the land and town they were worked out for. */
+  #stakes: { land: LandRect; plan: TownPlan; at: [number, number][] } | null = null;
 
   #sim: Sim;
   #grounds = new Map<Projection, Ground>();
@@ -86,6 +91,15 @@ export class Renderer implements WorldView {
   toScreen(x: number, y: number): [number, number] {
     const [ax, ay] = this.toArt(x, y);
     return [ax * this.scale + this.ox, ay * this.scale + this.oy];
+  }
+
+  /** The ground point (tile units) under a screen point: the projection undone; null off the map. */
+  groundAt(sx: number, sy: number): { x: number; y: number } | null {
+    const ax = (sx - this.ox) / this.scale;
+    const ay = (sy - this.oy) / this.scale;
+    const x = this.view === 'top' ? ax / TOP_T : (ax / ISO_W + ay / ISO_H) / 2;
+    const y = this.view === 'top' ? ay / TOP_T : (ay / ISO_H - ax / ISO_W) / 2;
+    return x >= 0 && y >= 0 && x < MAP_W && y < MAP_H ? { x, y } : null;
   }
 
   #depth(x: number, y: number): number {
@@ -132,6 +146,11 @@ export class Renderer implements WorldView {
   follow(key: string | null, then: string | null = null): void {
     this.#follow = key;
     this.#followThen = then;
+  }
+
+  /** Who the camera keeps in view (null: no one; panning lets go). */
+  get following(): string | null {
+    return this.#follow;
   }
 
   /** Glide towards whoever is followed (a little each frame, so it is easy on the eye). */
@@ -190,6 +209,10 @@ export class Renderer implements WorldView {
     const ground = this.#ground();
     c.drawImage(ground.canvas, ground.x, ground.y);
     this.#water(c);
+    // a new block: light runs out over the ground from the tower (under the buildings and people)
+    for (const e of sim.effects) if (e.kind === 'ring') this.#groundPulse(c, e, sim.chain.busy);
+    if (this.build !== null) this.#buildGround(c, this.build);
+    else if (this.land !== null) this.#landStakes(c, this.land);
 
     this.#hits = [];
     const items: Drawable[] = [];
@@ -207,6 +230,8 @@ export class Renderer implements WorldView {
       items.push({ depth: this.#depth(at.x, at.y), draw: () => this.#blit(harvestSprite(crop.size, glint), at.x, at.y) });
     }
     for (const a of sim.agents) items.push(...this.#agentDrawables(a));
+    const ghost = this.build?.ghost ?? null;
+    if (ghost !== null) items.push(this.#ghostDrawable(ghost));
     items.sort((p, q) => p.depth - q.depth);
     for (const d of items) d.draw();
 
@@ -216,7 +241,7 @@ export class Renderer implements WorldView {
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     weather(c, sim, w, h, true);
     const project = (x: number, y: number): [number, number] => this.toScreen(x, y);
-    if (this.scale <= 3) districtLabels(c, project);
+    if (this.scale <= 3) districtLabels(c, project, this.#sim.plan.labels);
     if (sim.route) route(c, sim.route, project, sim.elapsed);
     // the Chronicle Tower shows how busy the chain is: a beacon on top, a toll board at the door
     const tower = sim.plan.tower;
@@ -225,6 +250,17 @@ export class Renderer implements WorldView {
     tollBoard(c, sim, this.toScreen(tower.x + tower.w + 0.2, tower.y + tower.h + 0.7), towerSize);
     marketBoard(c, sim, this.toScreen(tower.x - 3, tower.y + tower.h + 0.7), towerSize);
     markers(c, sim, this.#tops);
+    // goods changing hands, and what people carry and say
+    const zoom = Math.max(0.55, Math.min(1.6, this.scale / 2));
+    const lifted = (x: number, y: number, z = 0): [number, number] => {
+      const [sx, sy] = this.toScreen(x, y);
+      return [sx, sy - z * 14 * this.scale];
+    };
+    transfers(c, sim, lifted, zoom);
+    if (this.scale >= 1.4) {
+      carriedGoods(c, sim, (x, y, alt) => lifted(x, y, 2.3 + alt * 0.5), zoom);
+      bubbles(c, sim, (x, y, alt) => lifted(x, y, 1.6 + alt * 0.5), zoom);
+    }
     floatingText(c, sim, (x, y) => {
       const p = this.toScreen(x, y);
       return [p[0], p[1] - 30];
@@ -274,12 +310,128 @@ export class Renderer implements WorldView {
     return [left, top];
   }
 
+  // --- build mode ---------------------------------------------------------------
+
+  /** A tile rectangle as a path, in art space (both projections). */
+  #tiles(c: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number): void {
+    const pts = [this.toArt(x0, y0), this.toArt(x1, y0), this.toArt(x1, y1), this.toArt(x0, y1)];
+    c.moveTo(pts[0]![0], pts[0]![1]);
+    for (const p of pts.slice(1)) c.lineTo(p[0], p[1]);
+    c.closePath();
+  }
+
+  /** The grid, the land (darker beyond it, a gold line round it), and the road the building in hand would get. */
+  #buildGround(c: CanvasRenderingContext2D, b: BuildOverlay): void {
+    const { x0, y0, x1, y1 } = b.land;
+    c.fillStyle = 'rgba(10, 8, 20, 0.38)';
+    c.beginPath();
+    this.#tiles(c, 0, 0, MAP_W, y0);
+    this.#tiles(c, 0, y1, MAP_W, MAP_H);
+    this.#tiles(c, 0, y0, x0, y1);
+    this.#tiles(c, x1, y0, MAP_W, y1);
+    c.fill();
+    c.lineWidth = 1 / this.scale;
+    c.strokeStyle = 'rgba(255, 248, 220, 0.16)';
+    c.beginPath();
+    for (let x = 0; x <= MAP_W; x++) {
+      const a = this.toArt(x, 0);
+      const z = this.toArt(x, MAP_H);
+      c.moveTo(a[0], a[1]);
+      c.lineTo(z[0], z[1]);
+    }
+    for (let y = 0; y <= MAP_H; y++) {
+      const a = this.toArt(0, y);
+      const z = this.toArt(MAP_W, y);
+      c.moveTo(a[0], a[1]);
+      c.lineTo(z[0], z[1]);
+    }
+    c.stroke();
+    c.lineWidth = 2 / this.scale;
+    c.strokeStyle = 'rgba(245, 197, 24, 0.9)';
+    c.setLineDash([6 / this.scale, 4 / this.scale]);
+    c.beginPath();
+    this.#tiles(c, x0, y0, x1, y1);
+    c.stroke();
+    c.setLineDash([]);
+    const g = b.ghost;
+    if (g === null) return;
+    // its road to be, and its footprint and door, tinted for yes or no
+    c.fillStyle = 'rgba(240, 205, 130, 0.6)';
+    c.beginPath();
+    for (const i of g.road) this.#tiles(c, i % MAP_W, Math.floor(i / MAP_W), (i % MAP_W) + 1, Math.floor(i / MAP_W) + 1);
+    c.fill();
+    c.fillStyle = g.ok ? 'rgba(90, 220, 110, 0.35)' : 'rgba(235, 70, 60, 0.4)';
+    c.beginPath();
+    this.#tiles(c, g.x, g.y, g.x + g.w, g.y + g.h);
+    c.fill();
+    c.fillStyle = g.ok ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 190, 180, 0.75)';
+    c.beginPath();
+    this.#tiles(c, g.door.x + 0.25, g.door.y + 0.25, g.door.x + 0.75, g.door.y + 0.75);
+    c.fill();
+  }
+
+  /**
+   * The sprites are drawn facing south: a building turned another way gets a
+   * door on the side it faces (the wall by its door tile), where its road
+   * comes in.
+   */
+  #doorstep(b: Placed): void {
+    const c = this.ctx;
+    const d = b.door;
+    const box: Record<1 | 2 | 3, [number, number, number, number]> = {
+      1: [b.x - 0.14, d.y + 0.22, b.x + 0.06, d.y + 0.78],
+      2: [d.x + 0.22, b.y - 0.14, d.x + 0.78, b.y + 0.06],
+      3: [b.x + b.w - 0.06, d.y + 0.22, b.x + b.w + 0.14, d.y + 0.78],
+    };
+    const r = box[b.rot as 1 | 2 | 3];
+    c.fillStyle = '#4a2c14';
+    c.strokeStyle = '#e2cc98';
+    c.lineWidth = 1 / this.scale;
+    c.beginPath();
+    this.#tiles(c, r[0], r[1], r[2], r[3]);
+    c.fill();
+    c.stroke();
+  }
+
+  /** The land's edge, staked out: a post with a gold cap every two tiles (not on streets, water or buildings). */
+  #landStakes(c: CanvasRenderingContext2D, land: LandRect): void {
+    const plan = this.#sim.plan;
+    const s = this.#stakes;
+    if (s === null || s.plan !== plan || s.land.x0 !== land.x0 || s.land.y0 !== land.y0 || s.land.x1 !== land.x1 || s.land.y1 !== land.y1) this.#stakes = { land, plan, at: stakePoints(land, plan) };
+    for (const [x, y] of this.#stakes!.at) {
+      const [ax, ay] = this.toArt(x, y);
+      c.fillStyle = '#4a2c14';
+      c.fillRect(ax - 1, ay - 7, 2, 7);
+      c.fillStyle = '#f5c518';
+      c.fillRect(ax - 1.5, ay - 9, 3, 2);
+    }
+  }
+
+  /** The building in hand, see-through, where it would stand (sorted among the others). */
+  #ghostDrawable(g: BuildGhost): Drawable {
+    const b: Placed = { id: 'ghost', kind: g.kind, x: g.x, y: g.y, w: g.w, h: g.h, door: g.door, doorAt: { x: g.door.x + 0.5, y: g.door.y + 0.5 }, district: 'square', rot: g.rot };
+    if (g.protocolId !== undefined) b.protocolId = g.protocolId;
+    if (g.heroAddress !== undefined) b.heroAddress = g.heroAddress;
+    const depth = this.view === 'top' ? b.y + b.h - 0.05 : b.x + b.w / 2 + b.y + b.h / 2;
+    return {
+      depth,
+      draw: () => {
+        const s = this.#buildingSprite(b);
+        this.ctx.globalAlpha = g.ok ? 0.72 : 0.45;
+        this.#blit(s, b.x, this.view === 'top' ? b.y + b.h : b.y);
+        if (g.rot !== 0) this.#doorstep(b);
+        this.ctx.globalAlpha = 1;
+      },
+    };
+  }
+
   #buildingSprite(b: Placed): Sprite {
     const sim = this.#sim;
     const protocol = b.protocolId !== undefined ? sim.guild.protocols.get(b.protocolId) : undefined;
     const roof = protocol ? brandColor(protocol.id) : '#a0522d';
     const hero = b.heroAddress !== undefined ? sim.guild.heroes.find((x) => x.address === b.heroAddress) : undefined;
-    const tier = hero?.tier ?? 0;
+    // (a home with no hero is a shared town's private estate: an ordinary house, shuttered)
+    const tier = hero?.tier ?? (b.kind === 'home' ? 2 : 0);
     const variant = b.kind === 'guildhall' ? this.#guildColor : hero ? this.#guildColor : '';
     return buildingArt(this.view, b.kind, b.w, b.h, roof, tier, variant);
   }
@@ -295,6 +447,7 @@ export class Renderer implements WorldView {
         let [left, top] = [0, 0];
         if (fog < 1) [left, top] = this.#blit(s, anchor.x, anchor.y);
         else [left, top] = this.#spriteBox(s, anchor.x, anchor.y);
+        if ((b.rot ?? 0) !== 0 && fog < 0.5) this.#doorstep(b);
         const protocol = b.protocolId !== undefined ? this.#sim.guild.protocols.get(b.protocolId) : undefined;
         if (fog > 0) {
           // fog of war: a cloud bank where the building stands, lifting once a hero has been
@@ -364,6 +517,7 @@ export class Renderer implements WorldView {
 
   #agentDrawables(a: Agent): Drawable[] {
     const out: Drawable[] = [];
+    if (a.inside) return out; // indoors: out of sight
     const moving = a.path.length > 0;
     const frame = moving ? Math.floor(a.phase) : 0;
     const bob = moving ? 0 : Math.sin(a.phase * 2) * 0.4;
@@ -442,6 +596,25 @@ export class Renderer implements WorldView {
 
   // --- effects ---------------------------------------------------------------
 
+  /** A ring of light spreading over the ground from the Chronicle Tower; brighter for a fuller block. */
+  #groundPulse(c: CanvasRenderingContext2D, e: Effect, busy: number): void {
+    const k = e.age / e.ttl;
+    if (k < 0 || k >= 1) return;
+    const r = 18 * (1 - (1 - k) * (1 - k));
+    c.lineWidth = 1.25;
+    for (const [rr, a] of [[r, 1], [r * 0.82, 0.4]] as const) {
+      c.strokeStyle = `rgba(255,214,122,${(1 - k) * (0.3 + busy * 0.5) * a})`;
+      c.beginPath();
+      // round on the ground, whatever the view does to it
+      for (let i = 0; i <= 40; i++) {
+        const [px, py] = this.toArt(e.x + Math.cos((i / 40) * Math.PI * 2) * rr, e.y + Math.sin((i / 40) * Math.PI * 2) * rr);
+        if (i === 0) c.moveTo(px, py);
+        else c.lineTo(px, py);
+      }
+      c.stroke();
+    }
+  }
+
   #effect(c: CanvasRenderingContext2D, e: Effect): void {
     const k = e.age / e.ttl;
     const [x, y] = this.toArt(e.x, e.y);
@@ -455,6 +628,21 @@ export class Renderer implements WorldView {
           const r = 6 + (k + i * 0.15) * 40;
           c.beginPath();
           c.ellipse(x, topY, r, r * 0.5, 0, 0, Math.PI * 2);
+          c.stroke();
+        }
+        // and startles the pigeons off the roofs: a few birds flush up and away (fixed paths, no dice)
+        c.strokeStyle = `rgba(70,72,84,${Math.min(1, (1 - k) * 2)})`;
+        c.lineWidth = 0.75;
+        for (let i = 0; i < 6; i++) {
+          const ang = i * 2.39 + 0.5;
+          const d = 8 + k * (26 + (i % 3) * 8);
+          const bx = x + Math.cos(ang) * d;
+          const by = topY + 10 - k * (30 + (i % 2) * 10) - Math.abs(Math.sin(ang)) * d * 0.3;
+          const flap = Math.sin(e.age * 22 + i * 1.7) * 1.6;
+          c.beginPath();
+          c.moveTo(bx - 2.2, by - flap);
+          c.lineTo(bx, by);
+          c.lineTo(bx + 2.2, by - flap);
           c.stroke();
         }
         break;

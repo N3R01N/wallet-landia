@@ -20,13 +20,16 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { CharacterSpec, MountSpec, VehicleKind } from '../../assets/theme.js';
+import { GESTURE_CLIPS } from '../../assets/theme.js';
 import type { Vehicle } from './grammar/vehicles.js';
 import { attachGear, gearFor } from './gear.js';
 import { addDressWeights, dressedMaterial, dressFor, wardrobeGear } from './wardrobe.js';
 import type { AnimState, CharacterLook, CharacterProvider, SandboxCharacter } from './themes.js';
+import type { Gesture } from '../../world/sim.js';
 
 /** World scale: one tile is this many metres, so a person is about one tile tall. */
 import { METRES_PER_TILE } from './grammar/medieval.js';
+import { disposeTree, keep as shared, resourceMark, type ResourceMark } from './dispose.js';
 export { METRES_PER_TILE };
 const FADE = 0.3;
 
@@ -47,6 +50,8 @@ interface Kit {
   parts: Map<string, THREE.Group>;
   /** Mount models by URL. */
   animals: Map<string, Animal>;
+  /** Merged outfits per look (`mergeParts`), made from this kit's parts and freed with it. */
+  merged: Map<string, Merged[]>;
 }
 
 // --- loading -----------------------------------------------------------------
@@ -82,7 +87,26 @@ export async function loadKit(spec: CharacterSpec, vehicles: VehicleFactory | nu
     }
   }
   for (const scene of [male, female, ...parts.values()]) prepareMaterials(scene);
-  return { spec, vehicles, clips: new Map(anim.animations.map((c) => [c.name, c])), bodies: { male, female }, parts, animals };
+  return { spec, vehicles, clips: new Map(anim.animations.map((c) => [c.name, c])), bodies: { male, female }, parts, animals, merged: new Map() };
+}
+
+/**
+ * Free a kit once nothing draws with it (its theme is gone, its people disposed first):
+ * the bodies, outfits and mounts with their textures, and the heads and merged outfits
+ * made from them. Without this every theme switch kept a whole cast on the GPU.
+ */
+export function disposeKit(kit: Kit): void {
+  const scenes = [kit.bodies.male, kit.bodies.female, ...kit.parts.values(), ...[...kit.animals.values()].map((a) => a.scene)];
+  for (const scene of scenes) {
+    scene.traverse((o) => {
+      const g = (o as THREE.Mesh).geometry as THREE.BufferGeometry | undefined;
+      const head = g ? headCache.get(g) : undefined;
+      head?.dispose(); // (kept for the kit's lifetime, so `disposeTree` would pass it by)
+    });
+    disposeTree(scene);
+  }
+  for (const list of kit.merged.values()) for (const m of list) m.geometry.dispose();
+  kit.merged.clear();
 }
 
 /**
@@ -212,7 +236,7 @@ function headOnly(mesh: THREE.SkinnedMesh): THREE.BufferGeometry {
   }
   const head = geo.clone();
   head.setIndex(out);
-  headCache.set(geo, head);
+  headCache.set(geo, shared(head));
   return head;
 }
 
@@ -232,8 +256,13 @@ function attach(part: THREE.Object3D, skeleton: THREE.Skeleton): void {
   for (const b of ownBones) b.removeFromParent();
 }
 
-/** Merged parts per look: the material, the geometry, and which parts (by name) went into it. */
-const mergedCache = new Map<string, { material: THREE.Material; geometry: THREE.BufferGeometry; group: number; names: string[] }[]>();
+/** Merged parts of one look: the material, the geometry, and which parts (by name) went into it. */
+interface Merged {
+  material: THREE.Material;
+  geometry: THREE.BufferGeometry;
+  group: number;
+  names: string[];
+}
 
 /** Same bind pose? (parts of the universal kits share it; anything else stays separate) */
 function sameMatrix(a: THREE.Matrix4, b: THREE.Matrix4, tolerance = 1e-3): boolean {
@@ -249,7 +278,7 @@ function sameMatrix(a: THREE.Matrix4, b: THREE.Matrix4, tolerance = 1e-3): boole
  * differs stays as it is. The merged geometry is shared by every character
  * wearing the same look (`key`).
  */
-function mergeParts(rider: THREE.Object3D, body: THREE.SkinnedMesh, key: string): void {
+function mergeParts(rider: THREE.Object3D, body: THREE.SkinnedMesh, key: string, mergedCache: Map<string, Merged[]>): void {
   const meshes: THREE.SkinnedMesh[] = [];
   rider.traverse((o) => {
     const m = o as THREE.SkinnedMesh;
@@ -353,7 +382,7 @@ function mergeParts(rider: THREE.Object3D, body: THREE.SkinnedMesh, key: string)
     merged = [];
     for (const b of buckets.values()) {
       const geometry = b.geos.length === 1 ? b.geos[0]! : mergeGeometries(b.geos, false);
-      if (geometry) merged.push({ material: b.material, geometry, group: b.group, names: b.names });
+      if (geometry) merged.push({ material: b.material, geometry: shared(geometry), group: b.group, names: b.names });
     }
     mergedCache.set(key, merged);
   }
@@ -432,6 +461,8 @@ interface Mount {
 }
 
 class RiggedCharacter implements SandboxCharacter {
+  /** Resources newer than this are this person's own (the kit's are older); freed with it. */
+  readonly #born: ResourceMark = resourceMark();
   readonly object = new THREE.Group();
   readonly #rider = new THREE.Group();
   readonly #mixer: THREE.AnimationMixer;
@@ -451,6 +482,7 @@ class RiggedCharacter implements SandboxCharacter {
   readonly #posed = new Map<THREE.Bone, { clip: THREE.Quaternion; out: THREE.Quaternion }>();
   #t = 0;
   #speeds = { walk: 1.25, run: 3 };
+  #gesture: Gesture | null = null;
 
   constructor(kit: Kit, look: CharacterLook) {
     const female = look.seed % 2 === 1;
@@ -474,7 +506,7 @@ class RiggedCharacter implements SandboxCharacter {
       this.#rider.add(part);
       attach(part, skeleton);
     }
-    if (bodyMesh) mergeParts(this.#rider, bodyMesh, `${spec.bodies[sex]}|${urls.join('|')}${wardrobe ? `|${wardrobe}` : ''}`);
+    if (bodyMesh) mergeParts(this.#rider, bodyMesh, `${spec.bodies[sex]}|${urls.join('|')}${wardrobe ? `|${wardrobe}` : ''}`, kit.merged);
     if (wardrobe && skinMaterial && skeleton) {
       // clothes painted onto the body by region, in this person's colours
       const dress = dressFor(look, wardrobe);
@@ -496,6 +528,17 @@ class RiggedCharacter implements SandboxCharacter {
     for (const state of ['idle', 'walk', 'run', 'sit'] as const) {
       const c = kit.clips.get(spec.clips[state]);
       if (c) this.#actions.set(state, this.#mixer.clipAction(c));
+    }
+    // gestures: talking and cheering loop; handing over and picking up play once and hold
+    for (const g of GESTURE_CLIPS) {
+      const c = kit.clips.get(spec.gestures?.[g] ?? '');
+      if (!c) continue;
+      const action = this.#mixer.clipAction(c);
+      if (g === 'interact' || g === 'pickup') {
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+      }
+      this.#actions.set(`g:${g}`, action);
     }
     this.#speeds = spec.speeds;
 
@@ -659,17 +702,25 @@ class RiggedCharacter implements SandboxCharacter {
     this.#play(state);
   }
 
-  update(dt: number, speed: number, heading: number): void {
+  gesture(g: Gesture | null): void {
+    this.#gesture = g;
+  }
+
+  update(dt: number, speed: number, heading: number, _camera?: THREE.Camera, face?: number): void {
     this.#t += dt;
     const moving = this.#state !== 'idle' && speed > 0.01;
-    if (this.#current === null || (this.#mount === null && this.#current !== this.#actions.get(moving ? this.#state : 'idle'))) this.setState(this.#state);
+    const g = this.#gesture !== null && !moving ? `g:${this.#gesture}` : null;
+    const want = this.#mount ? null : g !== null && this.#actions.has(g) ? g : moving ? this.#state : 'idle';
+    if (this.#current === null) this.setState(this.#state);
+    else if (want !== null && this.#current !== this.#actions.get(want)) this.#play(want);
     // Feet follow the ground: playback rate from real speed (no sliding).
     const metres = speed * METRES_PER_TILE;
     if (this.#current && !this.#mount) this.#current.timeScale = moving ? THREE.MathUtils.clamp(metres / (this.#state === 'run' ? this.#speeds.run : this.#speeds.walk), 0.5, 1.8) : 1;
     if (this.#mount?.current) this.#mount.current.timeScale = moving ? THREE.MathUtils.clamp(metres / (this.#state === 'run' ? this.#mount.speeds.run : this.#mount.speeds.walk), 0.5, 2) : 1;
-    // Turn smoothly towards the direction of travel (models face +z).
-    if (moving) {
-      const target = Math.atan2(Math.cos(heading), Math.sin(heading));
+    // Turn smoothly towards the direction of travel (models face +z), or standing, towards whom they face.
+    const towards = moving ? heading : face;
+    if (towards !== undefined) {
+      const target = Math.atan2(Math.cos(towards), Math.sin(towards));
       let d = target - this.#yaw;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       this.#yaw += d * (1 - Math.exp(-10 * dt));
@@ -699,8 +750,13 @@ class RiggedCharacter implements SandboxCharacter {
 
   dispose(): void {
     this.#mixer.stopAllAction();
-    this.#mount?.mixer?.stopAllAction();
+    this.#mixer.uncacheRoot(this.#rider);
+    const mm = this.#mount?.mixer;
+    mm?.stopAllAction();
+    mm?.uncacheRoot(mm.getRoot());
     this.object.removeFromParent();
+    // wings, gear, a vehicle, a tinted mount, the dressed skin: made for this person alone
+    disposeTree(this.object, this.#born);
   }
 }
 

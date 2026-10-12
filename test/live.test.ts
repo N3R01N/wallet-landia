@@ -152,12 +152,59 @@ describe('LiveLoader valuations', () => {
     const client = new ZerionClient({ apiKey: 'k', transport: 'direct', fetch: z.fetch, budget, requestsPerSecond: 1000 });
     const loader = new LiveLoader({ apiKey: 'k', budget, cache: new MemoryKV(), client, now: () => now });
     await loader.load(ADDR, 'me');
-    await loader.refreshValuations(ADDR, 'full');
+    await loader.remeasure(ADDR, 'full');
     expect(z.urls.length).toBe(9);
-    await loader.refreshValuations(ADDR, 'total');
+    await loader.remeasure(ADDR, 'total');
     expect(z.urls.length).toBe(10);
     expect(z.urls[9]).toContain('/portfolio');
-    await loader.refreshValuations(ADDR, 'tokens');
+    await loader.remeasure(ADDR, 'tokens');
     expect(z.urls.length).toBe(12);
+  });
+});
+
+describe('the town’s history and the ledger', () => {
+  const setup = (feed: TransactionResource[], cache = new MemoryKV()) => {
+    const z = fakeZerion(feed);
+    const now = Date.parse('2026-10-08T12:00:00Z');
+    const budget = new DailyBudget({ storage: null, now: () => now });
+    const client = new ZerionClient({ apiKey: 'k', transport: 'direct', fetch: z.fetch, budget, requestsPerSecond: 1000 });
+    return { z, cache, loader: new LiveLoader({ apiKey: 'k', budget, cache, client, now: () => now }) };
+  };
+  const spam = (t: TransactionResource): TransactionResource => ({ ...t, attributes: { ...t.attributes, flags: { is_trash: true } } }) as TransactionResource;
+
+  it('keeps spam out of the town (the ledger keeps it), so it neither crowds the history nor counts as news', async () => {
+    const feed = [tx('0xa', '2026-10-07T10:00:00Z')];
+    const { loader } = setup(feed);
+    const first = await loader.load(ADDR, 'me');
+    expect(first.transactions).toHaveLength(1);
+    feed.push(spam(tx('0xs', '2026-10-08T11:00:00Z')));
+    const r = await loader.refreshHistory(ADDR);
+    expect(r?.added).toBe(0);
+    expect(r?.raw.transactions.map((t) => t.attributes.hash)).toEqual(['0xa']);
+    expect((await loader.ledger.status(ADDR))!).toMatchObject({ count: 2, spam: 1 });
+    expect(mergeHistory([], [spam(tx('0xt', '2026-10-08T11:00:00Z'))])).toEqual([]);
+  });
+
+  it('a town with no cache entry but a kept ledger (an import, a cleared cache) shows its recent past, not only what is new', async () => {
+    const feed = Array.from({ length: 5 }, (_, i) => tx(`0x${i}`, new Date(Date.UTC(2026, 9, 1 + i)).toISOString()));
+    const { loader, cache } = setup(feed);
+    await loader.load(ADDR, 'me');
+    await cache.clear((k) => k.startsWith('wallet:'));
+    expect((await loader.ledger.status(ADDR))!.count).toBe(5);
+    const raw = await loader.load(ADDR, 'me');
+    expect(raw.transactions).toHaveLength(5);
+  });
+});
+
+describe('the cache', () => {
+  it('clears only what is asked, and deletes for real', async () => {
+    const kv = new MemoryKV();
+    await kv.put('wallet:0xa', 1);
+    await kv.put('ledger:ethereum:0xa:state', 2);
+    await kv.put('pack:x', 3);
+    await kv.clear((k) => k.startsWith('wallet:'));
+    expect([await kv.get('wallet:0xa'), await kv.get('ledger:ethereum:0xa:state'), await kv.get('pack:x')]).toEqual([undefined, 2, 3]);
+    await kv.delete('pack:x');
+    expect(await kv.get('pack:x')).toBeUndefined();
   });
 });

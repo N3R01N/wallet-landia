@@ -34,10 +34,14 @@ for (const [key, name] of [['t', 'top-down'], ['i', 'isometric'], ['3', '3D']] a
     await page.goto('/?freeze');
     await expect(page.locator('.topbar')).toBeVisible();
     await page.keyboard.press(key);
-    await page.waitForTimeout(key === '3' ? 4000 : 1500);
-
-    const spot = await findSomethingToHover(page);
-    expect(spot, 'nothing in the town answered a hover').not.toBeNull();
+    await expect(page.locator('.veil')).toBeHidden({ timeout: 30_000 });
+    // (the view draws its town over a few frames, 3D longest: sweep until something answers)
+    const found: { spot: { x: number; y: number } | null } = { spot: null };
+    await expect(async () => {
+      found.spot = await findSomethingToHover(page);
+      expect(found.spot, 'nothing in the town answered a hover').not.toBeNull();
+    }).toPass({ timeout: 30_000 });
+    const spot = found.spot;
     if (spot) {
       await page.mouse.click(spot.x, spot.y);
       await expect(page.locator('.inspector')).toBeVisible();

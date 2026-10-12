@@ -35,7 +35,7 @@ function module(c: Ctx, r: Rect, y0: number, h: number, o: { wall?: Mat; door?: 
   }
   if (o.door) {
     m.onFace(r, 'front', 0, y0 + 1.2, [1.5, 2.4], 0.1, 'stoneDark');
-    m.onFace(r, 'front', 0, y0 + 1.1, [1.1, 2.1], 0.04, 'plaster', 0.1);
+    m.doorLeaf(r, 'front', 0, y0 + 0.05, 1.1, 2.1, 0.1, 0.04, 'slide');
     m.onFace(r, 'front', 0, y0 + 2.25, [1.1, 0.06], 0.03, 'fire', 0.12);
   }
   m.w.box([r.cx, y0 + h + 0.12, r.cz], [r.w + 0.2, 0.24, r.d + 0.2], o.roof ?? 'roofTiles', { skip: ['bottom'] });
@@ -273,7 +273,7 @@ const RECIPES: Record<string, (c: Ctx) => Made> = {
     const top = hab(c, 0, -0.4, W * 0.36, 3.6, { key: 'roofTiles', tint: c.bannerRoof });
     for (const x of [-W / 2 + 0.6, W / 2 - 0.6]) {
       module(c, R(1.1, 1.6, x, D * 0.22), 0, 2.6, { ports: ['front'] });
-      m.box([x, 3.5, D * 0.22 + 0.82], [0.6, 1.4, 0.03], { key: 'cloth', tint: c.banner });
+      m.banner([x, 3.5, D * 0.22 + 0.82], [0.6, 1.4, 0.03], c.banner);
     }
     tube(c, [-W / 2 + 0.6, D * 0.22], [-W * 0.2, -0.2], 1.0);
     tube(c, [W / 2 - 0.6, D * 0.22], [W * 0.2, -0.2], 1.0);

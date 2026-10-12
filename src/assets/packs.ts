@@ -24,28 +24,50 @@ let kv: KV | null = null;
 const store = async (): Promise<KV> => (kv ??= await openCache());
 
 export async function loadBundledPacks(base = '/packs'): Promise<void> {
+  let ids: unknown;
   try {
-    const res = await fetch(`${base}/index.json`);
+    // the lists name each pack's version: always re-checked (a 304 when unchanged), never stale
+    const res = await fetch(`${base}/index.json`, { cache: 'no-cache' });
     if (!res.ok) return;
-    const ids = (await res.json()) as unknown;
-    if (!Array.isArray(ids)) return;
-    for (const id of ids) {
-      if (typeof id !== 'string' || !/^[a-z0-9-]+$/.test(id)) continue;
-      const r = await fetch(`${base}/${id}/pack.json`);
-      if (!r.ok) continue;
-      const { manifest, problems } = validatePack(await r.json());
-      if (problems.length > 0) console.warn(`pack ${id}:`, problems);
-      if (manifest === null) continue;
-      assets.add({ manifest, source: 'bundled', files: referencedFiles(manifest), url: (p) => versioned(`${base}/${id}/${p}`, manifest.version) });
-    }
+    ids = await res.json();
   } catch (error) {
     console.warn('bundled packs unavailable', error);
+    return;
   }
+  if (!Array.isArray(ids)) return;
+  // each pack on its own (in parallel): one broken pack.json never keeps the others out
+  const wanted = ids.filter((id): id is string => typeof id === 'string' && /^[a-z0-9-]+$/.test(id));
+  const loaded = await Promise.allSettled(
+    wanted.map(async (id) => {
+      const r = await fetch(`${base}/${id}/pack.json`, { cache: 'no-cache' });
+      if (!r.ok) return null;
+      const { manifest, problems } = validatePack(await r.json());
+      if (problems.length > 0) console.warn(`pack ${id}:`, problems);
+      if (manifest === null) return null;
+      return { manifest, source: 'bundled', files: referencedFiles(manifest), url: (p: string) => versioned(`${base}/${id}/${p}`, manifest.version) } satisfies LoadedPack;
+    }),
+  );
+  // added in index.json's order, whatever order they arrived in
+  loaded.forEach((r, i) => {
+    if (r.status === 'fulfilled') {
+      if (r.value) assets.add(r.value);
+    } else console.warn(`pack ${wanted[i]} unavailable`, r.reason);
+  });
+}
+
+/** The blob: URLs each imported pack holds, released when it is removed or replaced. */
+const objectUrls = new Map<string, string[]>();
+
+function revokeUrls(id: string): void {
+  for (const u of objectUrls.get(id) ?? []) URL.revokeObjectURL(u);
+  objectUrls.delete(id);
 }
 
 function fromStored(stored: StoredPack): LoadedPack {
   const urls = new Map<string, string>();
   for (const [path, blob] of Object.entries(stored.files)) urls.set(path, URL.createObjectURL(blob));
+  revokeUrls(stored.manifest.id);
+  objectUrls.set(stored.manifest.id, [...urls.values()]);
   return { manifest: stored.manifest, source: 'imported', files: [...urls.keys()], url: (p) => urls.get(p) ?? '' };
 }
 
@@ -113,4 +135,5 @@ export async function removeImportedPack(id: string): Promise<void> {
   await db.put(INDEX_KEY, ids);
   await db.put(`pack:${id}`, null);
   assets.remove(id);
+  revokeUrls(id);
 }

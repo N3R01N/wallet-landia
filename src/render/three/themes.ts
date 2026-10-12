@@ -9,6 +9,7 @@
 
 import type * as THREE from 'three';
 import type { HeroClass } from '../../domain/model.js';
+import type { Gesture } from '../../world/sim.js';
 import type { Tier } from '../../domain/tiers.js';
 import type { BuildingSpec, BuiltBuilding } from './buildingFactory.js';
 import { BuildingFactory } from './buildingFactory.js';
@@ -37,8 +38,13 @@ export interface CharacterLook {
 export interface SandboxCharacter {
   readonly object: THREE.Object3D;
   setState(state: AnimState): void;
-  /** `speed` in tiles/s; `heading` is the walking direction in world radians (0 = +x). */
-  update(dt: number, speed: number, heading: number, camera: THREE.Camera): void;
+  /**
+   * `speed` in tiles/s; `heading` is the walking direction in world radians (0 = +x).
+   * `face`: standing still, turn towards this heading (someone to talk to).
+   */
+  update(dt: number, speed: number, heading: number, camera: THREE.Camera, face?: number): void;
+  /** Something done with the hands while standing (null: done). Riders and sprites may ignore it. */
+  gesture?(g: Gesture | null): void;
   dispose(): void;
 }
 
@@ -82,6 +88,8 @@ export interface Theme {
   surroundings?(site: Site): Surroundings;
   /** How the toll board at the Chronicle Tower looks: a painted board, an LED panel, a hologram. */
   board?: BoardLook;
+  /** Free the theme's shared materials, textures and plants once no town draws with it. */
+  dispose?(): void;
 }
 
 export type BoardLook = 'wood' | 'led' | 'holo';
@@ -118,6 +126,9 @@ export function bundleTheme(b: ThemeBundle): Theme {
   const ground: Record<'grass' | 'road' | 'plaza' | 'path', MatKey> = { grass: 'grass', road: 'cobbles', path: 'dirt', plaza: spec.ground?.road ?? 'cobbles', ...spec.ground };
   const base = baseline();
   const style = spec.surroundings?.style ?? spec.buildings?.style ?? 'medieval';
+  // the theme's characters (a kit of glTF bodies, outfits, mounts) once loaded; freed with the theme
+  let freeKit: (() => void) | undefined;
+  let gone = false;
   const theme: Theme = {
     ...base,
     id: b.id,
@@ -136,14 +147,26 @@ export function bundleTheme(b: ThemeBundle): Theme {
       caravan: (tier, crest) => buildCaravan(style, tier, lib, crest),
     },
     board: style === 'modern' ? 'led' : style === 'scifi' ? 'holo' : 'wood',
+    dispose: () => {
+      gone = true;
+      freeKit?.();
+      builder.dispose();
+      veg?.dispose();
+      factory.dispose();
+      lib.dispose();
+    },
   };
   if (spec.notes) theme.needs = spec.notes;
   const characters = spec.characters;
   if (characters) {
     theme.prepare = async () => {
-      const { loadKit, riggedProvider } = await import('./rigged.js');
+      const { disposeKit, loadKit, riggedProvider } = await import('./rigged.js');
       const { buildVehicle } = await import('./grammar/vehicles.js');
-      theme.characters = riggedProvider(await loadKit(characters, (kind, tint) => buildVehicle(kind, lib, tint)), `Rigged characters from the ${b.name} bundle`);
+      const kit = await loadKit(characters, (kind, tint) => buildVehicle(kind, lib, tint));
+      // switched away while it loaded: nothing will draw with it
+      if (gone) return disposeKit(kit);
+      freeKit = () => disposeKit(kit);
+      theme.characters = riggedProvider(kit, `Rigged characters from the ${b.name} bundle`);
       delete theme.prepare; // once
     };
   }

@@ -11,6 +11,10 @@ import { drawEmblem, plate, styleFor, type Style } from '../buildings.js';
 import { P, sprite } from '../pixel.js';
 import { buildingChain } from '../../assets/art.js';
 import { packModel } from './models.js';
+import { makeDoor, type DoorRig } from './doors.js';
+import { hashString } from '../../util/rng.js';
+import { keep } from './dispose.js';
+import { flutterGeometry } from './flags.js';
 
 /** 2D wall/roof heights are in art px; this turns them into tiles. */
 export const HEIGHT_SCALE = 1 / 12;
@@ -40,18 +44,20 @@ export interface BuiltBuilding {
   bell?: THREE.Object3D;
   /** Chimneys and stacks: where smoke rises (local to the group, tiles) and its colour. */
   smoke?: { x: number; y: number; z: number; color: string }[];
+  /** Doors that open (their leaves are kept out of any merging). */
+  doors?: DoorRig[];
 }
 
 export class BuildingFactory {
-  readonly windowMat = new THREE.MeshStandardMaterial({ color: P.glass, emissive: new THREE.Color(P.glassLit), emissiveIntensity: 0, roughness: 0.3 });
-  readonly fireMat = new THREE.MeshStandardMaterial({ color: '#ff8a2a', emissive: new THREE.Color('#ff7a1a'), emissiveIntensity: 1.2 });
+  readonly windowMat = keep(new THREE.MeshStandardMaterial({ color: P.glass, emissive: new THREE.Color(P.glassLit), emissiveIntensity: 0, roughness: 0.3 }));
+  readonly fireMat = keep(new THREE.MeshStandardMaterial({ color: '#ff8a2a', emissive: new THREE.Color('#ff7a1a'), emissiveIntensity: 1.2 }));
   #mats = new Map<string, THREE.MeshStandardMaterial>();
 
   mat(color: string, opts: { emissive?: string; emissiveIntensity?: number; transparent?: boolean; opacity?: number } = {}): THREE.MeshStandardMaterial {
     const key = `${color}|${opts.emissive ?? ''}|${opts.opacity ?? 1}`;
     let m = this.#mats.get(key);
     if (m === undefined) {
-      m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true });
+      m = keep(new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true }));
       if (opts.emissive) {
         m.emissive = new THREE.Color(opts.emissive);
         m.emissiveIntensity = opts.emissiveIntensity ?? 0.4;
@@ -63,6 +69,14 @@ export class BuildingFactory {
       this.#mats.set(key, m);
     }
     return m;
+  }
+
+  /** Free the shared materials (the theme using this factory is gone). */
+  dispose(): void {
+    for (const m of this.#mats.values()) m.dispose();
+    this.#mats.clear();
+    this.windowMat.dispose();
+    this.fireMat.dispose();
   }
 
   build(b: BuildingSpec): BuiltBuilding {
@@ -207,11 +221,16 @@ export class BuildingFactory {
 
     // door, windows, sign on the front (+z, the street side)
     const front = D / 2 + 0.02;
+    let doors: DoorRig[] | undefined;
     if (hasBody && st.wallH >= 8) {
       const big = b.kind === 'tower' || b.kind === 'guildhall' || b.kind === 'bank';
       const dh = Math.min(0.85, H - 0.15);
-      add(new THREE.BoxGeometry(big ? 0.7 : 0.5, dh, 0.06), this.mat(P.woodDark), 0, dh / 2, front, false);
-      add(new THREE.BoxGeometry(big ? 0.8 : 0.6, 0.08, 0.08), trim, 0, dh + 0.04, front, false);
+      const dw = big ? 0.7 : 0.5;
+      const { group: door, leaves } = makeDoor('plain', dw, dh, { leaf: this.mat(P.woodDark), trim: this.mat(P.gold) }, { z0: 0.005, thick: 0.05, u: 1 / 1.8, hingeRight: hashString(b.kind) % 2 === 0 });
+      door.position.set(0, 0, D / 2);
+      g.add(door);
+      doors = [{ at: new THREE.Vector3(0, 0, D / 2), out: new THREE.Vector3(0, 0, 1), leaves, open: 0, vel: 0 }];
+      add(new THREE.BoxGeometry(dw + 0.1, 0.08, 0.08), trim, 0, dh + 0.04, front, false);
     }
     if (hasBody && st.wallH >= 11) {
       const wy = Math.min(H - 0.35, 0.95);
@@ -239,7 +258,8 @@ export class BuildingFactory {
       case 'banners':
         for (const sx of [-1, 1]) {
           add(new THREE.CylinderGeometry(0.03, 0.03, 1.1, 4), this.mat(P.woodDark), sx * (W / 2 - 0.1), H + 0.45, front + 0.05);
-          add(new THREE.BoxGeometry(0.02, 0.38, 0.3), this.mat(banner), sx * (W / 2 - 0.1), H + 0.78, front + 0.22);
+          // pinned at the pole (its back edge), free at the front
+          add(flutterGeometry(new THREE.BoxGeometry(0.02, 0.38, 0.3), [0.1, 0, 0], (_x, _y, z) => (z + 0.15) / 0.3), this.mat(banner), sx * (W / 2 - 0.1), H + 0.78, front + 0.22);
         }
         break;
       case 'pier':
@@ -288,6 +308,7 @@ export class BuildingFactory {
     const out: BuiltBuilding = { group: g, top };
     if (signInfo) out.sign = signInfo;
     if (bell) out.bell = bell;
+    if (doors) out.doors = doors;
     return out;
   }
 

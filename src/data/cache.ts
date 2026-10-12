@@ -1,13 +1,16 @@
 /**
  * A tiny key-value cache: IndexedDB when available, memory otherwise (blocked
  * storage, private windows). Everything in it can be refetched; losing it only
- * costs requests.
+ * costs requests (the lifetime ledger costs the most, so clearing can spare it).
  */
 
 export interface KV {
   get<T>(key: string): Promise<T | undefined>;
+  /** Resolves once the value is stored for good (a write that fails, e.g. over quota, rejects). */
   put(key: string, value: unknown): Promise<void>;
-  clear(): Promise<void>;
+  delete(key: string): Promise<void>;
+  /** Everything, or only the keys `drop` picks. */
+  clear(drop?: (key: string) => boolean): Promise<void>;
 }
 
 export class MemoryKV implements KV {
@@ -18,8 +21,12 @@ export class MemoryKV implements KV {
   async put(key: string, value: unknown): Promise<void> {
     this.#m.set(key, structuredClone(value));
   }
-  async clear(): Promise<void> {
-    this.#m.clear();
+  async delete(key: string): Promise<void> {
+    this.#m.delete(key);
+  }
+  async clear(drop?: (key: string) => boolean): Promise<void> {
+    if (drop === undefined) this.#m.clear();
+    else for (const k of [...this.#m.keys()]) if (drop(k)) this.#m.delete(k);
   }
 }
 
@@ -31,21 +38,44 @@ class IndexedKV implements KV {
   constructor(db: IDBDatabase) {
     this.#db = db;
   }
-  #req<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest): Promise<T> {
+  get<T>(key: string): Promise<T | undefined> {
     return new Promise((resolve, reject) => {
-      const r = run(this.#db.transaction(STORE, mode).objectStore(STORE));
-      r.onsuccess = () => resolve(r.result as T);
+      const r = this.#db.transaction(STORE, 'readonly').objectStore(STORE).get(key);
+      r.onsuccess = () => resolve(r.result as T | undefined);
       r.onerror = () => reject(r.error);
     });
   }
-  get<T>(key: string): Promise<T | undefined> {
-    return this.#req<T | undefined>('readonly', (s) => s.get(key));
+  /**
+   * A write is done when its transaction commits, not when its request
+   * succeeds: a quota failure aborts the transaction afterwards, and the
+   * ledger must not save a state naming a chunk that never landed.
+   */
+  #write(run: (s: IDBObjectStore) => void): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const tx = this.#db.transaction(STORE, 'readwrite');
+      tx.oncomplete = () => resolve();
+      tx.onabort = () => reject(tx.error ?? new Error('storage write aborted'));
+      tx.onerror = () => reject(tx.error ?? new Error('storage write failed'));
+      run(tx.objectStore(STORE));
+    });
   }
-  async put(key: string, value: unknown): Promise<void> {
-    await this.#req('readwrite', (s) => s.put(value, key));
+  put(key: string, value: unknown): Promise<void> {
+    return this.#write((s) => s.put(value, key));
   }
-  async clear(): Promise<void> {
-    await this.#req('readwrite', (s) => s.clear());
+  delete(key: string): Promise<void> {
+    return this.#write((s) => s.delete(key));
+  }
+  clear(drop?: (key: string) => boolean): Promise<void> {
+    if (drop === undefined) return this.#write((s) => s.clear());
+    return this.#write((s) => {
+      const r = s.openKeyCursor();
+      r.onsuccess = () => {
+        const c = r.result;
+        if (c === null) return;
+        if (typeof c.key === 'string' && drop(c.key)) s.delete(c.key);
+        c.continue();
+      };
+    });
   }
 }
 

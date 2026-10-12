@@ -50,12 +50,12 @@ describe('tiers', () => {
 
 describe('classification', () => {
   it('sorts assets into item categories', () => {
-    expect(classifyAsset('ETH', 'Ethereum', 'ethereum', true)).toBe('native');
-    expect(classifyAsset('USDC', 'USD Coin', 'ethereum', false)).toBe('stable');
-    expect(classifyAsset('stETH', 'Lido Staked ETH', 'ethereum', false)).toBe('lst');
-    expect(classifyAsset('variableDebtEthWETH', 'Aave Variable Debt WETH', 'ethereum', false)).toBe('debt');
-    expect(classifyAsset('PEPE', 'Pepe', 'ethereum', false)).toBe('meme');
-    expect(classifyAsset('XYZ', 'Something', 'ethereum', false)).toBe('token');
+    expect(classifyAsset('ETH', 'Ethereum', true)).toBe('native');
+    expect(classifyAsset('USDC', 'USD Coin', false)).toBe('stable');
+    expect(classifyAsset('stETH', 'Lido Staked ETH', false)).toBe('lst');
+    expect(classifyAsset('variableDebtEthWETH', 'Aave Variable Debt WETH', false)).toBe('debt');
+    expect(classifyAsset('PEPE', 'Pepe', false)).toBe('meme');
+    expect(classifyAsset('XYZ', 'Something', false)).toBe('token');
   });
   it('sorts protocols into buildings, falling back to position modules', () => {
     expect(classifyProtocol('aave-v3', 'Aave V3')).toBe('lending');
@@ -64,6 +64,11 @@ describe('classification', () => {
     expect(classifyProtocol('eigenlayer', 'EigenLayer')).toBe('restaking');
     expect(classifyProtocol('obscure', 'Obscure Fi', ['lending'])).toBe('lending');
     expect(classifyProtocol('obscure', 'Obscure Fi')).toBe('unknown');
+    // short names only as whole words
+    expect(classifyProtocol('hop-protocol', 'Hop Protocol')).toBe('bridge');
+    expect(classifyProtocol('hopium', 'Hopium Highlands')).toBe('unknown');
+    expect(classifyProtocol('district0x', 'district0x Network Token')).toBe('unknown');
+    expect(classifyProtocol('skyweaver', 'Skyweaver')).toBe('unknown');
   });
 });
 

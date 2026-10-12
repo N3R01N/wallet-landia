@@ -8,39 +8,18 @@ import * as THREE from 'three';
 import { heroArt, villagerArt } from '../../assets/art.js';
 import type { Sprite } from '../pixel.js';
 import type { AnimState, CharacterLook, CharacterProvider, SandboxCharacter } from './themes.js';
+import { SpriteMaterials } from './spriteMaterials.js';
 
 const ART_PER_TILE = 16;
 const SCALE = 1.35;
 
-const textures = new WeakMap<HTMLCanvasElement, [THREE.SpriteMaterial, THREE.SpriteMaterial]>();
-/** Billboards are unlit; this tint dims them with the light (night, storm). */
-const tint = new THREE.Color('#ffffff');
-const allMaterials = new Set<THREE.SpriteMaterial>();
+/** Billboards are unlit: their tint dims them with the light (night). The most recently used are kept. */
+const materials = new SpriteMaterials();
+const nightTint = new THREE.Color('#7f88b8');
 
 export function setSpriteTint(night: number): void {
-  tint.setRGB(1, 1, 1).lerp(new THREE.Color('#7f88b8'), night * 0.85);
-  for (const m of allMaterials) m.color.copy(tint);
-}
-function material(canvas: HTMLCanvasElement, flip: boolean): THREE.SpriteMaterial {
-  let pair = textures.get(canvas);
-  if (pair === undefined) {
-    const mk = (f: boolean): THREE.SpriteMaterial => {
-      const t = new THREE.CanvasTexture(canvas);
-      t.magFilter = THREE.NearestFilter;
-      t.minFilter = THREE.NearestFilter;
-      t.colorSpace = THREE.SRGBColorSpace;
-      if (f) {
-        t.wrapS = THREE.RepeatWrapping;
-        t.repeat.x = -1;
-      }
-      const m = new THREE.SpriteMaterial({ map: t, alphaTest: 0.5, color: tint.clone() });
-      allMaterials.add(m);
-      return m;
-    };
-    pair = [mk(false), mk(true)];
-    textures.set(canvas, pair);
-  }
-  return pair[flip ? 1 : 0];
+  materials.tint.setRGB(1, 1, 1).lerp(nightTint, night * 0.85);
+  materials.retint();
 }
 
 class SpriteCharacter implements SandboxCharacter {
@@ -80,7 +59,7 @@ class SpriteCharacter implements SandboxCharacter {
     }
     const s = this.#art(frame);
     const sp = this.#sprite;
-    sp.material = material(s.canvas, this.#flip);
+    sp.material = materials.get(s.canvas, this.#flip);
     sp.scale.set((s.canvas.width / ART_PER_TILE) * SCALE, (s.canvas.height / ART_PER_TILE) * SCALE, 1);
     sp.center.set(this.#flip ? 1 - s.ax / s.canvas.width : s.ax / s.canvas.width, 1 - s.ay / s.canvas.height);
     sp.position.y = moving ? 0 : Math.abs(Math.sin(this.#phase * 2)) * 0.02;
@@ -88,6 +67,9 @@ class SpriteCharacter implements SandboxCharacter {
 
   dispose(): void {
     this.object.removeFromParent();
+    // its own contact shadow (the sprite's materials are shared per art frame)
+    this.#shadow.geometry.dispose();
+    (this.#shadow.material as THREE.Material).dispose();
   }
 }
 

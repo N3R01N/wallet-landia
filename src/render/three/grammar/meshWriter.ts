@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import type { MatKey, MaterialLibrary } from './materials.js';
+import { FLUTTER } from '../flags.js';
 
 export type V3 = [number, number, number];
 export type Mat = MatKey | { key: MatKey; tint?: string };
@@ -20,7 +21,12 @@ interface Part {
   pos: number[];
   nor: number[];
   uv: number[];
+  /** Cloth: per-vertex flutter (see flags.ts). */
+  flutter?: number[];
 }
+
+/** While set, what is written is cloth: its flutter (axis xyz, freedom w) at each point. */
+export type FlutterOf = (x: number, y: number, z: number) => [number, number, number, number];
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _a = new THREE.Vector3();
@@ -30,18 +36,26 @@ const _n = new THREE.Vector3();
 const _u = new THREE.Vector3();
 const _v = new THREE.Vector3();
 const _p = new THREE.Vector3();
+// box(): a building has hundreds; no matrix, Euler, set and vectors of its own each
+const _m = new THREE.Matrix4();
+const _e = new THREE.Euler();
+const _t = new THREE.Vector3();
+const NO_SKIP: readonly string[] = [];
 
 export class MeshWriter {
   readonly #parts = new Map<string, Part>();
   triangles = 0;
+  /** Set around cloth (a flag, a banner): it goes in a part of its own that ripples. */
+  flutter: FlutterOf | null = null;
 
   #part(mat: Mat): Part {
     const key = typeof mat === 'string' ? mat : mat.key;
     const tint = typeof mat === 'string' ? undefined : mat.tint;
-    const id = `${key}|${tint ?? ''}`;
+    const id = `${key}|${tint ?? ''}${this.flutter ? '|flutter' : ''}`;
     let p = this.#parts.get(id);
     if (!p) {
       p = { key, tint, pos: [], nor: [], uv: [] };
+      if (this.flutter) p.flutter = [];
       this.#parts.set(id, p);
     }
     return p;
@@ -65,11 +79,13 @@ export class MeshWriter {
       _v.crossVectors(_n, _u).normalize();
     }
     const part = this.#part(mat);
+    const flutter = this.flutter;
     const emit = (q: V3): void => {
       _p.fromArray(q);
       part.pos.push(q[0], q[1], q[2]);
       part.nor.push(_n.x, _n.y, _n.z);
       part.uv.push(_p.dot(_u), _p.dot(_v));
+      if (flutter) part.flutter!.push(...flutter(q[0], q[1], q[2]));
     };
     for (let i = 1; i < pts.length - 1; i++) {
       emit(pts[0]!);
@@ -86,18 +102,26 @@ export class MeshWriter {
   /** An axis-aligned (optionally rotated) box. `skip` drops faces nobody sees. */
   box(center: V3, size: V3, mat: Mat, opts: { rotX?: number; rotY?: number; rotZ?: number; skip?: ('top' | 'bottom' | 'front' | 'back' | 'left' | 'right')[] } = {}): void {
     const [hx, hy, hz] = [size[0] / 2, size[1] / 2, size[2] / 2];
-    const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(opts.rotX ?? 0, opts.rotY ?? 0, opts.rotZ ?? 0)).setPosition(center[0], center[1], center[2]);
-    const t = (x: number, y: number, z: number): V3 => {
-      const v = new THREE.Vector3(x, y, z).applyMatrix4(m);
-      return [v.x, v.y, v.z];
-    };
-    const skip = new Set(opts.skip ?? []);
-    if (!skip.has('front')) this.quad(t(-hx, -hy, hz), t(hx, -hy, hz), t(hx, hy, hz), t(-hx, hy, hz), mat);
-    if (!skip.has('back')) this.quad(t(hx, -hy, -hz), t(-hx, -hy, -hz), t(-hx, hy, -hz), t(hx, hy, -hz), mat);
-    if (!skip.has('right')) this.quad(t(hx, -hy, hz), t(hx, -hy, -hz), t(hx, hy, -hz), t(hx, hy, hz), mat);
-    if (!skip.has('left')) this.quad(t(-hx, -hy, -hz), t(-hx, -hy, hz), t(-hx, hy, hz), t(-hx, hy, -hz), mat);
-    if (!skip.has('top')) this.quad(t(-hx, hy, hz), t(hx, hy, hz), t(hx, hy, -hz), t(-hx, hy, -hz), mat);
-    if (!skip.has('bottom')) this.quad(t(-hx, -hy, -hz), t(hx, -hy, -hz), t(hx, -hy, hz), t(-hx, -hy, hz), mat);
+    const [cx, cy, cz] = center;
+    const rx = opts.rotX ?? 0;
+    const ry = opts.rotY ?? 0;
+    const rz = opts.rotZ ?? 0;
+    // unrotated (most boxes): a plain offset, the same numbers the identity rotation gives
+    const rotated = rx !== 0 || ry !== 0 || rz !== 0;
+    if (rotated) _m.makeRotationFromEuler(_e.set(rx, ry, rz)).setPosition(cx, cy, cz);
+    const t = rotated
+      ? (x: number, y: number, z: number): V3 => {
+          _t.set(x, y, z).applyMatrix4(_m);
+          return [_t.x, _t.y, _t.z];
+        }
+      : (x: number, y: number, z: number): V3 => [x + cx, y + cy, z + cz];
+    const skip = opts.skip ?? NO_SKIP;
+    if (!skip.includes('front')) this.quad(t(-hx, -hy, hz), t(hx, -hy, hz), t(hx, hy, hz), t(-hx, hy, hz), mat);
+    if (!skip.includes('back')) this.quad(t(hx, -hy, -hz), t(-hx, -hy, -hz), t(-hx, hy, -hz), t(hx, hy, -hz), mat);
+    if (!skip.includes('right')) this.quad(t(hx, -hy, hz), t(hx, -hy, -hz), t(hx, hy, -hz), t(hx, hy, hz), mat);
+    if (!skip.includes('left')) this.quad(t(-hx, -hy, -hz), t(-hx, -hy, hz), t(-hx, hy, hz), t(-hx, hy, -hz), mat);
+    if (!skip.includes('top')) this.quad(t(-hx, hy, hz), t(hx, hy, hz), t(hx, hy, -hz), t(-hx, hy, -hz), mat);
+    if (!skip.includes('bottom')) this.quad(t(-hx, -hy, -hz), t(hx, -hy, -hz), t(hx, -hy, hz), t(-hx, -hy, hz), mat);
   }
 
   /** A square-section beam from a to b (rails, logs, braces), its top kept up. */
@@ -183,6 +207,7 @@ export class MeshWriter {
       geo.setAttribute('position', new THREE.Float32BufferAttribute(part.pos, 3));
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(part.nor, 3));
       geo.setAttribute('uv', new THREE.Float32BufferAttribute(part.uv, 2));
+      if (part.flutter) geo.setAttribute(FLUTTER, new THREE.Float32BufferAttribute(part.flutter, 4));
       geo.computeBoundingSphere();
       const mesh = new THREE.Mesh(geo, lib.get(part.key, part.tint));
       mesh.castShadow = part.key !== 'glass' && part.key !== 'fire';

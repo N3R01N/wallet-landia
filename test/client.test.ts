@@ -507,12 +507,19 @@ describe('error classification', () => {
   }
 
   it('falls back to the status text when the body is not JSON', async () => {
-    const { fetch } = scriptedFetch([new Response('<html>gateway</html>', { status: 502 })]);
+    const { fetch } = scriptedFetch([new Response('<html>gateway</html>', { status: 502 }), new Response('<html>gateway</html>', { status: 502 })]);
     const client = testClient(fakeClock(), { fetch });
 
     const error = (await client.getOne('/x').catch((caught: unknown) => caught)) as ZerionError;
     expect(error.kind).toBe('server');
     expect(error.message).toBeTruthy();
+  });
+
+  it('tries a gateway error once more, and that can succeed', async () => {
+    const { fetch } = scriptedFetch([new Response('<html>gateway</html>', { status: 503 }), json({ data: { id: 'ok' } })]);
+    const client = testClient(fakeClock(), { fetch });
+
+    expect(await client.getOne<{ id: string }>('/x')).toEqual({ id: 'ok' });
   });
 
   it('reports a fetch that never completed as a network error, which is what CORS looks like', async () => {

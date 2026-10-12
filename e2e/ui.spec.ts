@@ -40,7 +40,7 @@ test('a loading veil until the town is ready; heroes are listed in the Guild tab
 
 test('the Chronicle Tower shows how busy the chain is: a beacon on top, a toll board, a queue at its door', async ({ page }) => {
   await page.goto('/?expose&freeze');
-  await page.locator('.btn', { hasText: '3D' }).click();
+  await page.locator('.view-select').selectOption('3d');
   await expect(page.locator('.stage3d')).toBeVisible({ timeout: 60_000 });
   const look = await page.waitForFunction(() => {
     const town = (window as unknown as { town3d?: { debugScene(): { getObjectByName(n: string): unknown }; debugPeople(): { kind: string; x: number; y: number }[] } }).town3d;
@@ -83,7 +83,7 @@ test('a first-visit tour explains the demo town and leads to the Guild panel; it
   await expect(card).toContainText('demo town');
   await expect(card).toContainText('1 /');
   // forward to the Zerion key step: it opens the Guild panel and points at the key field
-  for (let i = 0; i < 7; i++) await card.locator('.btn.primary').click();
+  for (let i = 0; i < 8; i++) await card.locator('.btn.primary').click();
   await expect(card.locator('h3')).toHaveText('1. A Zerion key');
   await expect(page.locator('.inspector h2').first()).toHaveText('⚙ Guild');
   await expect(card.locator('a[href="https://dashboard.zerion.io"]')).toBeVisible();

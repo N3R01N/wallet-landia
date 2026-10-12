@@ -187,6 +187,11 @@ export class Beacon3D {
     const halo = (1.4 + heat * 2.6) * (1 + night * 0.5) * flicker;
     this.#halo.scale.set(halo, halo, 1);
   }
+
+  /** What ambient occlusion must leave out: the glow and the flame see-through, so they would show as solid squares and cones. */
+  aoExclusions(out: THREE.Object3D[]): void {
+    out.push(this.#halo, this.#flame);
+  }
 }
 
 /**

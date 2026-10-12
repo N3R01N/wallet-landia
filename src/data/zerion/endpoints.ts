@@ -17,15 +17,35 @@ import type {
 
 export const TX_PAGE_SIZE = 100;
 
-/** L1 only for now. Widening this is how other chains plug in later. */
-export const DEFAULT_CHAINS = ['ethereum'];
+/**
+ * The realm: Ethereum and the L2 provinces it rules (Phase 6). Zerion takes
+ * them all in one comma-joined filter, so more chains cost no more requests
+ * (they share the one page of transactions, though).
+ */
+export const DEFAULT_CHAINS: readonly string[] = ['ethereum', 'base', 'arbitrum', 'optimism'];
+
+let realmChains: readonly string[] = DEFAULT_CHAINS;
+
+/** The chains every request covers from now on (the player's realm). */
+export function setRealmChains(chains: readonly string[]): void {
+  realmChains = chains.length > 0 ? [...chains] : DEFAULT_CHAINS;
+}
+
+export function currentChains(): readonly string[] {
+  return realmChains;
+}
+
+/** The realm as a storage scope (`ethereum+base…`): caches and the ledger keep each realm apart. */
+export function realmScope(): string {
+  return realmChains.join('+');
+}
 
 export interface ChainScope {
   chains?: readonly string[];
 }
 
 function chainFilter(scope: ChainScope): string {
-  return (scope.chains ?? DEFAULT_CHAINS).join(',');
+  return (scope.chains ?? realmChains).join(',');
 }
 
 export function getPortfolio(
@@ -67,21 +87,33 @@ export function getNftPositions(
   );
 }
 
-export function getTransactions(
-  client: ZerionClient,
-  address: string,
-  options: ChainScope & { pages?: number; since?: number; signal?: AbortSignal } = {},
-): Promise<TransactionResource[]> {
+type TxOptions = ChainScope & { pages?: number; since?: number; until?: number; signal?: AbortSignal; spam?: boolean };
+
+function txParams(client: ZerionClient, options: TxOptions): Record<string, string | number | undefined> {
   const params: Record<string, string | number | undefined> = {
     currency: client.currency,
     'page[size]': TX_PAGE_SIZE,
-    'filter[trash]': 'only_non_trash',
+    // with spam left out, Zerion drops it from pages already cut at 100: a short
+    // page then says nothing about the end of the history (the ledger asks for
+    // everything; the mapper sets spam aside itself)
+    'filter[trash]': options.spam === true ? 'no_filter' : 'only_non_trash',
     'filter[chain_ids]': chainFilter(options),
   };
   if (options.since !== undefined) params['filter[min_mined_at]'] = Math.floor(options.since);
+  // (both ends inclusive: walking back in time, `until` is the oldest one already kept)
+  if (options.until !== undefined) params['filter[max_mined_at]'] = Math.floor(options.until);
+  return params;
+}
+
+/** Up to `pages` pages of transactions, and whether Zerion has more after them (its `links.next`): the only sure sign of the end. */
+export function getTransactionPages(client: ZerionClient, address: string, options: TxOptions = {}): Promise<{ data: TransactionResource[]; more: boolean }> {
   const paging: { maxPages: number; signal?: AbortSignal } = { maxPages: options.pages ?? 1 };
   if (options.signal !== undefined) paging.signal = options.signal;
-  return client.getAll<TransactionResource>(`/wallets/${address}/transactions/`, params, paging);
+  return client.getPages<TransactionResource>(`/wallets/${address}/transactions/`, txParams(client, options), paging);
+}
+
+export async function getTransactions(client: ZerionClient, address: string, options: TxOptions = {}): Promise<TransactionResource[]> {
+  return (await getTransactionPages(client, address, options)).data;
 }
 
 /** One wallet, as raw resources. This is also the fixture file format. */
@@ -100,7 +132,7 @@ export interface RawWallet {
 export async function fetchRawWallet(
   client: ZerionClient,
   address: string,
-  options: { label?: string; signal?: AbortSignal; onWarn?: (msg: string) => void } = {},
+  options: { label?: string; signal?: AbortSignal; onWarn?: (msg: string) => void; transactions?: () => Promise<TransactionResource[]> } = {},
 ): Promise<RawWallet> {
   const warn = options.onWarn ?? (() => undefined);
   // The portfolio and NFT calls are allowed to fail: a wallet Zerion has never
@@ -110,7 +142,8 @@ export async function fetchRawWallet(
     getPositions(client, address, 'only_simple'),
     getPositions(client, address, 'only_complex'),
     getNftPositions(client, address).catch((e: unknown) => (warn(`nfts: ${String(e)}`), [])),
-    getTransactions(client, address, options.signal ? { signal: options.signal } : {}),
+    // (the lifetime ledger fetches them when there is one, and keeps them)
+    options.transactions ? options.transactions() : getTransactions(client, address, options.signal ? { signal: options.signal } : {}),
   ]);
   return {
     address: address.toLowerCase(),

@@ -17,6 +17,9 @@ export interface TourStep {
   before?: () => void;
 }
 
+/** The tour on screen, if any: a second one (the ? button mid-tour) would stack its cards over the first. */
+let showing = false;
+
 export class Tour {
   readonly #steps: TourStep[];
   readonly #onEnd: () => void;
@@ -26,8 +29,11 @@ export class Tour {
   #at = 0;
   #onResize = (): void => this.#place();
   #onKey = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') this.end();
-    else if (e.key === 'ArrowRight') this.#go(this.#at + 1);
+    if (e.key === 'Escape') return this.end();
+    // arrows in a field (the Guild's key or wallet box, which the tour points at) move the caret, not the tour
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || t.matches('input, textarea, select'))) return;
+    if (e.key === 'ArrowRight') this.#go(this.#at + 1);
     else if (e.key === 'ArrowLeft') this.#go(this.#at - 1);
   };
 
@@ -37,6 +43,8 @@ export class Tour {
   }
 
   start(): void {
+    if (showing) return;
+    showing = true;
     document.body.append(this.#shade, this.#spot, this.#card);
     window.addEventListener('resize', this.#onResize);
     window.addEventListener('keydown', this.#onKey);
@@ -44,6 +52,7 @@ export class Tour {
   }
 
   end(): void {
+    showing = false;
     this.#shade.remove();
     this.#spot.remove();
     this.#card.remove();

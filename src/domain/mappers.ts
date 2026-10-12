@@ -8,23 +8,26 @@
  * - nothing historical is invented (no balance-at-block reconstruction).
  */
 
+import { linkBridges } from './realms.js';
 import type { RawWallet } from '../data/zerion/endpoints.js';
 import type { PositionResource, TransactionResource, TransferResource } from '../data/zerion/types.js';
+import { txKey } from '../data/zerion/tx.js';
 import { BUILDING_FOR, KNOWN_CONTRACTS, PASS_THROUGH, classifyAsset, classifyProtocol, type ProtocolCategory } from './catalog.js';
-import type {
-  Goods,
-  Guild,
-  Hero,
-  HeroClass,
-  Item,
-  Journey,
-  JourneyStep,
-  PositionKind,
-  Protocol,
-  Stash,
-  StashEntry,
-  Target,
-  Verb,
+import {
+  summarizeStash,
+  type Goods,
+  type Guild,
+  type Hero,
+  type HeroClass,
+  type Item,
+  type Journey,
+  type JourneyStep,
+  type PositionKind,
+  type Protocol,
+  type Stash,
+  type StashEntry,
+  type Target,
+  type Verb,
 } from './model.js';
 import { approxUsd, formatQty, tierOf, type Tier } from './tiers.js';
 import { heroName } from '../util/rng.js';
@@ -109,21 +112,29 @@ class ProtocolBook {
   }
 }
 
-function positionProtocol(position: PositionResource): { id: string; name: string } | null {
-  const attrs = position.attributes;
-  const rel = position.relationships?.dapp?.data.id;
-  const name = attrs.application_metadata?.name ?? attrs.protocol ?? null;
+/** A dApp by Zerion's id for it, else by its name (slugged), else none. */
+function dappIdent(rel: string | undefined, name: string | null): { id: string; name: string } | null {
   if (rel !== undefined && rel !== '') return { id: rel, name: name ?? rel };
   if (name !== null && name !== '') return { id: slugify(name), name };
   return null;
 }
 
+function positionProtocol(position: PositionResource): { id: string; name: string } | null {
+  const attrs = position.attributes;
+  return dappIdent(position.relationships?.dapp?.data.id, attrs.application_metadata?.name ?? attrs.protocol ?? null);
+}
+
 function txProtocol(tx: TransactionResource): { id: string; name: string } | null {
-  const rel = tx.relationships?.dapp?.data.id;
-  const name = tx.attributes.application_metadata?.name ?? null;
-  if (rel !== undefined && rel !== '') return { id: rel, name: name ?? rel };
-  if (name !== null && name !== '') return { id: slugify(name), name };
-  return null;
+  return dappIdent(tx.relationships?.dapp?.data.id, tx.attributes.application_metadata?.name ?? null);
+}
+
+/** A place met by name only: its category from the classifier, unless already known. */
+function ensureClassified(p: Protocol): Protocol {
+  if (p.category === 'unknown') {
+    p.category = classifyProtocol(p.id, p.name);
+    p.building = BUILDING_FOR[p.category];
+  }
+  return p;
 }
 
 // --- holdings ----------------------------------------------------------------
@@ -152,7 +163,8 @@ function mapItems(raw: RawWallet): { items: Item[]; spam: number } {
     const existing = byId.get(id);
     if (existing !== undefined) {
       existing.quantity += attrs.quantity.float;
-      existing.usd = (existing.usd ?? 0) + (usd ?? 0);
+      // unpriced + unpriced stays unpriced (null), not $0
+      existing.usd = existing.usd === null && usd === null ? null : (existing.usd ?? 0) + (usd ?? 0);
       existing.tier = tierOf(existing.usd);
       continue;
     }
@@ -161,7 +173,7 @@ function mapItems(raw: RawWallet): { items: Item[]; spam: number } {
       chainId,
       name: f.name,
       symbol: f.symbol,
-      category: classifyAsset(f.symbol, f.name, chainId, isNative),
+      category: classifyAsset(f.symbol, f.name, isNative),
       quantity: attrs.quantity.float,
       usd,
       tier: tierOf(usd),
@@ -241,17 +253,9 @@ function mapStashes(raw: RawWallet, book: ProtocolBook): Stash[] {
   }
   const stashes: Stash[] = [];
   for (const [protocolId, entries] of byProtocol) {
-    const netUsd = entries.reduce((s, e) => s + e.usd, 0);
-    const grossUsd = entries.reduce((s, e) => s + Math.abs(e.usd), 0);
-    stashes.push({
-      protocolId,
-      entries: entries.sort((a, b) => Math.abs(b.usd) - Math.abs(a.usd)),
-      netUsd,
-      grossUsd,
-      tier: tierOf(grossUsd),
-      hasRewards: entries.some((e) => e.kind === 'reward' && e.usd >= 1),
-      hasDebt: entries.some((e) => e.kind === 'loan'),
-    });
+    const totals = summarizeStash(entries); // (summed in the order met, then sorted biggest first)
+    entries.sort((a, b) => Math.abs(b.usd) - Math.abs(a.usd));
+    stashes.push({ protocolId, ...totals });
   }
   return stashes.sort((a, b) => b.grossUsd - a.grossUsd);
 }
@@ -476,14 +480,7 @@ function contractPlace(address: string, raw: TransactionResource, ctx: BuildCtx)
   const known = KNOWN_CONTRACTS[addr];
   if (known !== undefined) return ctx.book.fixed(known.id, known.name, known.category);
   const learned = ctx.learned.get(addr);
-  if (learned !== undefined) {
-    const p = ctx.book.touch(learned.id, learned.name, { iconUrl: learned.iconUrl });
-    if (p.category === 'unknown') {
-      p.category = classifyProtocol(p.id, p.name);
-      p.building = BUILDING_FOR[p.category];
-    }
-    return p;
-  }
+  if (learned !== undefined) return ensureClassified(ctx.book.touch(learned.id, learned.name, { iconUrl: learned.iconUrl }));
   const named = ctx.book.byId.get(`contract:${addr}`);
   if (named !== undefined) return named;
   const chainId = raw.relationships?.chain?.data.id;
@@ -508,6 +505,59 @@ function mapJourney(raw: TransactionResource, hero: Hero, ctx: BuildCtx): Journe
   const chainId = raw.relationships?.chain?.data.id ?? 'unknown';
   const initiated = a.sent_from.toLowerCase() === wallet;
 
+  // (the order matters: each of these may name a place in the book, and the first to name it decides its details)
+  const named = resolveProtocol(raw, ctx);
+  const ins = a.transfers.filter((t) => t.direction === 'in');
+  const outs = a.transfers.filter((t) => t.direction === 'out');
+  const protocolId = named?.id;
+  const stash = protocolId === undefined ? undefined : hero.stashes.find((s) => s.protocolId === protocolId);
+  const loanSymbols = new Set((stash?.entries ?? []).filter((e) => e.kind === 'loan').map((e) => e.symbol.toUpperCase()));
+  const { place, other, transferish } = resolvePlace(raw, named, wallet, initiated, ctx);
+
+  const verb = refineVerb(a.operation_type, {
+    wallet,
+    category: (named ?? place)?.category ?? null,
+    initiated,
+    ins,
+    outs,
+    loanSymbols,
+  });
+  const { counterparty, counterpartyHero } = resolveCounterparty(raw, wallet, initiated, ctx);
+  const { target, protocol } = resolveTarget({ verb, named, place, transferish, counterpartyHero, other, wallet }, ctx);
+  if (protocol !== null) protocol.visits++;
+  const steps = buildSteps(raw, { verb, target, protocol, wallet, initiated, loanSymbols, ins, outs }, ctx);
+
+  const sumIn = ins.reduce((s, t) => s + (t.value ?? 0), 0);
+  const sumOut = outs.reduce((s, t) => s + (t.value ?? 0), 0);
+  const valueUsd = Math.max(sumIn, sumOut);
+  const tier = tierOf(valueUsd);
+
+  return {
+    key: txKey(raw),
+    hash: a.hash,
+    chainId,
+    hero: wallet,
+    time,
+    status: a.status,
+    feeUsd: a.fee?.value ?? null,
+    feeNative: a.fee?.quantity?.float ?? null,
+    block: a.mined_at_block ?? null,
+    method: a.application_metadata?.method?.name ?? (a.acts ?? []).map((x) => x.application_metadata?.method?.name).find((m) => m !== undefined) ?? null,
+    initiated,
+    verb,
+    steps,
+    valueUsd,
+    tier,
+    drama: dramaFor(verb, tier, a.status),
+    counterparty,
+    counterpartyHero,
+    label: buildLabel({ verb, ins, outs, protocol, target, counterparty, counterpartyHero, status: a.status, valueUsd }, ctx),
+  };
+}
+
+/** The dApp Zerion names for the transaction (or, for a key handed over or taken back, the spender), classified. */
+function resolveProtocol(raw: TransactionResource, ctx: BuildCtx): Protocol | null {
+  const a = raw.attributes;
   const ident = txProtocol(raw);
   let protocol: Protocol | null = null;
   // Approvals are sent to the token, but the key goes to the spender.
@@ -521,23 +571,21 @@ function mapJourney(raw: TransactionResource, hero: Hero, ctx: BuildCtx): Journe
     });
   }
   // Classification has to be known before refining the verb.
-  if (protocol !== null && protocol.category === 'unknown' && !protocol.id.startsWith('mystery:')) {
-    protocol.category = classifyProtocol(protocol.id, protocol.name);
-    protocol.building = BUILDING_FOR[protocol.category];
-  }
+  if (protocol !== null && !protocol.id.startsWith('mystery:')) ensureClassified(protocol);
+  return protocol;
+}
 
-  const ins = a.transfers.filter((t) => t.direction === 'in');
-  const outs = a.transfers.filter((t) => t.direction === 'out');
-  const protocolId = protocol?.id;
-  const stash = protocolId === undefined ? undefined : hero.stashes.find((s) => s.protocolId === protocolId);
-  const loanSymbols = new Set((stash?.entries ?? []).filter((e) => e.kind === 'loan').map((e) => e.symbol.toUpperCase()));
-
-  // Without a dApp, the contract itself is the place — resolve it first, since
-  // its category (an NFT market, a lending pool) shapes what the hero did there.
+/**
+ * Without a dApp, the contract itself is the place — resolved before the
+ * verb, since its category (an NFT market, a lending pool) shapes what the
+ * hero did there. `other`: the other side of the transaction.
+ */
+function resolvePlace(raw: TransactionResource, named: Protocol | null, wallet: string, initiated: boolean, ctx: BuildCtx): { place: Protocol | null; other: string; transferish: boolean } {
+  const a = raw.attributes;
   const other = (initiated ? a.sent_to : a.sent_from).toLowerCase();
   const transferish = a.operation_type === 'send' || a.operation_type === 'receive';
   let place: Protocol | null = null;
-  if (protocol === null && a.operation_type !== 'deploy') {
+  if (named === null && a.operation_type !== 'deploy') {
     if (!transferish) place = contractPlace(other, raw, ctx);
     else {
       // A send/receive is only person-to-person if the contract called is the
@@ -558,88 +606,92 @@ function mapJourney(raw: TransactionResource, hero: Hero, ctx: BuildCtx): Journe
       }
     }
   }
+  return { place, other, transferish };
+}
 
-  const verb = refineVerb(a.operation_type, {
-    wallet,
-    category: (protocol ?? place)?.category ?? null,
-    initiated,
-    ins,
-    outs,
-    loanSymbols,
-  });
-
-  // Counterparty: for sends/receives, the other side of the biggest transfer.
+/** Counterparty: for sends/receives, the other side of the biggest transfer (and the guild hero it is, if one). */
+function resolveCounterparty(raw: TransactionResource, wallet: string, initiated: boolean, ctx: BuildCtx): { counterparty: string | null; counterpartyHero: string | null } {
+  const a = raw.attributes;
   let counterparty: string | null = null;
   const main = [...a.transfers].sort((x, y) => (y.value ?? 0) - (x.value ?? 0))[0];
   if (main !== undefined) counterparty = (main.direction === 'out' ? main.recipient : main.sender).toLowerCase();
   if (counterparty === wallet) counterparty = initiated ? a.sent_to.toLowerCase() : a.sent_from.toLowerCase();
   const counterpartyHero = counterparty !== null && ctx.guild.has(counterparty) && counterparty !== wallet ? counterparty : null;
+  return { counterparty, counterpartyHero };
+}
 
-  // Where does the hero go? Anything contract-shaped without a known dApp is a
-  // mysterious tent, never a guess.
-  let target: Target;
-  if (place !== null && transferish && protocol === null) {
-    protocol = place;
-    target = { kind: 'building', protocolId: place.id };
-  } else if (verb === 'send' || verb === 'receive' || verb === 'airdrop') {
-    if (protocol !== null && verb === 'airdrop') target = { kind: 'building', protocolId: protocol.id };
-    else target = counterpartyHero !== null ? { kind: 'home', address: counterpartyHero } : { kind: 'gate' };
-  } else if (protocol !== null) {
-    target = { kind: 'building', protocolId: protocol.id };
-  } else if (verb === 'deploy') {
+/**
+ * Where does the hero go, and which place is the journey's? Anything
+ * contract-shaped without a known dApp is a mysterious tent, never a guess.
+ */
+function resolveTarget(
+  o: { verb: Verb; named: Protocol | null; place: Protocol | null; transferish: boolean; counterpartyHero: string | null; other: string; wallet: string },
+  ctx: BuildCtx,
+): { target: Target; protocol: Protocol | null } {
+  const { verb, named, place, counterpartyHero, other, wallet } = o;
+  if (place !== null && o.transferish && named === null) return { target: { kind: 'building', protocolId: place.id }, protocol: place };
+  if (verb === 'send' || verb === 'receive' || verb === 'airdrop') {
+    if (named !== null && verb === 'airdrop') return { target: { kind: 'building', protocolId: named.id }, protocol: named };
+    return { target: counterpartyHero !== null ? { kind: 'home', address: counterpartyHero } : { kind: 'gate' }, protocol: named };
+  }
+  if (named !== null) return { target: { kind: 'building', protocolId: named.id }, protocol: named };
+  if (verb === 'deploy') {
     // A foundation stone laid in the Wilds.
-    protocol = ctx.book.fixed(CAMP_ID, CAMP_NAME, 'unknown');
-    target = { kind: 'building', protocolId: protocol.id };
-  } else {
-    protocol = place;
-    if (protocol !== null) target = { kind: 'building', protocolId: protocol.id };
-    else if (ctx.guild.has(other) && other !== wallet) target = { kind: 'home', address: other };
-    else target = { kind: 'gate' };
+    const camp = ctx.book.fixed(CAMP_ID, CAMP_NAME, 'unknown');
+    return { target: { kind: 'building', protocolId: camp.id }, protocol: camp };
   }
-  if (protocol !== null) protocol.visits++;
+  if (place !== null) return { target: { kind: 'building', protocolId: place.id }, protocol: place };
+  if (ctx.guild.has(other) && other !== wallet) return { target: { kind: 'home', address: other }, protocol: null };
+  return { target: { kind: 'gate' }, protocol: null };
+}
 
-  const steps: JourneyStep[] = [];
+/** The journey's waypoints: one per sub-action for an Expedition (several acts), else the one. */
+function buildSteps(
+  raw: TransactionResource,
+  o: { verb: Verb; target: Target; protocol: Protocol | null; wallet: string; initiated: boolean; loanSymbols: Set<string>; ins: TransferResource[]; outs: TransferResource[] },
+  ctx: BuildCtx,
+): JourneyStep[] {
+  const a = raw.attributes;
   const acts = a.acts ?? [];
-  if (acts.length > 1 && a.transfers.some((t) => t.act_id !== undefined)) {
-    // An Expedition: one waypoint per sub-action, in order.
-    for (const act of acts) {
-      const actTransfers = a.transfers.filter((t) => t.act_id === act.id);
-      const actName = act.application_metadata?.name;
-      let actTarget = target;
-      if (actName !== undefined && actName !== '') {
-        const p = ctx.book.touch(slugify(actName), actName, { iconUrl: act.application_metadata?.icon?.url });
-        if (p.category === 'unknown') {
-          p.category = classifyProtocol(p.id, p.name);
-          p.building = BUILDING_FOR[p.category];
-        }
-        actTarget = { kind: 'building', protocolId: p.id };
-      }
-      steps.push({
-        verb: refineVerb(act.type ?? a.operation_type, {
-          wallet,
-          category: protocol?.category ?? null,
-          initiated,
-          ins: actTransfers.filter((t) => t.direction === 'in'),
-          outs: actTransfers.filter((t) => t.direction === 'out'),
-          loanSymbols,
-        }),
-        target: actTarget,
-        give: actTransfers.filter((t) => t.direction === 'out').map(goods),
-        get: actTransfers.filter((t) => t.direction === 'in').map(goods),
-      });
+  if (!(acts.length > 1 && a.transfers.some((t) => t.act_id !== undefined))) return [{ verb: o.verb, target: o.target, give: o.outs.map(goods), get: o.ins.map(goods) }];
+  const steps: JourneyStep[] = [];
+  for (const act of acts) {
+    const actTransfers = a.transfers.filter((t) => t.act_id === act.id);
+    const actName = act.application_metadata?.name;
+    let actTarget = o.target;
+    let actProtocol = o.protocol;
+    if (actName !== undefined && actName !== '') {
+      const p = ensureClassified(ctx.book.touch(slugify(actName), actName, { iconUrl: act.application_metadata?.icon?.url }));
+      actTarget = { kind: 'building', protocolId: p.id };
+      actProtocol = p;
     }
-  } else {
-    steps.push({ verb, target, give: outs.map(goods), get: ins.map(goods) });
+    steps.push({
+      // the act's own protocol decides its verb (an aggregator-routed Aave deposit is a supply)
+      verb: refineVerb(act.type ?? a.operation_type, {
+        wallet: o.wallet,
+        category: actProtocol?.category ?? null,
+        initiated: o.initiated,
+        ins: actTransfers.filter((t) => t.direction === 'in'),
+        outs: actTransfers.filter((t) => t.direction === 'out'),
+        loanSymbols: o.loanSymbols,
+      }),
+      target: actTarget,
+      give: actTransfers.filter((t) => t.direction === 'out').map(goods),
+      get: actTransfers.filter((t) => t.direction === 'in').map(goods),
+    });
   }
+  return steps;
+}
 
-  const sumIn = ins.reduce((s, t) => s + (t.value ?? 0), 0);
-  const sumOut = outs.reduce((s, t) => s + (t.value ?? 0), 0);
-  const valueUsd = Math.max(sumIn, sumOut);
-  const tier = tierOf(valueUsd);
-
-  const give = describeGoods(outs.map(goods));
-  const get = describeGoods(ins.map(goods));
-  const where = protocol !== null && target.kind === 'building' && protocol.id !== CAMP_ID ? ` at ${protocol.name}` : '';
+/** The quest's one line: "Swap 1.2 ETH → 3,000 USDC at Uniswap ($3.0k)". */
+function buildLabel(
+  o: { verb: Verb; ins: TransferResource[]; outs: TransferResource[]; protocol: Protocol | null; target: Target; counterparty: string | null; counterpartyHero: string | null; status: string; valueUsd: number },
+  ctx: BuildCtx,
+): string {
+  const { verb, protocol, counterparty, counterpartyHero } = o;
+  const give = describeGoods(o.outs.map(goods));
+  const get = describeGoods(o.ins.map(goods));
+  const where = protocol !== null && o.target.kind === 'building' && protocol.id !== CAMP_ID ? ` at ${protocol.name}` : '';
   const who = counterpartyHero !== null ? (ctx.names.get(counterpartyHero) ?? shortAddr(counterpartyHero)) : counterparty !== null ? shortAddr(counterparty) : '';
   let label: string;
   switch (verb) {
@@ -665,30 +717,9 @@ function mapJourney(raw: TransactionResource, hero: Hero, ctx: BuildCtx): Journe
     default:
       label = `${VERB_TEXT[verb]} ${give || get}${where}`.replace(/\s+/g, ' ').trim();
   }
-  if (a.status === 'failed') label = `Failed: ${label}`;
-  if (valueUsd > 0) label += ` (${approxUsd(valueUsd)})`;
-
-  return {
-    key: a.hash === '' ? raw.id : `${chainId}:${a.hash}`,
-    hash: a.hash,
-    chainId,
-    hero: wallet,
-    time,
-    status: a.status,
-    feeUsd: a.fee?.value ?? null,
-    feeNative: a.fee?.quantity?.float ?? null,
-    block: a.mined_at_block ?? null,
-    method: a.application_metadata?.method?.name ?? (a.acts ?? []).map((x) => x.application_metadata?.method?.name).find((m) => m !== undefined) ?? null,
-    initiated,
-    verb,
-    steps,
-    valueUsd,
-    tier,
-    drama: dramaFor(verb, tier, a.status),
-    counterparty,
-    counterpartyHero,
-    label,
-  };
+  if (o.status === 'failed') label = `Failed: ${label}`;
+  if (o.valueUsd > 0) label += ` (${approxUsd(o.valueUsd)})`;
+  return label;
 }
 
 // --- classes -----------------------------------------------------------------
@@ -806,6 +837,8 @@ export function buildGuild(raws: readonly RawWallet[], window: HistoryWindow = D
 
   const journeys = [...byKey.values()].sort((x, y) => x.time - y.time);
   consolidateMysteries(book, journeys);
+  // crossings between realms: each side of a bridge knows the other
+  linkBridges(journeys);
   const first = journeys[0];
   return {
     heroes,

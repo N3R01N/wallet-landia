@@ -81,7 +81,12 @@ export function looksPanel(ctx: LooksContext): HTMLElement {
     const remove = p.source === 'imported' ? el('button', { class: 'btn small', title: 'Remove this pack' }, '✕') : null;
     if (remove)
       remove.onclick = async () => {
-        await removeImportedPack(m.id);
+        try {
+          await removeImportedPack(m.id);
+        } catch (e) {
+          remove.title = `Could not remove: ${e instanceof Error ? e.message : String(e)}`;
+          return;
+        }
         ctx.onLoadout(assets.loadout);
         ctx.refresh();
       };
@@ -108,9 +113,15 @@ export function looksPanel(ctx: LooksContext): HTMLElement {
   picker.onchange = async () => {
     if (!picker.files || picker.files.length === 0) return;
     importMsg.textContent = 'Importing…';
-    const r = await importPackFolder(picker.files);
-    importMsg.textContent = r.ok ? '' : r.problems.join(' · ');
-    if (r.ok) ctx.refresh();
+    try {
+      const r = await importPackFolder(picker.files);
+      importMsg.textContent = r.ok ? '' : r.problems.join(' · ');
+      if (r.ok) ctx.refresh();
+    } catch (e) {
+      // never leave "Importing…" up (a full disk, a refused storage write)
+      importMsg.textContent = `Could not import: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    picker.value = '';
   };
 
   // the loadout, only for slots some pack can fill (the full catalogue is long)

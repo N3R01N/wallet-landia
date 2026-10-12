@@ -15,7 +15,13 @@ export interface Sprite {
   sign?: { x: number; y: number; w: number; h: number };
 }
 
+/**
+ * Drawn sprites by key, the most recently used kept: keys name heroes, crests and frames,
+ * so a long session (visited towns, new villagers) would otherwise keep every one it met.
+ * Far above what one frame draws; an evicted sprite is simply drawn again when next asked.
+ */
 const cache = new Map<string, Sprite>();
+const CACHE_MAX = 4096;
 
 export function sprite(
   key: string,
@@ -26,7 +32,12 @@ export function sprite(
   draw: (c: Ctx) => { sign?: Sprite['sign'] } | void,
 ): Sprite {
   const hit = cache.get(key);
-  if (hit !== undefined) return hit;
+  if (hit !== undefined) {
+    // to the back of the line (a Map keeps insertion order: the first is the least recently used)
+    cache.delete(key);
+    cache.set(key, hit);
+    return hit;
+  }
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.ceil(w));
   canvas.height = Math.max(1, Math.ceil(h));
@@ -37,6 +48,7 @@ export function sprite(
   const s: Sprite = { canvas, ax, ay };
   if (extra && extra.sign) s.sign = extra.sign;
   cache.set(key, s);
+  if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
   return s;
 }
 

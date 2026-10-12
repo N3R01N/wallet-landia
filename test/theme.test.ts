@@ -81,6 +81,17 @@ describe('theme bundles (pack format 2)', () => {
     expect(h.surroundings?.lamps).toBe('lantern'); // inherited field
   });
 
+  it('linking leaves each parent as loaded, so the order of index.json does not matter', () => {
+    // the parent's plaster `use`s stone; the child swaps stone, so its plaster follows
+    const mk = (id: string, theme: object) => rawBundle(validatePack({ format: 'wallet-landia-pack/2', id, name: id, author: 'a', version: '1', theme }).manifest!, (p) => `/${id}/${p}`, 'imported')!;
+    const parent = () => mk('pa', { materials: { stone: { color: 's.webp' }, plaster: { use: 'stone', tint: '#ffffff' } } });
+    const child = () => mk('ch', { extends: 'pa', materials: { stone: { color: 'c.webp' } } });
+    const [, after] = linkBundles([parent(), child()]);
+    const [before] = linkBundles([child(), parent()]);
+    expect(before!.spec.materials.plaster?.color).toBe('/ch/c.webp');
+    expect(after!.spec).toEqual(before!.spec);
+  });
+
   it('reports a missing parent and a loop instead of failing', () => {
     const mk = (id: string, parent: string) => rawBundle(validatePack({ format: 'wallet-landia-pack/2', id, name: id, author: 'a', version: '1', theme: { extends: parent, materials: {} } }).manifest!, (p) => p, 'imported')!;
     const [a, b, c] = linkBundles([mk('aa', 'bb'), mk('bb', 'aa'), mk('cc', 'nowhere')]);
@@ -129,6 +140,14 @@ describe('theme validation (data only, nothing trusted)', () => {
     expect(spec.characters?.mounts.t3?.clips.idle).toEqual(['Idle']);
     expect(spec.characters?.hair.male).toEqual([]);
     expect(problems.join(' ')).toContain('hair.male[0]');
+  });
+
+  it('gesture clips are optional, and checked when given', () => {
+    const problems: string[] = [];
+    const clips = { idle: 'I', walk: 'W', run: 'R', sit: 'S', talk: 'Idle_Talking_Loop', pickup: 'PickUp_Table', cheer: 'not a name!' };
+    const spec = validateTheme({ materials: {}, characters: { skeleton: 'ue5-universal', animations: 'a.glb', clips, bodies: { male: 'm.glb', female: 'f.glb' } } }, problems)!;
+    expect(spec.characters?.gestures).toEqual({ talk: 'Idle_Talking_Loop', pickup: 'PickUp_Table' });
+    expect(problems.join(' ')).toContain('clips.cheer');
   });
 
   it('a theme block needs format 2; format 1 packs still load without it', () => {

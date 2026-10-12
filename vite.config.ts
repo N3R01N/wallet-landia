@@ -1,8 +1,10 @@
+import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 
 /**
  * A static site. The browser calls api.zerion.io directly with the key the
- * player pastes in (CORS was verified in v3), so there is no proxy here.
+ * player pastes in, or (production builds) goes through the /api/zerion proxy,
+ * which the dev and preview servers stand in for below.
  */
 const zerionProxy = {
   target: 'https://api.zerion.io',
@@ -17,7 +19,19 @@ const zerionProxy = {
   },
 };
 
+/**
+ * The dev server's hot reload talks over a WebSocket, so `ws:` joins the
+ * pages' connect-src while serving only: a built page never allows sockets
+ * (one to any host would let an injected script carry the stored key away).
+ */
+const devSockets: Plugin = {
+  name: 'csp-dev-sockets',
+  apply: 'serve',
+  transformIndexHtml: (html) => html.replace("connect-src 'self'", "connect-src 'self' ws:"),
+};
+
 export default defineConfig({
+  plugins: [devSockets],
   // three.js + post-processing is ~650 kB but only loads when the 3D view opens.
   build: {
     target: 'es2022',

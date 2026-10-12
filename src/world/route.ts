@@ -17,7 +17,8 @@ export const FLY_CRUISE = 8.5;
 /** Horizontal distance over which a flyer climbs or descends at a door. */
 export const FLY_CLIMB = 0.45;
 
-const walkableAt = (plan: TownPlan, p: Pt): boolean => {
+/** Is the tile under p walkable? Bounded on x too, so x = MAP_W never reads the next row. */
+export const walkableAt = (plan: TownPlan, p: Pt): boolean => {
   const x = Math.floor(p.x);
   const y = Math.floor(p.y);
   return x >= 0 && y >= 0 && x < MAP_W && plan.walkable[y * MAP_W + x] === 1;

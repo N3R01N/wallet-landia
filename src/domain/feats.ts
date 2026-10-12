@@ -1,12 +1,11 @@
 /**
- * Gamification (Phase 5): medals a hero earns by doing things on-chain, the
- * titles they unlock, and teaching quests that point at something worth
- * learning about a hero's own wallet.
+ * Gamification: the medals (the player's badges, see `player.ts`) and the
+ * rules that earn them from a hero's journeys or holdings, the titles they
+ * unlock for every one of the player's heroes, and teaching quests that point
+ * at something worth learning about a hero's own wallet.
  *
- * Everything is read from the guild as loaded: a medal is earned by the first
- * journey that qualifies (so the replay can award it as it plays), or by what
- * a hero holds now. The player's browser remembers medals once seen, since
- * the history window moves on (see `settings.ts`).
+ * Badges belong to the player, across all their wallets, not to a hero: a
+ * hero's sheet shows no badges, only the titles the player's badges unlock.
  */
 
 import type { Guild, Hero, HeroClass, Journey, Verb } from './model.js';
@@ -24,17 +23,11 @@ export interface Medal {
   title: string;
 }
 
-/** Earned: when, and by which journey (null: for what the hero holds now). */
-export interface Earned {
-  at: number | null;
-  journey: string | null;
-}
-
-type JourneyRule = (j: Journey, seen: Seen) => boolean;
-type HoldingRule = (hero: Hero) => boolean;
+export type JourneyRule = (j: Journey, seen: Seen) => boolean;
+export type HoldingRule = (hero: Hero) => boolean;
 
 /** What a hero has done so far, walking their journeys oldest first. */
-interface Seen {
+export interface Seen {
   initiated: number;
   places: Set<string>;
   liquidated: boolean;
@@ -271,47 +264,39 @@ const MEDALS: MedalDef[] = [
 
 export const ALL_MEDALS: readonly Medal[] = MEDALS;
 
-/** A hero's journeys (theirs, or a guild-mate's send to them), oldest first. */
-function journeysOf(hero: Hero, guild: Guild): Journey[] {
-  return guild.journeys.filter((j) => j.hero === hero.address);
+/** The rule behind each medal, for the player's lifetime badges (`player.ts`). */
+export function medalRules(): { medal: Medal; journey?: JourneyRule; holding?: HoldingRule }[] {
+  // ALL_MEDALS is MEDALS, so each rule's medal is simply its own entry
+  return MEDALS.map((m) => ({ medal: m, ...(m.journey ? { journey: m.journey } : {}), ...(m.holding ? { holding: m.holding } : {}) }));
 }
 
-/** The medals a hero has earned, from the loaded guild. */
-export function earnedMedals(hero: Hero, guild: Guild): Map<string, Earned> {
-  const out = new Map<string, Earned>();
+/**
+ * Walk journeys (oldest first) keeping count of what was done so far: `each`
+ * sees every journey with what is seen up to and including it (but a
+ * liquidation only counts from the journey after it: surviving it comes later).
+ */
+export function walkSeen(journeys: Iterable<Journey>, each: (j: Journey, seen: Seen) => void): void {
   const seen: Seen = { initiated: 0, places: new Set(), liquidated: false };
-  for (const j of journeysOf(hero, guild)) {
+  for (const j of journeys) {
     if (j.initiated) {
       seen.initiated++;
       for (const s of j.steps) if (s.target.kind === 'building') seen.places.add(s.target.protocolId);
     }
-    for (const m of MEDALS) if (!out.has(m.id) && m.journey?.(j, seen)) out.set(m.id, { at: j.time, journey: j.key });
+    each(j, seen);
     if (j.verb === 'liquidated') seen.liquidated = true;
   }
-  for (const m of MEDALS) if (!out.has(m.id) && m.holding?.(hero)) out.set(m.id, { at: null, journey: null });
-  return out;
 }
 
-/** Medals earned by each journey: journey key → [hero, medal]. For announcing them as the replay plays. */
-export function medalsByJourney(guild: Guild): Map<string, { hero: string; medal: Medal }[]> {
-  const out = new Map<string, { hero: string; medal: Medal }[]>();
-  for (const hero of guild.heroes) {
-    for (const [id, e] of earnedMedals(hero, guild)) {
-      if (e.journey === null) continue;
-      const medal = MEDALS.find((m) => m.id === id)!;
-      const list = out.get(e.journey) ?? [];
-      list.push({ hero: hero.address, medal });
-      out.set(e.journey, list);
-    }
-  }
-  return out;
+/** A hero's journeys (theirs, or a guild-mate's send to them), oldest first. */
+function journeysOf(hero: Hero, guild: Guild): Journey[] {
+  return guild.journeys.filter((j) => j.hero === hero.address);
 }
 
 export function medalById(id: string): Medal | undefined {
   return MEDALS.find((m) => m.id === id);
 }
 
-/** Titles a hero may wear: one per medal, plus their class. */
+/** Titles a hero may wear: one per badge the player has, plus their class. */
 export function titleOptions(cls: HeroClass, medals: Iterable<string>): string[] {
   const out = [`the ${CLASS_LABEL[cls]}`];
   for (const id of medals) {

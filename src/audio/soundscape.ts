@@ -29,6 +29,7 @@ export class Soundscape {
   #nextBird = 0;
   #nextCricket = 0;
   #started = 0;
+  #awaitingGesture = false;
   /** How many of each sound played (for tests and tuning). */
   readonly played: Record<string, number> = {};
 
@@ -54,7 +55,11 @@ export class Soundscape {
 
   /** On after a reload: wait for the first click or key to start. */
   #resumeOnGesture(): void {
+    // one pair of listeners at a time, however often sound is switched on before a gesture
+    if (this.#awaitingGesture) return;
+    this.#awaitingGesture = true;
     const go = (): void => {
+      this.#awaitingGesture = false;
       void this.#ctx?.resume();
       window.removeEventListener('pointerdown', go);
       window.removeEventListener('keydown', go);
@@ -158,12 +163,19 @@ export class Soundscape {
     this.played[e.kind] = (this.played[e.kind] ?? 0) + 1;
     switch (e.kind) {
       case 'ring':
-        this.bell(t, 0.5 + sim.chain.busy * 0.5);
+        // a province's bell is smaller, and rings higher
+        this.bell(t, (0.5 + sim.chain.busy * 0.5) * (sim.realm === 'ethereum' ? 1 : 0.75), sim.realm === 'ethereum' ? 196 : 294);
         break;
       case 'coins':
         if (t - this.#lastCoins < 0.12) return; // a busy replay: one jingle at a time
         this.#lastCoins = t;
-        this.#coins(t, e.color === '#ff5e5e' ? 'seized' : 'paid', e.drama);
+        this.#coins(t, e.seized === true ? 'seized' : 'paid', e.drama);
+        break;
+      case 'transfer':
+        // goods changing hands: a jingle as they land
+        if (t - this.#lastCoins < 0.12) return;
+        this.#lastCoins = t;
+        this.#coins(t + (e.delay ?? 0) + 0.7, e.seized === true ? 'seized' : 'paid', Math.min(1, e.drama));
         break;
       case 'sparkle':
         this.#chime(t, e.drama);

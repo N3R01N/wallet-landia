@@ -12,7 +12,12 @@
 import { loadFixtures } from './fixtures.js';
 import { reverseName } from './ens.js';
 import { openCache, type KV } from './cache.js';
-import { LiveLoader } from './live.js';
+import { LiveLoader, remeasureFor } from './live.js';
+import { Backfill } from './backfill.js';
+import type { LedgerStatus } from './ledger.js';
+import { decodeLedgerFile, encodeLedgerFile, LEDGER_FILE_FORMAT, type LedgerFile } from './ledgerFile.js';
+import { realmScope } from './zerion/endpoints.js';
+import { sanitizeLayout, type TownLayout } from '../world/townLayout.js';
 import { walletFingerprints } from './rpc.js';
 import { DailyBudget, type BudgetSnapshot } from './zerion/budget.js';
 import { ZerionError } from './zerion/client.js';
@@ -37,6 +42,8 @@ export interface SessionEvents {
   onUpdate(shown: Shown): void;
   onStatus(text: string, kind: 'info' | 'busy' | 'error'): void;
   onBudget(snapshot: BudgetSnapshot): void;
+  /** How far back each of your wallets' kept history reaches (the lifetime ledger), and why it is resting, if it is. */
+  onHistory?(statuses: LedgerStatus[], paused: Backfill['paused']): void;
 }
 
 const CATCH_UP_MS = 15 * 60_000;
@@ -84,6 +91,12 @@ export class Session {
   #lastDrift = Date.now();
   #checking = false;
   #generation = 0;
+  /** Bumped by each refresh the player asks for: a block check that started before one drops what it read. */
+  #refreshes = 0;
+  /** Reaching back through your own wallets' whole history, in the background. */
+  #backfill: Backfill | null = null;
+  /** The last lifetime history handed out, and what it was read from. */
+  #lifetime: { stamp: string; raws: RawWallet[] } | null = null;
 
   constructor(prefs: Prefs, events: SessionEvents) {
     this.prefs = prefs;
@@ -105,12 +118,110 @@ export class Session {
 
   /** The key changed: forget the client built with the old one. */
   keyChanged(): void {
+    this.#backfill?.stop();
+    this.#backfill = null;
     this.#loader = null;
   }
 
+  /** Your wallets' lifetime history: start (or carry on) reaching back through it; null stops it. */
+  #walkBack(loader: LiveLoader | null, addresses: readonly string[] | null): void {
+    if (loader === null || addresses === null || addresses.length === 0) {
+      this.#backfill?.stop();
+      this.#events.onHistory?.([], 'stopped');
+      return;
+    }
+    if (this.#backfill === null) {
+      const b = new Backfill({ ledger: loader.ledger, budget: () => this.budget.snapshot(), onProgress: (statuses) => this.#events.onHistory?.(statuses, b.paused) });
+      this.#backfill = b;
+      // a history that took many requests to gather is worth keeping: ask the browser not to clear it under pressure
+      void navigator.storage?.persist?.().catch(() => false);
+    }
+    this.#backfill.start(addresses);
+  }
+
+  /**
+   * Forget the cached towns (they refetch). The lifetime ledger (days of
+   * requests) and imported packs share the store and are kept.
+   */
   async clearCache(): Promise<void> {
     this.#cache ??= await openCache();
-    await this.#cache.clear();
+    await this.#cache.clear((k) => k.startsWith('wallet:'));
+  }
+
+  /**
+   * Your own wallets with everything kept of their history (the lifetime
+   * ledger), for the player's level and badges; the town's own wallets as
+   * they are when there is no ledger (fixtures, or nothing kept yet).
+   */
+  async lifetime(shown: Shown): Promise<RawWallet[]> {
+    if (shown.mode !== 'live' || shown.visiting !== null || this.#loader === null) return shown.raws;
+    const ledger = this.#loader.ledger;
+    // the same answer (the very same array) while nothing kept or shown changed, so the player need not be worked out again
+    const stamp = (
+      await Promise.all(shown.raws.map(async (r) => {
+        const st = await ledger.status(r.address).catch(() => null);
+        return `${r.address}:${st?.count ?? -1}:${st?.newest ?? ''}:${r.transactions.length}:${r.transactions[0]?.id ?? ''}:${r.capturedAt}`;
+      }))
+    ).join('|');
+    if (this.#lifetime?.stamp === stamp) return this.#lifetime.raws;
+    const raws = await Promise.all(
+      shown.raws.map(async (r) => {
+        const all = await ledger.all(r.address).catch(() => []);
+        // pending ones live only in the town's history
+        return all.length >= r.transactions.length ? { ...r, transactions: [...r.transactions.filter((t) => t.attributes.status === 'pending'), ...all] } : r;
+      }),
+    );
+    this.#lifetime = { stamp, raws };
+    return raws;
+  }
+
+  /** Your wallets' gathered history as a file (null: nothing kept, or no key). */
+  async exportHistory(): Promise<Blob | null> {
+    const loader = await this.#liveLoader();
+    if (loader === null) return null;
+    const wallets: LedgerFile['wallets'] = [];
+    for (const a of this.prefs.owned) {
+      const st = await loader.ledger.status(a);
+      if (st === null) continue;
+      wallets.push({ address: a, complete: st.complete, transactions: await loader.ledger.all(a) });
+    }
+    if (wallets.length === 0) return null;
+    // the towns you built travel with the history they were built from
+    const towns = Object.fromEntries(Object.entries(this.prefs.towns).map(([realm, t]) => [realm, sanitizeLayout(t)]).filter(([, t]) => (t as TownLayout).placed.length > 0));
+    return encodeLedgerFile({ format: LEDGER_FILE_FORMAT, scope: realmScope(), exportedAt: Date.now(), wallets, ...(Object.keys(towns).length > 0 ? { towns } : {}) });
+  }
+
+  /** Load a saved history file into your wallets' kept history; what happened, in plain words. */
+  async importHistory(data: ArrayBuffer): Promise<string> {
+    const loader = await this.#liveLoader();
+    if (loader === null) return 'Add your Zerion key first: the history belongs with the wallets it was gathered for.';
+    const file = await decodeLedgerFile(data);
+    const scope = realmScope();
+    if (file.scope !== scope) return `This history was gathered for other realms (${file.scope.replace(/\+/g, ', ')}); choose the same ones under Realms first.`;
+    const owned = new Set(this.prefs.owned.map((a) => a.toLowerCase()));
+    let loaded = 0;
+    let transactions = 0;
+    for (const w of file.wallets) {
+      if (!owned.has(w.address)) continue;
+      // merged with what is kept: an older file never undoes what was gathered since
+      await loader.ledger.merge(w.address, w.transactions, w.complete);
+      loaded++;
+      transactions += w.transactions.length;
+    }
+    const skipped = file.wallets.length - loaded;
+    // a town from the file, for each realm where you have not built one here
+    let towns = 0;
+    for (const [realm, raw] of Object.entries(loaded > 0 ? (file.towns ?? {}) : {})) {
+      const t = sanitizeLayout(raw);
+      if (t.placed.length === 0 || sanitizeLayout(this.prefs.towns[realm]).placed.length > 0) continue;
+      this.prefs.towns[realm] = t;
+      towns++;
+    }
+    if (towns > 0) savePrefs(this.prefs);
+    // carry on from there (anything newer, or older if it was not complete)
+    if (loaded > 0 && this.shown?.mode === 'live' && this.shown.visiting === null) this.#walkBack(loader, this.prefs.owned);
+    if (loaded === 0) return 'None of the wallets in that file are yours here: add them under Your wallets first.';
+    return `Loaded ${transactions.toLocaleString('en-US')} transactions for ${loaded} wallet${loaded === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} not yours here, left out)` : ''}${towns > 0 ? `, and the town${towns === 1 ? '' : 's'} you built` : ''}.`;
   }
 
   // --- names -----------------------------------------------------------------
@@ -139,35 +250,51 @@ export class Session {
     if (loader !== null && this.prefs.owned.length > 0) {
       const raws = await this.#loadLive(loader, this.prefs.owned, gen);
       if (raws === null) return;
-      this.#show({ mode: 'live', raws, visiting: null, names: await this.#names(this.prefs.owned), label: `Your guild · ${raws.length} wallet${raws.length === 1 ? '' : 's'} · live` }, 'town');
+      const names = await this.#names(this.prefs.owned);
+      // (the names can take seconds: a visit started meanwhile wins)
+      if (gen !== this.#generation) return;
+      this.#show({ mode: 'live', raws, visiting: null, names, label: `Your guild · ${raws.length} wallet${raws.length === 1 ? '' : 's'} · live` }, 'town');
+      this.#walkBack(loader, this.prefs.owned);
       return;
     }
+    this.#walkBack(null, null);
     const set = await loadFixtures();
     if (gen !== this.#generation) return;
     const label =
       set.kind === 'demo'
         ? 'Demo town (synthetic) — open ⚙ Guild to add your key and wallets'
         : `${set.wallets.length} captured wallets${loader === null ? ' — add a key in ⚙ Guild to go live' : ' — add your wallets in ⚙ Guild'}`;
-    this.#show({ mode: set.kind, raws: set.wallets, visiting: null, names: await this.#names(set.wallets.map((w) => w.address)), label }, 'town');
+    const names = await this.#names(set.wallets.map((w) => w.address));
+    if (gen !== this.#generation) return;
+    this.#show({ mode: set.kind, raws: set.wallets, visiting: null, names, label }, 'town');
   }
 
-  /** Visit a followed wallet's town (read-only, separate from home). */
-  async visit(address: string): Promise<void> {
+  /**
+   * Visit a town (read-only, separate from home): a followed wallet's, or a
+   * shared town's public wallets (`label` names it; with none, an empty town).
+   */
+  async visit(address: string | readonly string[], label?: string): Promise<void> {
     const gen = ++this.#generation;
-    const addr = address.toLowerCase();
+    const addrs = (typeof address === 'string' ? [address] : [...address]).map((a) => a.toLowerCase());
     const loader = await this.#liveLoader();
+    // a followed town keeps only its recent history: the walk back is for your own wallets
+    this.#walkBack(null, null);
     let raws: RawWallet[] | null;
-    if (loader !== null) {
-      raws = await this.#loadLive(loader, [addr], gen);
+    if (addrs.length === 0) raws = [];
+    else if (loader !== null) {
+      raws = await this.#loadLive(loader, addrs, gen);
     } else {
       const set = await loadFixtures();
-      const hit = set.wallets.find((w) => w.address === addr);
-      raws = hit ? [hit] : null;
+      const hits = set.wallets.filter((w) => addrs.includes(w.address));
+      raws = hits.length > 0 ? hits : null;
       if (raws === null) this.#events.onStatus('Visiting needs a Zerion key (or a captured fixture for that address).', 'error');
     }
     if (raws === null || gen !== this.#generation) return;
-    const names = await this.#names([addr]);
-    this.#show({ mode: loader ? 'live' : 'captured', raws, visiting: addr, names, label: `Visiting ${names.get(addr) ?? `${addr.slice(0, 6)}…${addr.slice(-4)}`}'s town` }, 'town');
+    const names = await this.#names(addrs);
+    if (gen !== this.#generation) return;
+    const first = addrs[0] ?? 'shared';
+    const who = label ?? names.get(first) ?? `${first.slice(0, 6)}…${first.slice(-4)}`;
+    this.#show({ mode: loader ? 'live' : 'captured', raws, visiting: first, names, label: `Visiting ${who}'s town` }, 'town');
   }
 
   /** Bring the town on show up to date now, at the player's request (~5 requests a wallet). */
@@ -177,6 +304,8 @@ export class Session {
     const loader = await this.#liveLoader();
     if (loader === null) return;
     const gen = this.#generation;
+    // a block check still in flight must not put back what it read before this
+    this.#refreshes++;
     const raws = await this.#loadLive(loader, shown.raws.map((r) => r.address), gen, true);
     if (raws === null || gen !== this.#generation) return;
     this.#show({ ...shown, raws: raws.map((r, i) => ({ ...r, label: shown.raws[i]?.label ?? r.label })) }, 'update');
@@ -231,13 +360,18 @@ export class Session {
   async onBlock(): Promise<void> {
     const shown = this.shown;
     if (shown === null || shown.mode !== 'live' || this.#checking) return;
-    const loader = await this.#liveLoader();
-    if (loader === null) return;
+    // taken before the first await, so two blocks close together cannot both pass
     this.#checking = true;
     const gen = this.#generation;
+    const refreshes = this.#refreshes;
     try {
+      const loader = await this.#liveLoader();
+      // nothing can be spent: leave the fingerprints and timers as they are, so the change is still seen once there is budget
+      if (loader === null || this.budget.exhausted) return;
       const addrs = shown.raws.map((r) => r.address);
-      const prints = await walletFingerprints(addrs);
+      // the free RPC failing (rate-limited, down) is not worth a word: the next block asks again
+      const prints = await walletFingerprints(addrs).catch(() => null);
+      if (prints === null) return;
       const due = Date.now() - this.#lastCatchUp > CATCH_UP_MS && document.visibilityState === 'visible';
       const changed = addrs.filter((a) => {
         const now = prints.get(a);
@@ -251,7 +385,7 @@ export class Session {
       const drift =
         Date.now() - this.#lastDrift > DRIFT_MS && this.budget.remaining > DRIFT_MIN_BUDGET && document.visibilityState === 'visible';
       if (drift) this.#lastDrift = Date.now();
-      if ((toRefresh.length === 0 && !drift) || this.budget.exhausted) return;
+      if (toRefresh.length === 0 && !drift) return;
 
       let added = 0;
       let revalued = false;
@@ -269,8 +403,7 @@ export class Session {
         // transfers only move tokens; anything touching a protocol may move
         // positions and NFTs as well, which costs more to re-measure.
         if (r.added > 0 && changed.includes(a)) {
-          const plain = r.fresh.every((t) => ['send', 'receive', 'approve', 'revoke'].includes(t.attributes.operation_type) && !t.relationships?.dapp);
-          const v = await loader.refreshValuations(a, plain ? 'tokens' : 'full');
+          const v = await loader.remeasure(a, remeasureFor(r.fresh));
           if (v) {
             put({ ...v, transactions: r.raw.transactions });
             revalued = true;
@@ -279,7 +412,7 @@ export class Session {
       }
       if (drift) {
         for (const a of addrs) {
-          const v = await loader.refreshValuations(a, 'total');
+          const v = await loader.remeasure(a, 'total');
           if (v) {
             const i = raws.findIndex((x) => x.address === a);
             if (i >= 0) raws[i] = { ...raws[i]!, portfolio: v.portfolio, capturedAt: v.capturedAt };
@@ -287,7 +420,7 @@ export class Session {
           }
         }
       }
-      if (gen !== this.#generation) return;
+      if (gen !== this.#generation || refreshes !== this.#refreshes) return;
       if (added > 0 || revalued) this.#show({ ...shown, raws }, 'update');
     } catch (error) {
       this.#events.onStatus(describeError(error), 'error');

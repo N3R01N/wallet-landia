@@ -38,6 +38,9 @@ export function shortAddr(a: string): string {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
+// one formatter, made once: the timeline shows a date every frame, and toLocaleString builds a new one per call
+const DATE_FMT = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+
 export function fmtDate(ms: number): string {
-  return new Date(ms).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return DATE_FMT.format(ms);
 }

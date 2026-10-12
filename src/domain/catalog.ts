@@ -121,7 +121,7 @@ const MEMES = new Set([
   'LADYS', 'WOJAK', 'ANDY', 'TRUMP', 'PNUT', 'POPCAT', 'HOSKY', 'ELON', 'KISHU', 'BITCOIN',
 ]);
 
-export function classifyAsset(symbol: string, name: string, chainId: string | null, isNative: boolean): AssetCategory {
+export function classifyAsset(symbol: string, name: string, isNative: boolean): AssetCategory {
   const s = symbol.toUpperCase();
   if (isNative) return 'native';
   if (/debt/i.test(symbol) || /debt/i.test(name)) return 'debt';
@@ -134,21 +134,23 @@ export function classifyAsset(symbol: string, name: string, chainId: string | nu
   if (/^a(eth|arb|opt|bas|pol)?[A-Z]/.test(symbol) && /aave/i.test(name)) return 'receipt';
   if (/^(c|yv|cv|st|sd|pt-|yt-)[A-Z]/.test(symbol) || /(-LP|LP$|UNI-V\d|SLP|BPT)/i.test(symbol)) return 'receipt';
   if (/vault|pool|position|staked/i.test(name)) return 'receipt';
-  void chainId;
   return 'token';
 }
 
-/** Ordered: first match wins, so specific names come before generic ones. */
+/**
+ * Ordered: first match wins, so specific names come before generic ones. Short names that
+ * hide inside other words are bounded (`hop` in Shop, `sky` in Skyweaver, `0x` in an address).
+ */
 const PROTOCOL_RULES: [RegExp, ProtocolCategory][] = [
   [/eigen|symbiotic|karak|ether\.?fi|renzo|kelp|puffer|swell|mellow/i, 'restaking'],
   [/lido|rocket ?pool|stakewise|frax ?ether|coinbase.*stak|stader|ankr|liquid collective|beacon/i, 'staking'],
-  [/aave|compound|morpho|spark|euler|fluid|maker|sky|liquity|radiant|venus|silo|notional|gearbox/i, 'lending'],
-  [/1inch|cow ?swap|cow protocol|0x|matcha|paraswap|kyber|odos|openocean|metamask swap|zerion|rainbow|bebop|uniswapx/i, 'aggregator'],
+  [/aave|compound|morpho|spark|euler|\bfluid\b|maker|\bsky\b|liquity|radiant|venus|silo|notional|gearbox/i, 'lending'],
+  [/1inch|cow ?swap|cow protocol|\b0x\b|matcha|paraswap|kyber|odos|openocean|metamask swap|zerion|rainbow|bebop|uniswapx/i, 'aggregator'],
   [/uniswap|curve|balancer|sushi|pancake|maverick|velodrome|aerodrome|bancor|dodo|ekubo|etherdelta|mooniswap/i, 'dex'],
   [/permit2/i, 'aggregator'],
-  [/yearn|pendle|convex|beefy|sommelier|idle|harvest|ethena|yield|vault|stakedao|stake dao|origin|tokemak|alchemix/i, 'yield'],
+  [/yearn|pendle|convex|beefy|sommelier|\bidle\b|harvest|ethena|yield|vault|stakedao|stake dao|\borigin\b|tokemak|alchemix/i, 'yield'],
   [/opensea|blur|magic ?eden|looksrare|rarible|zora|x2y2|foundation|sudoswap|tensor|seaport/i, 'nft-market'],
-  [/bridge|hop|across|stargate|orbiter|relay|li\.?fi|socket|synapse|wormhole|layerzero|celer|connext|portal|gateway/i, 'bridge'],
+  [/bridge|\bhop\b|across|stargate|orbiter|relay|li\.?fi|socket|synapse|wormhole|layerzero|celer|connext|portal|gateway/i, 'bridge'],
   [/\bens\b|ethereum name service/i, 'names'],
   [/snapshot|tally|governor|governance|dao/i, 'governance'],
   [/weth|wrapped ether/i, 'wrapper'],
