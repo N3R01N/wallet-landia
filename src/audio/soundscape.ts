@@ -169,13 +169,13 @@ export class Soundscape {
       case 'coins':
         if (t - this.#lastCoins < 0.12) return; // a busy replay: one jingle at a time
         this.#lastCoins = t;
-        this.#coins(t, e.color === '#ff5e5e' ? 'seized' : 'paid', e.drama);
+        this.#coins(t, e.seized === true ? 'seized' : 'paid', e.drama);
         break;
       case 'transfer':
         // goods changing hands: a jingle as they land
         if (t - this.#lastCoins < 0.12) return;
         this.#lastCoins = t;
-        this.#coins(t + (e.delay ?? 0) + 0.7, e.color === '#ff5e5e' ? 'seized' : 'paid', Math.min(1, e.drama));
+        this.#coins(t + (e.delay ?? 0) + 0.7, e.seized === true ? 'seized' : 'paid', Math.min(1, e.drama));
         break;
       case 'sparkle':
         this.#chime(t, e.drama);

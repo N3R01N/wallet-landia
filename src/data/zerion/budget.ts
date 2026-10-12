@@ -107,6 +107,16 @@ export class DailyBudget {
 
     this.#day = utcDay(this.#now());
     this.#load();
+    // other tabs on the same key spend from the same 300: follow their count as it moves
+    if (this.#storage !== null && typeof window !== 'undefined') {
+      window.addEventListener('storage', (e) => {
+        if (e.key !== STORAGE_KEY) return;
+        const before = this.#used;
+        this.#rollover();
+        this.#merge();
+        if (this.#used !== before) this.#onChange?.(this.snapshot());
+      });
+    }
   }
 
   get used(): number {
@@ -139,6 +149,8 @@ export class DailyBudget {
   /** Count one request against today. */
   spend(count = 1): void {
     this.#rollover();
+    // another tab may have spent since: count on from the higher of the two
+    this.#merge();
     this.#used += Math.max(0, Math.floor(count));
     this.#commit();
   }
@@ -175,8 +187,20 @@ export class DailyBudget {
     this.#commit();
   }
 
+  /** Take the stored count when it is today's and higher (written by another tab). */
+  #merge(): void {
+    const before = this.#used;
+    this.#load();
+    if (this.#used < before) this.#used = before;
+  }
+
   #load(): void {
-    const raw = this.#storage?.getItem(STORAGE_KEY);
+    let raw: string | null | undefined;
+    try {
+      raw = this.#storage?.getItem(STORAGE_KEY);
+    } catch {
+      return;
+    }
     if (raw === null || raw === undefined) return;
     try {
       const parsed: unknown = JSON.parse(raw);

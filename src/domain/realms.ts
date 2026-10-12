@@ -10,8 +10,7 @@
  * can point at the other.
  */
 
-import type { Goods, Guild, Hero, Journey, Stash } from './model.js';
-import { tierOf } from './tiers.js';
+import { summarizeStash, type Goods, type Guild, type Hero, type Journey, type Stash } from './model.js';
 
 export interface Realm {
   id: string;
@@ -84,9 +83,7 @@ export function realmGuild(guild: Guild, chainId: string): Guild {
     const stashes = h.stashes.flatMap((s): Stash[] => {
       const entries = s.entries.filter((e) => e.chainId === chainId);
       if (entries.length === 0) return [];
-      const netUsd = entries.reduce((t, e) => t + e.usd, 0);
-      const grossUsd = entries.reduce((t, e) => t + Math.abs(e.usd), 0);
-      return [{ ...s, entries, netUsd, grossUsd, tier: tierOf(grossUsd), hasRewards: entries.some((e) => e.kind === 'reward' && e.usd >= 1), hasDebt: entries.some((e) => e.kind === 'loan') }];
+      return [{ ...s, ...summarizeStash(entries) }];
     });
     return { ...h, items: h.items.filter((i) => i.chainId === chainId), nfts: h.nfts.filter((i) => i.chainId === chainId), stashes };
   });

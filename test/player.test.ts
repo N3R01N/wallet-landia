@@ -1,4 +1,9 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { RawWallet } from '../src/data/zerion/endpoints.js';
+import { buildGuild } from '../src/domain/mappers.js';
+import { fromWire, workPlayer } from '../src/domain/playerJob.js';
 import type { Guild, Hero, Journey, Verb } from '../src/domain/model.js';
 import { badgeMoments, levelForXp, playerProfile, rankOf, xpForLevel } from '../src/domain/player.js';
 
@@ -90,5 +95,22 @@ describe('the player', () => {
     const moments = badgeMoments(playerProfile(guild([hero('0xa')], swaps), new Map(), NOW));
     expect(moments.get(swaps[0]!.key)!.map((m) => m.badge.medal.id).sort()).toEqual(['barter', 'first-steps']);
     expect(moments.get(swaps[9]!.key)!.map((m) => `${m.badge.medal.id}:${m.tier}`).sort()).toEqual(['barter:2', 'first-steps:2']);
+  });
+});
+
+describe('the player off the main thread', () => {
+  it('crosses to a worker and back (structured clone) unchanged', () => {
+    const dir = resolve(__dirname, '../fixtures');
+    const raws = readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(readFileSync(resolve(dir, f), 'utf8')) as RawWallet);
+    const remembered = new Map([['founder', { at: T0, wallet: raws[0]!.address.toLowerCase(), journey: null }]]);
+    const job = { raws, names: new Map<string, string>(), remembered, now: NOW };
+    const direct = playerProfile(buildGuild(raws, { kind: 'count', count: Number.MAX_SAFE_INTEGER }, { names: job.names }), remembered, NOW);
+    // what a worker would receive, and what it would send back
+    const back = fromWire(structuredClone(workPlayer(structuredClone(job))));
+    expect(back.badges.size).toBeGreaterThan(3);
+    expect([...back.badges.keys()]).toEqual([...direct.badges.keys()]);
+    expect(back).toEqual(direct);
+    // the medals are the very same ones (titles and icons look them up)
+    for (const [id, b] of back.badges) expect(b.medal).toBe(direct.badges.get(id)!.medal);
   });
 });

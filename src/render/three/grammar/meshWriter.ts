@@ -30,6 +30,11 @@ const _n = new THREE.Vector3();
 const _u = new THREE.Vector3();
 const _v = new THREE.Vector3();
 const _p = new THREE.Vector3();
+// box(): a building has hundreds; no matrix, Euler, set and vectors of its own each
+const _m = new THREE.Matrix4();
+const _e = new THREE.Euler();
+const _t = new THREE.Vector3();
+const NO_SKIP: readonly string[] = [];
 
 export class MeshWriter {
   readonly #parts = new Map<string, Part>();
@@ -86,18 +91,26 @@ export class MeshWriter {
   /** An axis-aligned (optionally rotated) box. `skip` drops faces nobody sees. */
   box(center: V3, size: V3, mat: Mat, opts: { rotX?: number; rotY?: number; rotZ?: number; skip?: ('top' | 'bottom' | 'front' | 'back' | 'left' | 'right')[] } = {}): void {
     const [hx, hy, hz] = [size[0] / 2, size[1] / 2, size[2] / 2];
-    const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(opts.rotX ?? 0, opts.rotY ?? 0, opts.rotZ ?? 0)).setPosition(center[0], center[1], center[2]);
-    const t = (x: number, y: number, z: number): V3 => {
-      const v = new THREE.Vector3(x, y, z).applyMatrix4(m);
-      return [v.x, v.y, v.z];
-    };
-    const skip = new Set(opts.skip ?? []);
-    if (!skip.has('front')) this.quad(t(-hx, -hy, hz), t(hx, -hy, hz), t(hx, hy, hz), t(-hx, hy, hz), mat);
-    if (!skip.has('back')) this.quad(t(hx, -hy, -hz), t(-hx, -hy, -hz), t(-hx, hy, -hz), t(hx, hy, -hz), mat);
-    if (!skip.has('right')) this.quad(t(hx, -hy, hz), t(hx, -hy, -hz), t(hx, hy, -hz), t(hx, hy, hz), mat);
-    if (!skip.has('left')) this.quad(t(-hx, -hy, -hz), t(-hx, -hy, hz), t(-hx, hy, hz), t(-hx, hy, -hz), mat);
-    if (!skip.has('top')) this.quad(t(-hx, hy, hz), t(hx, hy, hz), t(hx, hy, -hz), t(-hx, hy, -hz), mat);
-    if (!skip.has('bottom')) this.quad(t(-hx, -hy, -hz), t(hx, -hy, -hz), t(hx, -hy, hz), t(-hx, -hy, hz), mat);
+    const [cx, cy, cz] = center;
+    const rx = opts.rotX ?? 0;
+    const ry = opts.rotY ?? 0;
+    const rz = opts.rotZ ?? 0;
+    // unrotated (most boxes): a plain offset, the same numbers the identity rotation gives
+    const rotated = rx !== 0 || ry !== 0 || rz !== 0;
+    if (rotated) _m.makeRotationFromEuler(_e.set(rx, ry, rz)).setPosition(cx, cy, cz);
+    const t = rotated
+      ? (x: number, y: number, z: number): V3 => {
+          _t.set(x, y, z).applyMatrix4(_m);
+          return [_t.x, _t.y, _t.z];
+        }
+      : (x: number, y: number, z: number): V3 => [x + cx, y + cy, z + cz];
+    const skip = opts.skip ?? NO_SKIP;
+    if (!skip.includes('front')) this.quad(t(-hx, -hy, hz), t(hx, -hy, hz), t(hx, hy, hz), t(-hx, hy, hz), mat);
+    if (!skip.includes('back')) this.quad(t(hx, -hy, -hz), t(-hx, -hy, -hz), t(-hx, hy, -hz), t(hx, hy, -hz), mat);
+    if (!skip.includes('right')) this.quad(t(hx, -hy, hz), t(hx, -hy, -hz), t(hx, hy, -hz), t(hx, hy, hz), mat);
+    if (!skip.includes('left')) this.quad(t(-hx, -hy, -hz), t(-hx, -hy, hz), t(-hx, hy, hz), t(-hx, hy, -hz), mat);
+    if (!skip.includes('top')) this.quad(t(-hx, hy, hz), t(hx, hy, hz), t(hx, hy, -hz), t(-hx, hy, -hz), mat);
+    if (!skip.includes('bottom')) this.quad(t(-hx, -hy, -hz), t(hx, -hy, -hz), t(hx, -hy, hz), t(-hx, -hy, hz), mat);
   }
 
   /** A square-section beam from a to b (rails, logs, braces), its top kept up. */

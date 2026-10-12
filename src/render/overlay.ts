@@ -433,7 +433,7 @@ export function transfers(c: CanvasRenderingContext2D, sim: Sim, project: Projec
     const to = dst && !dst.inside ? { x: dst.x, y: dst.y, h: handHeight(dst) } : { x: e.to.x, y: e.to.y, h: 0.9 };
     const n = Math.min(8, 2 + e.drama * 2);
     const r = (6 + e.drama) * zoom;
-    const rim = e.color === '#ff5e5e' ? '#d9a441' : '#f5c518';
+    const rim = e.seized === true ? '#d9a441' : '#f5c518';
     let landed = false;
     for (let i = 0; i < n; i++) {
       const k = (t - i * 0.07) / TRANSFER_FLIGHT;
@@ -484,7 +484,7 @@ function label(c: CanvasRenderingContext2D, e: Effect, t: number, at: { x: numbe
   const w = c.measureText(text).width + 8;
   c.fillStyle = 'rgba(43,29,20,0.72)';
   c.fillRect(p[0] - w / 2, p[1] - size, w, size + 5);
-  c.fillStyle = e.color === '#ff5e5e' ? '#ff9a8a' : e.dir === 'out' ? '#b9f5a0' : '#ffd29a';
+  c.fillStyle = e.seized === true ? '#ff9a8a' : e.dir === 'out' ? '#b9f5a0' : '#ffd29a';
   c.fillText(text, p[0], p[1]);
   c.globalAlpha = 1;
 }

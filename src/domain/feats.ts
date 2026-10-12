@@ -277,6 +277,23 @@ export function medalRules(): { medal: Medal; journey?: JourneyRule; holding?: H
   return MEDALS.map((m) => ({ medal: m, ...(m.journey ? { journey: m.journey } : {}), ...(m.holding ? { holding: m.holding } : {}) }));
 }
 
+/**
+ * Walk journeys (oldest first) keeping count of what was done so far: `each`
+ * sees every journey with what is seen up to and including it (but a
+ * liquidation only counts from the journey after it: surviving it comes later).
+ */
+export function walkSeen(journeys: Iterable<Journey>, each: (j: Journey, seen: Seen) => void): void {
+  const seen: Seen = { initiated: 0, places: new Set(), liquidated: false };
+  for (const j of journeys) {
+    if (j.initiated) {
+      seen.initiated++;
+      for (const s of j.steps) if (s.target.kind === 'building') seen.places.add(s.target.protocolId);
+    }
+    each(j, seen);
+    if (j.verb === 'liquidated') seen.liquidated = true;
+  }
+}
+
 /** A hero's journeys (theirs, or a guild-mate's send to them), oldest first. */
 function journeysOf(hero: Hero, guild: Guild): Journey[] {
   return guild.journeys.filter((j) => j.hero === hero.address);
@@ -285,19 +302,12 @@ function journeysOf(hero: Hero, guild: Guild): Journey[] {
 /** The medals a hero has earned, from the loaded guild. */
 export function earnedMedals(hero: Hero, guild: Guild): Map<string, Earned> {
   const out = new Map<string, Earned>();
-  const seen: Seen = { initiated: 0, places: new Set(), liquidated: false };
-  for (const j of journeysOf(hero, guild)) {
-    if (j.initiated) {
-      seen.initiated++;
-      for (const s of j.steps) if (s.target.kind === 'building') seen.places.add(s.target.protocolId);
-    }
+  walkSeen(journeysOf(hero, guild), (j, seen) => {
     for (const m of MEDALS) if (!out.has(m.id) && m.journey?.(j, seen)) out.set(m.id, { at: j.time, journey: j.key });
-    if (j.verb === 'liquidated') seen.liquidated = true;
-  }
+  });
   for (const m of MEDALS) if (!out.has(m.id) && m.holding?.(hero)) out.set(m.id, { at: null, journey: null });
   return out;
 }
-
 
 export function medalById(id: string): Medal | undefined {
   return MEDALS.find((m) => m.id === id);

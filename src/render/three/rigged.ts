@@ -50,6 +50,8 @@ interface Kit {
   parts: Map<string, THREE.Group>;
   /** Mount models by URL. */
   animals: Map<string, Animal>;
+  /** Merged outfits per look (`mergeParts`), made from this kit's parts and freed with it. */
+  merged: Map<string, Merged[]>;
 }
 
 // --- loading -----------------------------------------------------------------
@@ -85,7 +87,26 @@ export async function loadKit(spec: CharacterSpec, vehicles: VehicleFactory | nu
     }
   }
   for (const scene of [male, female, ...parts.values()]) prepareMaterials(scene);
-  return { spec, vehicles, clips: new Map(anim.animations.map((c) => [c.name, c])), bodies: { male, female }, parts, animals };
+  return { spec, vehicles, clips: new Map(anim.animations.map((c) => [c.name, c])), bodies: { male, female }, parts, animals, merged: new Map() };
+}
+
+/**
+ * Free a kit once nothing draws with it (its theme is gone, its people disposed first):
+ * the bodies, outfits and mounts with their textures, and the heads and merged outfits
+ * made from them. Without this every theme switch kept a whole cast on the GPU.
+ */
+export function disposeKit(kit: Kit): void {
+  const scenes = [kit.bodies.male, kit.bodies.female, ...kit.parts.values(), ...[...kit.animals.values()].map((a) => a.scene)];
+  for (const scene of scenes) {
+    scene.traverse((o) => {
+      const g = (o as THREE.Mesh).geometry as THREE.BufferGeometry | undefined;
+      const head = g ? headCache.get(g) : undefined;
+      head?.dispose(); // (kept for the kit's lifetime, so `disposeTree` would pass it by)
+    });
+    disposeTree(scene);
+  }
+  for (const list of kit.merged.values()) for (const m of list) m.geometry.dispose();
+  kit.merged.clear();
 }
 
 /**
@@ -235,8 +256,13 @@ function attach(part: THREE.Object3D, skeleton: THREE.Skeleton): void {
   for (const b of ownBones) b.removeFromParent();
 }
 
-/** Merged parts per look: the material, the geometry, and which parts (by name) went into it. */
-const mergedCache = new Map<string, { material: THREE.Material; geometry: THREE.BufferGeometry; group: number; names: string[] }[]>();
+/** Merged parts of one look: the material, the geometry, and which parts (by name) went into it. */
+interface Merged {
+  material: THREE.Material;
+  geometry: THREE.BufferGeometry;
+  group: number;
+  names: string[];
+}
 
 /** Same bind pose? (parts of the universal kits share it; anything else stays separate) */
 function sameMatrix(a: THREE.Matrix4, b: THREE.Matrix4, tolerance = 1e-3): boolean {
@@ -252,7 +278,7 @@ function sameMatrix(a: THREE.Matrix4, b: THREE.Matrix4, tolerance = 1e-3): boole
  * differs stays as it is. The merged geometry is shared by every character
  * wearing the same look (`key`).
  */
-function mergeParts(rider: THREE.Object3D, body: THREE.SkinnedMesh, key: string): void {
+function mergeParts(rider: THREE.Object3D, body: THREE.SkinnedMesh, key: string, mergedCache: Map<string, Merged[]>): void {
   const meshes: THREE.SkinnedMesh[] = [];
   rider.traverse((o) => {
     const m = o as THREE.SkinnedMesh;
@@ -480,7 +506,7 @@ class RiggedCharacter implements SandboxCharacter {
       this.#rider.add(part);
       attach(part, skeleton);
     }
-    if (bodyMesh) mergeParts(this.#rider, bodyMesh, `${spec.bodies[sex]}|${urls.join('|')}${wardrobe ? `|${wardrobe}` : ''}`);
+    if (bodyMesh) mergeParts(this.#rider, bodyMesh, `${spec.bodies[sex]}|${urls.join('|')}${wardrobe ? `|${wardrobe}` : ''}`, kit.merged);
     if (wardrobe && skinMaterial && skeleton) {
       // clothes painted onto the body by region, in this person's colours
       const dress = dressFor(look, wardrobe);

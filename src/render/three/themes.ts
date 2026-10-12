@@ -126,6 +126,9 @@ export function bundleTheme(b: ThemeBundle): Theme {
   const ground: Record<'grass' | 'road' | 'plaza' | 'path', MatKey> = { grass: 'grass', road: 'cobbles', path: 'dirt', plaza: spec.ground?.road ?? 'cobbles', ...spec.ground };
   const base = baseline();
   const style = spec.surroundings?.style ?? spec.buildings?.style ?? 'medieval';
+  // the theme's characters (a kit of glTF bodies, outfits, mounts) once loaded; freed with the theme
+  let freeKit: (() => void) | undefined;
+  let gone = false;
   const theme: Theme = {
     ...base,
     id: b.id,
@@ -145,6 +148,8 @@ export function bundleTheme(b: ThemeBundle): Theme {
     },
     board: style === 'modern' ? 'led' : style === 'scifi' ? 'holo' : 'wood',
     dispose: () => {
+      gone = true;
+      freeKit?.();
       builder.dispose();
       veg?.dispose();
       factory.dispose();
@@ -155,9 +160,13 @@ export function bundleTheme(b: ThemeBundle): Theme {
   const characters = spec.characters;
   if (characters) {
     theme.prepare = async () => {
-      const { loadKit, riggedProvider } = await import('./rigged.js');
+      const { disposeKit, loadKit, riggedProvider } = await import('./rigged.js');
       const { buildVehicle } = await import('./grammar/vehicles.js');
-      theme.characters = riggedProvider(await loadKit(characters, (kind, tint) => buildVehicle(kind, lib, tint)), `Rigged characters from the ${b.name} bundle`);
+      const kit = await loadKit(characters, (kind, tint) => buildVehicle(kind, lib, tint));
+      // switched away while it loaded: nothing will draw with it
+      if (gone) return disposeKit(kit);
+      freeKit = () => disposeKit(kit);
+      theme.characters = riggedProvider(kit, `Rigged characters from the ${b.name} bundle`);
       delete theme.prepare; // once
     };
   }

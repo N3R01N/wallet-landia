@@ -30,6 +30,10 @@ describe("the page's security policy", () => {
     for (const url of Object.values(PROVINCE_RPC)) expect(allows(connect, new URL(url).hostname), url).toBe(true);
   });
 
+  it("runs workers (the player's level) from this origin only", () => {
+    expect(directive('index.html', 'worker-src')).toEqual(["'self'"]);
+  });
+
   it('allows no WebSockets in a build (the dev server adds them for hot reload)', () => {
     for (const page of ['index.html', 'sandbox.html']) expect(directive(page, 'connect-src').some((s) => s.startsWith('ws'))).toBe(false);
   });

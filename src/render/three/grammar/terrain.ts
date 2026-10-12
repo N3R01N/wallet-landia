@@ -165,6 +165,7 @@ export class Terrain {
     const splat = new Float32Array(nx * nz * 4);
     const col = new Float32Array(nx * nz * 3);
     const tint = new THREE.Color();
+    const white = new THREE.Color(1, 1, 1);
     for (let j = 0; j < nz; j++) {
       for (let i = 0; i < nx; i++) {
         const x = xs[i]!;
@@ -182,7 +183,7 @@ export class Terrain {
         // macro variation: sun-bleached and lush patches
         const m = this.#n.fbm(x * 0.05 - 3, z * 0.05 + 11, 3);
         tint.setHSL(0.13 + m * 0.06, 0.25, 0.42 + m * 0.18);
-        tint.lerp(new THREE.Color(1, 1, 1), 0.55);
+        tint.lerp(white, 0.55);
         col.set([tint.r, tint.g, tint.b], k * 3);
       }
     }

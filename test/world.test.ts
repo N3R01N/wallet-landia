@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildGuild } from '../src/domain/mappers.js';
 import type { Guild, Journey, Protocol } from '../src/domain/model.js';
-import { findPath, MAP_H, MAP_W, planTown } from '../src/world/layout.js';
+import { findPath, MAP_H, MAP_W, planTown, type TileKind, type TownPlan } from '../src/world/layout.js';
+import { makeRng } from '../src/util/rng.js';
 import { schedule } from '../src/world/sim.js';
 import type { RawWallet } from '../src/data/zerion/endpoints.js';
 
@@ -246,5 +247,77 @@ describe('replaying a quest that came to the hero', () => {
     expect(actor.gone).toBe(true);
     expect(sim.findAgent(actor.id)).toBeUndefined();
     expect(sim.findAgent(j.hero)).toBeDefined(); // the camera goes back to the hero
+  });
+});
+
+/** findPath as it was (a list scanned for the lowest f, no closed set): the heap version must find the very same paths. */
+function findPathBefore(plan: TownPlan, from: { x: number; y: number }, to: { x: number; y: number }): { x: number; y: number }[] {
+  const STEP_COST: Record<TileKind, number> = { road: 1, plaza: 1, path: 1, sand: 4, grass: 40, wilds: 40, water: Infinity };
+  const clampX = (x: number): number => Math.max(0, Math.min(MAP_W - 1, x));
+  const clampY = (y: number): number => Math.max(0, Math.min(MAP_H - 1, y));
+  const idx = (x: number, y: number): number => y * MAP_W + x;
+  const sx = clampX(Math.floor(from.x));
+  const sy = clampY(Math.floor(from.y));
+  const tx = clampX(Math.floor(to.x));
+  const ty = clampY(Math.floor(to.y));
+  const start = idx(sx, sy);
+  const goal = idx(tx, ty);
+  const g = new Float32Array(MAP_W * MAP_H).fill(Infinity);
+  const came = new Int32Array(MAP_W * MAP_H).fill(-1);
+  const open: { i: number; f: number }[] = [{ i: start, f: 0 }];
+  g[start] = 0;
+  const h = (i: number): number => Math.abs((i % MAP_W) - tx) + Math.abs(Math.floor(i / MAP_W) - ty);
+  while (open.length > 0) {
+    let best = 0;
+    for (let k = 1; k < open.length; k++) if ((open[k]?.f ?? Infinity) < (open[best]?.f ?? Infinity)) best = k;
+    const cur = open.splice(best, 1)[0];
+    if (cur === undefined) break;
+    if (cur.i === goal) break;
+    const cx = cur.i % MAP_W;
+    const cy = Math.floor(cur.i / MAP_W);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) continue;
+      const ni = idx(nx, ny);
+      if (plan.walkable[ni] === 0 && ni !== goal) continue;
+      const cost = STEP_COST[plan.tiles[ni] ?? 'grass'];
+      const ng = (g[cur.i] ?? Infinity) + cost;
+      if (ng < (g[ni] ?? Infinity)) {
+        g[ni] = ng;
+        came[ni] = cur.i;
+        open.push({ i: ni, f: ng + h(ni) });
+      }
+    }
+  }
+  if (came[goal] === -1 && goal !== start) return [from, to];
+  const path: { x: number; y: number }[] = [];
+  for (let i = goal; i !== -1; i = came[i] ?? -1) {
+    path.push({ x: (i % MAP_W) + 0.5, y: Math.floor(i / MAP_W) + 0.5 });
+    if (i === start) break;
+  }
+  return path.reverse();
+}
+
+describe('findPath', () => {
+  it('finds the same paths as before it used a heap, on random grids and the real town', () => {
+    const rng = makeRng(7);
+    const kinds: TileKind[] = ['road', 'plaza', 'path', 'sand', 'grass', 'wilds', 'water'];
+    const pick = (): { x: number; y: number } => ({ x: rng() * MAP_W, y: rng() * MAP_H });
+    for (let n = 0; n < 60; n++) {
+      // mostly cheap roads (many equally good paths: the ties must break the same way), some walls and water
+      const tiles = Array.from({ length: MAP_W * MAP_H }, () => (rng() < 0.6 ? 'road' : kinds[Math.floor(rng() * kinds.length)]!));
+      const walkable = new Uint8Array(MAP_W * MAP_H).map(() => (rng() < 0.2 ? 0 : 1));
+      const plan = { tiles, walkable } as unknown as TownPlan;
+      for (let k = 0; k < 15; k++) {
+        const [a, b] = [pick(), pick()];
+        expect(findPath(plan, a, b)).toEqual(findPathBefore(plan, a, b));
+      }
+      // from a tile to itself, and to a walled-in tile
+      const a = pick();
+      expect(findPath(plan, a, a)).toEqual(findPathBefore(plan, a, a));
+    }
+    const town = planTown(buildGuild(demo));
+    for (const home of town.homes.values()) for (const b of town.buildings) expect(findPath(town, home.doorAt, b.doorAt)).toEqual(findPathBefore(town, home.doorAt, b.doorAt));
   });
 });

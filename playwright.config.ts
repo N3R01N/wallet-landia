@@ -4,8 +4,8 @@ import { defineConfig } from '@playwright/test';
  * Browser smoke tests: the things node tests cannot see (canvas, WebGL,
  * pointer hit-testing). WebGL runs on SwiftShader so it works headless.
  */
-/** The specs that render themed 3D towns or capture pictures. */
-const SLOW = /(themes|sandbox|visual)\.spec\.ts$/;
+/** The specs that render themed 3D towns, capture pictures, or rebuild the 3D town over and over (gpu: ~2 min). */
+const SLOW = /(themes|sandbox|visual|gpu)\.spec\.ts$/;
 
 export default defineConfig({
   testDir: 'e2e',

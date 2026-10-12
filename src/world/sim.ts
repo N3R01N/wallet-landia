@@ -4,14 +4,16 @@
  * space and emits effects; both renderers draw the same state.
  */
 
-import type { Goods, Guild, Hero, HeroClass, Journey, JourneyStep, Target, Verb } from '../domain/model.js';
-import type { Tier } from '../domain/tiers.js';
+import type { Goods, Guild, HeroClass, Journey, JourneyStep, Target } from '../domain/model.js';
 import { makeRng } from '../util/rng.js';
 import { type Placed, type Pt, type TownPlan } from './layout.js';
 import { harvestOf, harvestOfUsd, loanHealth, type Harvest, type LoanHealth, type PriceMove } from '../domain/risk.js';
 import { ethPriceFrom, initialChain, nextChain, type BlockInfo, type ChainState } from './chain.js';
-import { doorSlot, flightRoute, walkableAt, walkRoute } from './route.js';
+import { doorSlot, flightRoute, walkRoute } from './route.js';
 import { realmOf } from '../domain/realms.js';
+import { WALK_SPEED, type ActTask, type Agent, type AgentKind, type Coin, type Effect, type Task, type Town } from './agents.js';
+import { TowerQueue } from './towerQueue.js';
+import { Townsfolk } from './townsfolk.js';
 
 // --- schedule ----------------------------------------------------------------
 
@@ -44,118 +46,8 @@ export function schedule(journeys: readonly Journey[]): Scheduled[] {
 
 // --- agents ------------------------------------------------------------------
 
-export type AgentKind = 'hero' | 'raven' | 'villager' | 'herald' | 'bailiff';
+export type { Agent, AgentKind, Coin, Effect, EffectKind, Gesture } from './agents.js';
 
-/** Something a person does with their hands while busy (rigged people play it; sprites hop). */
-export type Gesture = 'talk' | 'interact' | 'pickup' | 'cheer' | 'push';
-
-/** Goods as they are drawn changing hands: a coin with the token's logo (or the NFT's picture). */
-export interface Coin {
-  symbol: string;
-  quantity: number;
-  icon: string | null;
-  nft: boolean;
-}
-
-/**
- * `toll`, `give`, `seize`: paying, delivering, seizing. `stash`: putting what
- * was brought home inside. `pickup`: catching what is handed out of a door.
- * `talk` and `wait`: townsfolk passing the time.
- */
-type ActVerb = Verb | 'toll' | 'give' | 'seize' | 'stash' | 'pickup' | 'talk' | 'wait';
-
-interface ActTask {
-  type: 'act';
-  verb: ActVerb;
-  seconds: number;
-  journey?: Journey;
-  /** The step of the journey done here: what is handed over, and what comes back. */
-  step?: JourneyStep;
-  /** Business at this building's door: it opens, and goods pass through it. */
-  door?: Placed;
-  gesture?: Gesture;
-  /** Who or what to look at meanwhile. */
-  face?: Pt;
-  /** Goods handed out of this building's door to the agent. */
-  pickup?: { coins: Coin[]; from: Placed };
-  /** Seeing a crossing off from the harbour, bound for this realm (a chain id, '?' unknown). */
-  sail?: string;
-}
-
-type Task =
-  /** `door`: arriving at a building, so claim a free waiting spot there. */
-  | { type: 'walk'; to: Pt; fly?: boolean; door?: Placed }
-  | ActTask
-  /** Go in through the door (handing `give` in on the way), out of sight until `exit`. */
-  | { type: 'enter'; b: Placed; give?: Coin[] }
-  | { type: 'exit'; b: Placed }
-  /** Markers: through the doorway (in, or out). */
-  | { type: 'inside' }
-  | { type: 'outside' }
-  | { type: 'vanish' };
-
-export interface Agent {
-  id: string;
-  kind: AgentKind;
-  hero?: Hero;
-  x: number;
-  y: number;
-  path: Pt[];
-  tasks: Task[];
-  acting: { verb: string; left: number; total: number; gesture?: Gesture; door?: string } | null;
-  facing: 1 | -1;
-  /** Inside a building, out of sight (trading at the counter, shopping, waiting for a page in the tower). */
-  inside: boolean;
-  /** The building whose doorway this agent is passing through (its door stands open meanwhile). */
-  doorway: string | null;
-  /** What is in hand: drawn as coins over the head while out and about. */
-  goods: Coin[];
-  /** Where to look while standing still (someone to talk to, the tower door), or null. */
-  face: Pt | null;
-  speed: number;
-  flying: boolean;
-  /** Height above the ground, in tiles (flyers in the air). */
-  alt: number;
-  /** Height it keeps when not flying: griffins and dragons hover low over the road. */
-  hover: number;
-  /** Waiting in line at the Chronicle Tower (a transaction waiting for a page). */
-  queued?: boolean;
-  /** Hangs about here (bailiffs watching a risky loan's Counting House). */
-  loiterAt?: Pt;
-  /** The door this agent is waiting at, if any (see door slots). */
-  slotAt: string | null;
-  /** Value tier of what is being carried right now, or null when empty-handed. */
-  carrying: Tier | null;
-  journey: Journey | null;
-  /** Recent positions, so a caravan can follow the leader. */
-  trail: Pt[];
-  phase: number;
-  dim: boolean;
-  gone: boolean;
-}
-
-export type EffectKind = 'float' | 'coins' | 'ring' | 'smoke' | 'key' | 'sparkle' | 'alarm' | 'storm' | 'transfer' | 'bubble';
-
-export interface Effect {
-  kind: EffectKind;
-  x: number;
-  y: number;
-  age: number;
-  ttl: number;
-  text?: string;
-  color?: string;
-  drama: number;
-  /** transfer: where the coins land; they follow `toAgent` (and leave from `fromAgent`) while it is about. bubble: who speaks. */
-  to?: Pt;
-  toAgent?: string;
-  fromAgent?: string;
-  /** transfer: what changes hands. */
-  coins?: Coin[];
-  /** transfer: `in` handed over (dropped off), `out` handed back (picked up). */
-  dir?: 'in' | 'out';
-  /** Seconds before it shows (the age counts from when it was made). */
-  delay?: number;
-}
 
 /** Seconds coins take to fly from one hand (or door) to the other. */
 export const TRANSFER_FLIGHT = 0.75;
@@ -174,10 +66,6 @@ export interface LogEntry {
   at: number;
 }
 
-/** Tiles per second on foot: a brisk walk (~2.2 m/s); a hero with errands piling up hurries. */
-const WALK_SPEED = 1.2;
-/** The longest the line at the tower gets (people). */
-const QUEUE_MAX = 18;
 /** Tiles between the points of an agent's trail. */
 const TRAIL_STEP = 0.12;
 /** How far back on its hero's trail a caravan rolls (index into the trail: ~1.4 tiles). */
@@ -214,11 +102,10 @@ export class Sim {
   realm = 'ethereum';
   /** ETH in USD, from what the guild holds (for the toll in dollars), or null; a province's town is given the whole guild's. */
   ethUsd: number | null;
-  /** The line at the tower door, front first. */
-  readonly queue: Agent[] = [];
-  /** Where the line stands: spots along the road from the tower door, front first. */
-  readonly queueLine: Pt[];
-  #queueTimer = 0;
+  /** The line at the tower door (see `towerQueue.ts`). */
+  readonly #queue: TowerQueue;
+  /** Townsfolk, and what anyone idle does next (see `townsfolk.ts`). */
+  readonly #folk: Townsfolk;
   /** Fog of war: buildings stay hidden until a hero first visits them in the replay. */
   fog = false;
   /** Protocols revealed so far, and when (`elapsed`), so the fog can lift as it happens. */
@@ -243,9 +130,7 @@ export class Sim {
   #next = 0;
   #rng = makeRng(42);
   #heroAgents = new Map<string, Agent>();
-  #villagerTarget = 10;
   #uid = 0;
-  #chatTimer = 2;
   /** When each building's door was last pushed (by building id, on the `elapsed` clock). */
   readonly #doorUse = new Map<string, number>();
   /** Where a building's real doorway is, as the 3D view built it (null: there is none). */
@@ -260,15 +145,48 @@ export class Sim {
     this.scheduled = schedule(guild.journeys);
     const last = this.scheduled[this.scheduled.length - 1];
     this.duration = (last?.at ?? 0) + 12;
+    const town = this.#town();
+    this.#folk = new Townsfolk(town);
     this.#spawnHeroes();
     this.#readStashes();
     this.#spawnWatchers();
-    for (let i = 0; i < this.#villagerTarget; i++) this.#spawnVillager(true);
+    for (let i = 0; i < this.#folk.target; i++) this.#folk.spawn(true);
     this.ethUsd = ethPriceFrom(guild.heroes.flatMap((h) => h.items));
-    this.queueLine = this.#lineFromTower();
+    this.#queue = new TowerQueue(town);
     // the town opens with the line already standing
-    for (let i = 0; i < this.queueTarget; i++) this.#joinQueue(this.queueLine[i]!);
-    this.#placeQueue();
+    for (let i = 0; i < this.queueTarget; i++) this.#queue.join(this.queueLine[i]!);
+    this.#queue.place();
+  }
+
+  /** The Sim as its townsfolk and its tower queue see it (they share its people, effects and dice). */
+  #town(): Town {
+    return {
+      plan: this.plan,
+      rng: () => this.#rng(),
+      agents: () => this.agents,
+      addAgent: (a) => void this.agents.push(a),
+      makeAgent: (kind, x, y) => this.#makeAgent(kind, x, y),
+      addEffect: (e) => void this.effects.push(e),
+      releaseSlot: (a) => this.#releaseSlot(a),
+      toDoor: (b, fly) => this.#toDoor(b, fly),
+      enterable: (b) => this.#enterable(b),
+      doorway: (b) => this.doorway(b),
+    };
+  }
+
+  /** The line at the tower door, front first. */
+  get queue(): readonly Agent[] {
+    return this.#queue.line;
+  }
+
+  /** Where the line stands: spots along the road from the tower door, front first. */
+  get queueLine(): readonly Pt[] {
+    return this.#queue.spots;
+  }
+
+  /** How long the line should be: a couple of people when the chain is calm, the whole street when blocks are full. */
+  get queueTarget(): number {
+    return this.#queue.target(this.chain.congestion);
   }
 
   get live(): boolean {
@@ -514,9 +432,9 @@ export class Sim {
     this.chain = nextChain(this.chain, block);
     this.effects.push({ kind: 'ring', x: t.x + t.w / 2, y: t.y + t.h / 2, age: 0, ttl: 2.2, drama: 1, text: `#${block.number}` });
     // Busier blocks bring more people into the streets.
-    this.#villagerTarget = Math.round(6 + block.busy * 14);
+    this.#folk.target = Math.round(6 + block.busy * 14);
     // the block takes in the front of the line
-    if (fresh) this.#admit(block.busy);
+    if (fresh) this.#queue.admit(block.busy);
   }
 
   step(dtReal: number): void {
@@ -538,12 +456,11 @@ export class Sim {
 
     for (const a of this.agents) this.#advance(a, dt);
     this.agents = this.agents.filter((a) => !a.gone);
-    this.#tendQueue(dtReal);
+    this.#queue.tend(dtReal, this.chain.congestion);
     // the replay's end charts the whole map (buildings known only for what is kept there)
     if (this.t >= this.duration) this.#chart(this.elapsed);
 
-    const villagers = this.#streetVillagers();
-    if (villagers < this.#villagerTarget && this.#rng() < dtReal * 0.8) this.#spawnVillager(false);
+    if (this.#folk.street() < this.#folk.target && this.#rng() < dtReal * 0.8) this.#folk.spawn(false);
 
     for (const e of this.effects) e.age += dtReal;
     this.effects = this.effects.filter((e) => e.age < e.ttl);
@@ -764,7 +681,7 @@ export class Sim {
     }
     const task = a.tasks.shift();
     if (task === undefined) {
-      this.#idle(a);
+      this.#folk.idle(a);
       return;
     }
     switch (task.type) {
@@ -858,7 +775,7 @@ export class Sim {
       case 'seize': {
         const loot = j?.steps[0]?.give ?? [];
         const coins = loot.length > 0 ? this.coins(loot) : [{ symbol: '', quantity: 0, icon: null, nft: false }];
-        this.#transfer(door, { x: a.x, y: a.y }, coins, 'out', { toAgent: a.id, drama, color: '#ff5e5e' });
+        this.#transfer(door, { x: a.x, y: a.y }, coins, 'out', { toAgent: a.id, drama, color: '#ff5e5e', seized: true });
         a.goods = coins;
         return;
       }
@@ -893,13 +810,14 @@ export class Sim {
     a.goods = back;
   }
 
-  #transfer(from: Pt, to: Pt, coins: Coin[], dir: 'in' | 'out', o: { fromAgent?: string; toAgent?: string; drama: number; delay?: number; color?: string }): void {
+  #transfer(from: Pt, to: Pt, coins: Coin[], dir: 'in' | 'out', o: { fromAgent?: string; toAgent?: string; drama: number; delay?: number; color?: string; seized?: boolean }): void {
     if (coins.length === 0) return;
     const delay = o.delay ?? 0;
     const e: Effect = { kind: 'transfer', x: from.x, y: from.y, to: { x: to.x, y: to.y }, coins, dir, delay, age: 0, ttl: delay + TRANSFER_FLIGHT + 1.4, drama: o.drama };
     if (o.fromAgent !== undefined) e.fromAgent = o.fromAgent;
     if (o.toAgent !== undefined) e.toAgent = o.toAgent;
     if (o.color !== undefined) e.color = o.color;
+    if (o.seized === true) e.seized = true;
     this.effects.push(e);
   }
 
@@ -919,7 +837,7 @@ export class Sim {
         this.effects.push({ kind: 'float', ...at, age: 0, ttl: 1.6, drama: 0, text: j.feeUsd !== null ? `toll $${j.feeUsd.toFixed(2)}` : 'toll', color: '#ffcf8a' });
         return;
       case 'seize':
-        this.effects.push({ kind: 'coins', ...at, age: 0, ttl: 1.5, drama: big, color: '#ff5e5e' });
+        this.effects.push({ kind: 'coins', ...at, age: 0, ttl: 1.5, drama: big, color: '#ff5e5e', seized: true });
         return;
     }
     if (j.status === 'failed') {
@@ -935,185 +853,6 @@ export class Sim {
     this.effects.push({ kind: 'float', ...at, age: 0, ttl: 3 + big, drama: big, text: j.label });
     if (verb === 'give' || verb === 'send' || verb === 'lend') a.carrying = null;
     if (big >= 3) this.shake = 0.6;
-  }
-
-  // --- the queue at the tower --------------------------------------------------
-
-  /** Spots for the line: along the walk from the tower door towards the gate, a step apart. */
-  #lineFromTower(): Pt[] {
-    const door = this.plan.tower.doorAt;
-    const route = walkRoute(this.plan, door, this.plan.gate.doorAt);
-    const pts = [door, ...route];
-    const out: Pt[] = [];
-    const STEP = 0.42;
-    let want = 0.7; // the first one stands a little off the door
-    let walked = 0;
-    for (let i = 0; i < pts.length - 1 && out.length < QUEUE_MAX; i++) {
-      const a = pts[i]!;
-      const b = pts[i + 1]!;
-      const len = Math.hypot(b.x - a.x, b.y - a.y);
-      while (want <= walked + len && out.length < QUEUE_MAX) {
-        const f = (want - walked) / len;
-        // a little to either side, as people stand in a real line
-        const side = (out.length % 2 === 0 ? 1 : -1) * 0.1;
-        out.push({ x: a.x + (b.x - a.x) * f - ((b.y - a.y) / len) * side, y: a.y + (b.y - a.y) * f + ((b.x - a.x) / len) * side });
-        want += STEP;
-      }
-      walked += len;
-    }
-    return out;
-  }
-
-  /** How long the line should be: a couple of people when the chain is calm, the whole street when blocks are full. */
-  get queueTarget(): number {
-    return Math.min(this.queueLine.length, Math.round(2 + this.chain.congestion * (QUEUE_MAX - 2)));
-  }
-
-  /** Send each person in line to their spot (after the front went in, or someone joined). */
-  #placeQueue(): void {
-    this.queue.forEach((a, i) => {
-      const spot = this.queueLine[i];
-      if (spot === undefined) return;
-      const goal = a.tasks[0]?.type === 'walk' ? a.tasks[0].to : a.path.at(-1);
-      if (goal && Math.hypot(goal.x - spot.x, goal.y - spot.y) < 0.05) return;
-      if (a.path.length === 0 && Math.hypot(a.x - spot.x, a.y - spot.y) < 0.05) return;
-      a.path = [];
-      a.acting = null;
-      a.tasks = [{ type: 'walk', to: spot }];
-    });
-  }
-
-  /** Someone joins the back of the line, starting from `at`. */
-  #joinQueue(at: Pt): void {
-    const a = this.#makeAgent('villager', at.x, at.y);
-    a.queued = true;
-    a.speed = WALK_SPEED * (0.9 + this.#rng() * 0.25);
-    this.agents.push(a);
-    this.queue.push(a);
-  }
-
-  /** A block sealed: the front of the line goes in (more of it when the block was full). */
-  #admit(busy: number): void {
-    const n = Math.min(this.queue.length, Math.max(1, Math.round(this.queue.length * (0.35 + busy * 0.3))));
-    for (const a of this.queue.splice(0, n)) {
-      a.queued = false;
-      a.path = [];
-      a.acting = null;
-      a.tasks = [{ type: 'walk', to: this.plan.tower.doorAt }, { type: 'enter', b: this.plan.tower }, { type: 'vanish' }];
-    }
-    this.#placeQueue();
-  }
-
-  /** Keep the line as long as the chain is busy: newcomers join at the back, the tail drifts away when it calms. */
-  #tendQueue(dtReal: number): void {
-    for (let i = this.queue.length - 1; i >= 0; i--) if (this.queue[i]!.gone) this.queue.splice(i, 1);
-    // a long wait: now and then someone turns to chat with the one behind
-    this.#chatTimer -= dtReal;
-    if (this.#chatTimer <= 0 && this.queue.length >= 3) {
-      this.#chatTimer = 1.5 + this.#rng() * 3;
-      const i = 1 + Math.floor(this.#rng() * (this.queue.length - 2));
-      const q = this.queue[i]!;
-      const mate = this.queue[i + 1]!;
-      if (q.path.length === 0 && q.acting === null && mate.path.length === 0) {
-        const seconds = 2.5 + this.#rng() * 3;
-        q.acting = { verb: 'talk', left: seconds, total: seconds, gesture: 'talk' };
-        q.face = { x: mate.x, y: mate.y };
-        this.#bubble(q, seconds, 0);
-      }
-    }
-    const target = this.queueTarget;
-    this.#queueTimer -= dtReal;
-    if (this.queue.length < target && this.#queueTimer <= 0) {
-      // from the gate or any street door, they come to wait their turn
-      const from = this.#rng() < 0.5 ? this.plan.gate.doorAt : (this.plan.buildings[Math.floor(this.#rng() * this.plan.buildings.length)]?.doorAt ?? this.plan.gate.doorAt);
-      this.#joinQueue(from);
-      this.#placeQueue();
-      this.#queueTimer = 0.35 + this.#rng() * 0.6;
-    } else if (this.queue.length > target + 2) {
-      const a = this.queue.pop()!;
-      a.queued = false;
-      a.path = [];
-      a.tasks = [{ type: 'walk', to: this.plan.gate.doorAt }, { type: 'vanish' }];
-    }
-  }
-
-  #idle(a: Agent): void {
-    a.journey = null;
-    a.carrying = null;
-    a.goods = [];
-    if (a.loiterAt) {
-      // pacing outside, waiting for the loan to slip
-      const at = a.loiterAt;
-      a.tasks = [{ type: 'walk', to: { x: at.x + (this.#rng() - 0.5) * 1.4, y: at.y + this.#rng() * 0.8 } }, { type: 'act', verb: 'unknown', seconds: 2 + this.#rng() * 4 }];
-      return;
-    }
-    if (a.queued) {
-      // waiting their turn: face the tower
-      const door = this.plan.tower.doorAt;
-      if (Math.abs(door.x - a.x) > 0.05) a.facing = door.x > a.x ? 1 : -1;
-      a.face = door;
-      return;
-    }
-    if (a.kind === 'villager') {
-      const b = this.plan.buildings[Math.floor(this.#rng() * this.plan.buildings.length)];
-      if (b === undefined || this.#streetVillagers() > this.#villagerTarget + 2) {
-        // home time: in through the door they stand at, else away
-        const here = a.slotAt !== null ? this.plan.buildings.find((x) => x.id === a.slotAt) : undefined;
-        if (here !== undefined && this.#enterable(here)) {
-          a.tasks = [{ type: 'enter', b: here }, { type: 'vanish' }];
-          return;
-        }
-        this.#releaseSlot(a);
-        a.gone = true;
-        return;
-      }
-      if (this.#rng() < 0.2 && this.#chat(a)) return;
-      a.acting = null;
-      if (this.#enterable(b) && this.#rng() < 0.65) {
-        // in to shop (or pray, or bank), and out again
-        a.tasks = [this.#toDoor(b), { type: 'enter', b }, { type: 'act', verb: 'wait', seconds: 2 + this.#rng() * 7 }, { type: 'exit', b }];
-        return;
-      }
-      // a look at the door, a knock, a word with whoever is inside
-      const act: ActTask = { type: 'act', verb: 'unknown', seconds: 0.5 + this.#rng() * 2, face: { x: b.doorAt.x, y: b.y + b.h - 0.5 } };
-      if (this.#rng() < 0.5) act.gesture = 'interact';
-      a.tasks = [this.#toDoor(b), act];
-    }
-  }
-
-  /** Villagers out in the streets (not in line, not indoors). */
-  #streetVillagers(): number {
-    let n = 0;
-    for (const x of this.agents) if (x.kind === 'villager' && !x.queued && !x.inside) n++;
-    return n;
-  }
-
-  /** Stop a passer-by for a chat: walk up, face each other, talk a while. */
-  #chat(a: Agent): boolean {
-    const mate = this.agents.find((o) => o !== a && o.kind === 'villager' && !o.queued && !o.inside && o.doorway === null && o.acting === null && o.path.length > 0 && o.alt === 0 && Math.hypot(o.x - a.x, o.y - a.y) < 4);
-    if (mate === undefined) return false;
-    const d = Math.hypot(a.x - mate.x, a.y - mate.y);
-    if (d < 0.1) return false;
-    const spot = { x: mate.x + ((a.x - mate.x) / d) * 0.5, y: mate.y + ((a.y - mate.y) / d) * 0.5 };
-    if (!walkableAt(this.plan, spot)) return false;
-    const talk = 3 + this.#rng() * 4;
-    const travel = d / a.speed + 0.6;
-    this.#releaseSlot(mate);
-    mate.path = [];
-    mate.tasks = [
-      { type: 'act', verb: 'wait', seconds: travel, face: spot },
-      { type: 'act', verb: 'talk', seconds: talk, gesture: 'talk', face: spot },
-    ];
-    a.tasks = [{ type: 'walk', to: spot }, { type: 'act', verb: 'talk', seconds: talk, gesture: 'talk', face: { x: mate.x, y: mate.y } }];
-    this.#bubble(mate, talk, travel);
-    this.#bubble(a, talk, travel + 0.6);
-    return true;
-  }
-
-  /** A speech bubble over someone's head while they talk. */
-  #bubble(a: Agent, seconds: number, delay: number): void {
-    const words = ['…', '!', '?', '♪', '$', '☺'];
-    this.effects.push({ kind: 'bubble', x: a.x, y: a.y, age: 0, ttl: delay + seconds, delay, drama: 0, fromAgent: a.id, text: words[Math.floor(this.#rng() * words.length)]! });
   }
 
   #makeAgent(kind: AgentKind, x: number, y: number): Agent {
@@ -1157,21 +896,5 @@ export class Sim {
       this.agents.push(a);
       this.#heroAgents.set(hero.address, a);
     }
-  }
-
-  #spawnVillager(anywhere: boolean): void {
-    const b = this.plan.buildings[Math.floor(this.#rng() * this.plan.buildings.length)];
-    if (!anywhere && b !== undefined && this.#enterable(b) && this.#rng() < 0.5) {
-      // out of a door, into the street
-      const at = this.doorway(b)!;
-      const a = this.#makeAgent('villager', at.x, at.y);
-      a.inside = true;
-      a.tasks = [{ type: 'exit', b }];
-      this.agents.push(a);
-      return;
-    }
-    const from = anywhere ? b?.doorAt : this.plan.gate.doorAt;
-    if (from === undefined) return;
-    this.agents.push(this.#makeAgent('villager', from.x, from.y));
   }
 }

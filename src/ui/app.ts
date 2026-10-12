@@ -5,7 +5,7 @@
 
 import { buildGuild, type HistoryWindow } from '../domain/mappers.js';
 import { CLASS_LABEL, type Guild, type HeroClass, type Journey } from '../domain/model.js';
-import { TIER_COLORS, TIER_FLOORS, TIER_NAMES, approxUsd } from '../domain/tiers.js';
+import { TIER_NAMES, approxUsd } from '../domain/tiers.js';
 import { setRealmChains, type RawWallet } from '../data/zerion/endpoints.js';
 import { realmGuild, realmOf, realmSummaries } from '../domain/realms.js';
 import { realmMap } from './realmMap.js';
@@ -28,15 +28,16 @@ import { loadThemeBundles, type ThemeBundle } from '../assets/themeBundles.js';
 import { el, fmtDate, shortAddr } from './dom.js';
 import { setCrests } from '../util/rng.js';
 import { Soundscape } from '../audio/soundscape.js';
-import { Tour, type TourStep } from './tour.js';
+import { Tour } from './tour.js';
+import { tourSteps } from './tourSteps.js';
+import { bindInput } from './input.js';
+import { buildLayout } from './layout.js';
+import { PlayerController } from './playerController.js';
 import { nightFactor } from '../render/overlay.js';
 import { priceMove, type PriceMove } from '../domain/risk.js';
 import { ethPriceFrom, formatGwei } from '../world/chain.js';
-import { defaultTitle, medalById, titleOptions, type Earned } from '../domain/feats.js';
-import { badgeMoments, BADGE_TIER_NAMES, playerProfile, type PlayerBadge, type PlayerProfile, type Provenance } from '../domain/player.js';
+import { BADGE_TIER_NAMES, type PlayerBadge } from '../domain/player.js';
 import { buildingPanel, heroPanel, playerPanel, questLogRow, questPanel, type PanelContext } from './panels.js';
-
-const SPEEDS = [0.5, 1, 2, 4, 8];
 
 export class App {
   readonly element: HTMLElement;
@@ -95,18 +96,9 @@ export class App {
   #scrubbing = false;
   #logCount = -1;
   #selectedKey = '';
-  /** You: the level and badges of all your wallets' whole history (null until first worked out). */
-  #player: PlayerProfile | null = null;
-  /** Journeys that earned a badge or a tier, to announce them as the replay plays them. */
-  #badgeMoments = new Map<string, { badge: PlayerBadge; tier: number }[]>();
+  /** You: the level and badges of all your wallets' whole history. */
+  #player: PlayerController;
   #playerOpen = false;
-  #playerBtn = el('button', { class: 'btn player-btn', title: 'You: your level and badges, from all your wallets' }, '🛡 Lv 1');
-  /** When the player was last worked out (the walk back through history updates it now and then). */
-  #playerAt = 0;
-  /** What the player was last worked out from, and how long that took (ms). */
-  #playerFrom: { raws: RawWallet[]; names: Map<string, string>; at: number } | null = null;
-  #playerCost = 0;
-  #playerTimer: ReturnType<typeof setTimeout> | null = null;
   #toasts = el('div', { class: 'toasts', 'aria-live': 'polite' });
   /** What is still loading (reason → what to tell the player); the veil shows while any is. */
   #loading = new Map<string, string>();
@@ -150,7 +142,7 @@ export class App {
         // history arriving: the level and badges grow with it
         const before = this.#history?.statuses.reduce((n, x) => n + x.count, 0) ?? 0;
         this.#history = { statuses, paused };
-        if (statuses.reduce((n, x) => n + x.count, 0) !== before) this.#playerSoon();
+        if (statuses.reduce((n, x) => n + x.count, 0) !== before) this.#player.soon();
         // the open Guild panel follows along: at most every 2 s, always ending on the latest
         if (this.#historyRedraw !== null) return;
         this.#historyRedraw = setTimeout(() => {
@@ -163,6 +155,16 @@ export class App {
         }, 2000);
       },
     });
+    this.#player = new PlayerController({
+      session: this.#session,
+      prefs: this.#prefs,
+      shown: () => this.#shown,
+      names: () => this.#names,
+      classOf: (a) => this.#classOf(a),
+      changed: () => {
+        if (this.#playerOpen && !this.#editingInspector()) this.#openPlayer();
+      },
+    });
     this.#onBudget(this.#session.budget.snapshot());
     this.#rebuild();
     this.#r2d = new Renderer(this.#canvas, this.#sim);
@@ -170,7 +172,17 @@ export class App {
     this.#renderer = this.#r2d;
     this.#stage.append(this.#canvas);
     this.element = this.#layout();
-    this.#bindInput();
+    bindInput({
+      stage: this.#stage,
+      tooltip: this.#tooltip,
+      renderer: () => this.#renderer,
+      tooltipContent: (t) => this.#tooltipContent(t),
+      click: (e) => this.#click(e),
+      togglePlay: () => this.#togglePlay(),
+      setView: (v) => void this.#setView(v),
+      toggleSound: () => this.#setSound(!this.#sound.on),
+      closeInspector: () => this.#closeInspector(),
+    });
     void this.#setView(this.#prefs.view, false);
     startHeartbeat((beat) => {
       this.#beat = beat;
@@ -321,16 +333,12 @@ export class App {
     this.#prefs.realm = id;
     savePrefs(this.#prefs);
     if (changed) {
-      this.#rebuild();
-      this.#r2d.setSim(this.#sim);
-      this.#r3d?.setSim(this.#sim);
+      // (its bell first: the new town rings with its own chain's)
       this.#followRealm();
-      this.#bell();
+      this.#swapSim();
       this.#closeInspector();
       const realm = realmOf(id);
-      const toast = el('div', { class: 'toast' }, el('span', { class: 'toast-icon' }, realm.kind === 'kingdom' ? '🏰' : '⛵'), el('div', {}, el('strong', {}, realm.title), el('div', { class: 'muted' }, realm.about)));
-      this.#toasts.append(toast);
-      setTimeout(() => toast.remove(), 5600);
+      this.#toast(realm.kind === 'kingdom' ? '🏰' : '⛵', realm.title, realm.about);
     }
     if (then !== undefined) {
       const j = this.#guild.journeys.find((x) => x.key === then);
@@ -358,6 +366,20 @@ export class App {
     this.#sim.fog = this.#prefs.fog;
     this.#sim.setPriceMove(this.#priceMove);
     this.#logCount = -1;
+  }
+
+  /**
+   * A new town in place of the old: rebuilt, handed to both views, and rung
+   * with the latest block (`bell: false` for a quiet update, which plays only
+   * what is new). `seek`: honour ?at=<seconds> (a link to a moment; tests).
+   */
+  #swapSim(o: { seek?: boolean; bell?: boolean } = {}): void {
+    this.#rebuild();
+    const at = o.seek === true ? Number(new URLSearchParams(location.search).get('at')) : 0;
+    if (at > 0) this.#sim.seek(at);
+    this.#r2d.setSim(this.#sim);
+    this.#r3d?.setSim(this.#sim);
+    if (o.bell !== false) this.#bell();
   }
 
   /** How ETH moved since the player's last visit (settled from the first home town of the session). */
@@ -410,72 +432,13 @@ export class App {
   #startTour(): void {
     const refs = this.#tourRefs;
     if (!refs) return;
-    const q = (sel: string): (() => HTMLElement | null) => () => document.querySelector<HTMLElement>(sel);
-    const link = el('a', { href: 'https://dashboard.zerion.io', target: '_blank', rel: 'noopener noreferrer' }, 'dashboard.zerion.io ↗');
-    const steps: TourStep[] = [
-      {
-        title: 'Welcome to Wallet-landia',
-        body: [
-          'Your Ethereum wallets as a little RPG town: every wallet a hero, every app a building, every transaction a quest.',
-          el('p', {}, el('strong', {}, 'What you see now is a demo town. '), 'Its heroes are demo wallets, not yours. In a minute you can add your own, and they move in instead.'),
-        ],
+    const steps = tourSteps({
+      ...refs,
+      stage: this.#stage,
+      showGuild: () => {
+        if (!this.#guildOpen) this.#openGuild();
       },
-      {
-        title: 'The town',
-        body: [
-          'Each hero is a wallet. Their mount (a donkey up to a griffin) and their home grow with what the wallet holds.',
-          'Each building is a protocol the wallets used: exchanges are bazaars, lending is a counting house, staking is the temple. Heroes walk there to replay their transactions.',
-          'The Chronicle Tower in the square is the blockchain itself: its bell rings for every block, the line at its door shows how busy the chain is, the board shows the gas fee, and the fire on top burns green when it is cheap and red when it is dear.',
-          'Click any hero or building to look inside.',
-        ],
-        target: () => this.#stage,
-      },
-      {
-        title: 'The quest log',
-        body: ['Every transaction becomes a quest. The newest appear here as the town replays them; click one to see exactly what happened, and replay it on its own.'],
-        target: q('.questlog'),
-      },
-      {
-        title: 'The value scale',
-        body: ['One colour scale for everything worth money: item frames, mounts, homes and caravans, from Dust (under $10) to Mythic (over $1M). Click its title to fold it away.'],
-        target: () => refs.legend,
-      },
-      {
-        title: 'The timeline',
-        body: ['The town replays the wallets\' recent history. Pause, change the speed, or drag to jump; at the end it goes live and plays new transactions as they happen.'],
-        target: q('footer.timeline'),
-      },
-      {
-        title: 'Views and looks',
-        body: ['Switch between top-down, isometric and 3D here. Under 🎨 Looks you can pick a world theme for the 3D town: medieval, highland, modern or sci-fi.'],
-        target: () => refs.views,
-      },
-      {
-        title: 'Make it yours',
-        body: ['Your own wallets are set up in the ⚙ Guild panel. Click Next to open it.'],
-        target: () => refs.guildBtn,
-      },
-      {
-        title: '1. A Zerion key',
-        body: [el('p', {}, 'The town reads wallets through Zerion. Get a free API key at ', link, ', paste it here and click Save. It is kept only in this browser.')],
-        before: () => {
-          if (!this.#guildOpen) this.#openGuild();
-        },
-        target: q('.inspector input[aria-label="Zerion API key"]'),
-      },
-      {
-        title: '2. Your wallets',
-        body: ['Add a wallet address (0x…) or an ENS name (name.eth) and click Add, or Connect wallet. Each one becomes a hero; the demo heroes leave as soon as your first wallet has loaded.'],
-        before: () => {
-          if (!this.#guildOpen) this.#openGuild();
-        },
-        target: q('.inspector input[aria-label="0x… or name.eth"]'),
-      },
-      {
-        title: 'Off you go',
-        body: ['That is all. You can show this tour again any time with the ? button at the top.'],
-      },
-    ];
+    });
     new Tour(steps, () => {
       this.#prefs.tourDone = true;
       savePrefs(this.#prefs);
@@ -502,70 +465,8 @@ export class App {
     if (last !== undefined) this.#veilText.textContent = last;
   }
 
-  /**
-   * Work out the player (level and badges) from everything kept of your own
-   * wallets' history. Only at home: a visited town is someone else's.
-   */
-  async #refreshPlayer(): Promise<void> {
-    const shown = this.#shown;
-    if (shown === null || shown.visiting !== null) return;
-    this.#playerAt = Date.now();
-    const raws = await this.#session.lifetime(shown).catch(() => shown.raws);
-    if (this.#shown !== shown) return;
-    // nothing new kept, and the same names: the player is the same (but for time itself, so not for long)
-    const from = this.#playerFrom;
-    if (from !== null && raws === from.raws && this.#names === from.names && Date.now() - from.at < 60 * 60_000) return;
-    const started = performance.now();
-    const life = buildGuild(raws, { kind: 'count', count: Number.MAX_SAFE_INTEGER }, { names: this.#names });
-    // badges seen before that the kept history no longer shows (prefs.medals, by wallet) are kept
-    const remembered = new Map<string, Provenance>();
-    for (const [wallet, ids] of Object.entries(this.#prefs.medals)) for (const [id, at] of Object.entries(ids)) if (medalById(id) && !remembered.has(id)) remembered.set(id, { at, wallet, journey: null });
-    const player = playerProfile(life, remembered);
-    // and new ones are remembered, under the wallet that earned them
-    let changed = false;
-    for (const [id, b] of player.badges) {
-      const first = b.tiers[0]!;
-      const kept = (this.#prefs.medals[first.wallet] ??= {});
-      if (!(id in kept)) {
-        kept[id] = first.at;
-        changed = true;
-      }
-    }
-    if (changed) savePrefs(this.#prefs);
-    this.#player = player;
-    this.#badgeMoments = badgeMoments(player);
-    this.#playerBtn.textContent = `🛡 Lv ${player.level}`;
-    this.#playerBtn.title = `You: level ${player.level} ${player.rank} · ${player.badges.size} badges — open your sheet`;
-    if (this.#playerOpen && !this.#editingInspector()) this.#openPlayer();
-    this.#playerFrom = { raws, names: this.#names, at: Date.now() };
-    this.#playerCost = performance.now() - started;
-  }
-
-  /**
-   * Work the player out again soon (history arriving), at most every 15 s,
-   * and less often when it is costly (a very long history): at most a
-   * twentieth of the time on the main thread.
-   */
-  #playerSoon(): void {
-    if (this.#playerTimer !== null) return;
-    this.#playerTimer = setTimeout(() => {
-      this.#playerTimer = null;
-      void this.#refreshPlayer();
-    }, Math.max(1500, Math.max(15_000, this.#playerCost * 20) - (Date.now() - this.#playerAt)));
-  }
-
-  /** Badges this wallet earned first (for its hero's sheet). */
-  #firstEarnedBy(address: string): Map<string, Earned> {
-    const out = new Map<string, Earned>();
-    for (const [id, b] of this.#player?.badges ?? []) {
-      const first = b.tiers[0]!;
-      if (first.wallet === address) out.set(id, { at: first.at, journey: first.journey });
-    }
-    return out;
-  }
-
   #openPlayer(): void {
-    const p = this.#player;
+    const p = this.#player.profile;
     if (p === null) return;
     this.#renderer.selected = null;
     const walking = this.#history?.statuses.filter((s) => !s.complete) ?? [];
@@ -585,27 +486,26 @@ export class App {
     this.#playerOpen = true;
   }
 
-  /** A hero's title: any badge of yours unlocks its title for every one of your heroes. */
-  #titleOf(address: string): string {
-    const medals = [...(this.#player?.badges.keys() ?? [])];
-    const cls = this.#classOf(address);
-    const picked = this.#prefs.titles[address];
-    const options = titleOptions(cls, medals);
-    return picked !== undefined && options.includes(picked) ? picked : defaultTitle(cls, medals);
-  }
-
   /** A badge (or a new tier of one) earned as the replay plays: a moment of glory in the corner of the town. */
   #announce(b: PlayerBadge, tier: number): void {
     const m = b.medal;
     const what = tier === 1 ? `You earned ${m.name}` : `${m.name}: ${BADGE_TIER_NAMES[tier]}`;
     const sub = tier === 1 ? `New title: ${m.title}` : `${b.single ? '' : `${tier === 2 ? 10 : 100} times now`}`;
-    const toast = el('div', { class: 'toast' }, el('span', { class: 'toast-icon' }, m.icon), el('div', {}, el('strong', {}, what), el('div', { class: 'muted' }, sub)));
-    toast.onclick = () => this.#openPlayer();
-    this.#toasts.append(toast);
+    this.#toast(m.icon, what, sub).onclick = () => this.#openPlayer();
     this.#sound.fanfare();
+  }
+
+  /**
+   * A note in the corner of the town (a realm entered, a badge, a failure),
+   * fading out after `ms`; the oldest go when more than three pile up.
+   */
+  #toast(icon: string, title: string, sub: string, ms = 5600, extra?: Node): HTMLElement {
+    const toast = el('div', { class: 'toast' }, el('span', { class: 'toast-icon' }, icon), el('div', {}, el('strong', {}, title), el('div', { class: 'muted' }, sub), extra));
+    this.#toasts.append(toast);
     while (this.#toasts.children.length > 3) this.#toasts.firstElementChild?.remove();
-    setTimeout(() => toast.classList.add('leaving'), 5000);
-    setTimeout(() => toast.remove(), 5600);
+    setTimeout(() => toast.classList.add('leaving'), ms - 600);
+    setTimeout(() => toast.remove(), ms);
+    return toast;
   }
 
   #onTown(shown: Shown): void {
@@ -624,15 +524,9 @@ export class App {
     this.#names = shown.names;
     this.#sourceEl.textContent = shown.label;
     this.#homeBtn.hidden = shown.visiting === null;
-    this.#rebuild();
+    this.#swapSim({ seek: true });
     // you, from all your wallets' history (at home; a visited town leaves your level as it was)
-    void this.#refreshPlayer();
-    // ?at=<seconds>: start the replay at that moment (a link to it; tests)
-    const at = Number(new URLSearchParams(location.search).get('at'));
-    if (at > 0) this.#sim.seek(at);
-    this.#r2d.setSim(this.#sim);
-    this.#r3d?.setSim(this.#sim);
-    this.#bell();
+    void this.#player.refresh();
     // an open Realm Map shows what just arrived
     if (this.#realmMap) this.#openRealmMap();
     if (this.#guildOpen) {
@@ -665,12 +559,10 @@ export class App {
     const before = new Set(this.#guild.journeys.map((j) => j.key));
     this.#shown = shown;
     this.#raws = shown.raws;
-    this.#rebuild();
-    this.#r2d.setSim(this.#sim);
-    this.#r3d?.setSim(this.#sim);
+    this.#swapSim({ bell: false });
     this.#sim.goLive();
     for (const j of this.#guild.journeys) if (!before.has(j.key)) this.#sim.playNow(j);
-    this.#playerSoon();
+    this.#player.soon();
     if (this.#realmMap) this.#openRealmMap();
   }
 
@@ -775,7 +667,7 @@ export class App {
         },
         onImportHistory: async (data) => {
           const said = await this.#session.importHistory(data);
-          void this.#refreshPlayer();
+          void this.#player.refresh();
           return said;
         },
         heroes: this.#guild.heroes,
@@ -795,13 +687,7 @@ export class App {
   #setWindow(w: HistoryWindow): void {
     this.#prefs.window = w;
     savePrefs(this.#prefs);
-    this.#rebuild();
-    // ?at=<seconds>: start the replay at that moment (a link to it; tests)
-    const at = Number(new URLSearchParams(location.search).get('at'));
-    if (at > 0) this.#sim.seek(at);
-    this.#r2d.setSim(this.#sim);
-    this.#r3d?.setSim(this.#sim);
-    this.#bell();
+    this.#swapSim({ seek: true });
     this.#closeInspector();
   }
 
@@ -829,9 +715,7 @@ export class App {
           // most often a tab older than the latest deploy: its 3D file (named by content) is gone from the server
           const reload = el('button', { class: 'btn small' }, 'Reload');
           reload.onclick = () => location.reload();
-          const toast = el('div', { class: 'toast' }, el('span', { class: 'toast-icon' }, '⚠'), el('div', {}, el('strong', {}, 'The 3D view could not load'), el('div', { class: 'muted' }, 'The town may have been updated since this tab opened. '), reload));
-          this.#toasts.append(toast);
-          setTimeout(() => toast.remove(), 12_000);
+          this.#toast('⚠', 'The 3D view could not load', 'The town may have been updated since this tab opened. ', 12_000, reload);
           return;
         } finally {
           this.#busy('3d', null);
@@ -868,129 +752,61 @@ export class App {
   // --- layout ----------------------------------------------------------------
 
   #layout(): HTMLElement {
-    const views = el('div', { class: 'seg' });
-    for (const [v, label] of [['top', 'Top-down'], ['iso', 'Isometric'], ['3d', '3D']] as const) {
-      const b = el('button', { class: `btn${this.#prefs.view === v ? ' on' : ''}` }, label);
-      b.onclick = () => void this.#setView(v);
-      this.#viewBtns.set(v, b);
-      views.append(b);
-    }
-    const windowSel = el('select', { 'aria-label': 'History window' });
-    for (const [value, label] of [['days:30', 'Last 30 days'], ['days:7', 'Last 7 days'], ['count:100', 'Last 100 transactions'], ['count:25', 'Last 25 transactions']] as const) {
-      const opt = el('option', { value }, label);
-      const cur = this.#prefs.window.kind === 'days' ? `days:${this.#prefs.window.days}` : `count:${this.#prefs.window.count}`;
-      if (cur === value) opt.selected = true;
-      windowSel.append(opt);
-    }
-    windowSel.onchange = () => {
-      const [kind, n] = windowSel.value.split(':');
-      const num = Number(n);
-      this.#setWindow(kind === 'days' ? { kind: 'days', days: num } : { kind: 'count', count: num });
-    };
-
-    const legend = el(
-      'section',
-      { class: 'legend', title: 'One value scale for everything: mounts, homes, item frames, caravans' },
-      el('h4', {}, el('span', {}, 'Value scale'), el('button', { class: 'fold', 'aria-label': 'Collapse the value scale', 'aria-expanded': 'true' }, '▾')),
-      ...TIER_NAMES.map((name, i) => {
-        const d = el('span', { class: 'legend-item' }, el('i', {}), `${name} ${i === 0 ? '<$10' : `$${short(TIER_FLOORS[i] ?? 0)}+`}`);
-        const dot = d.querySelector('i');
-        if (dot) dot.style.background = TIER_COLORS[i] ?? '#888';
-        return d;
-      }),
+    const layout = buildLayout(
+      this.#prefs,
+      {
+        source: this.#sourceEl,
+        status: this.#statusEl,
+        playerBtn: this.#player.button,
+        realmBtn: this.#realmBtn,
+        homeBtn: this.#homeBtn,
+        soundBtn: this.#soundBtn,
+        inkBtn: this.#inkEl,
+        tourBtn: this.#tourBtn,
+        stage: this.#stage,
+        inspector: this.#inspector,
+        inspectorBody: this.#inspectorBody,
+        log: this.#log,
+        toasts: this.#toasts,
+        veil: this.#veil,
+        tooltip: this.#tooltip,
+        playBtn: this.#playBtn,
+        scrub: this.#scrub,
+        dateLabel: this.#dateLabel,
+        modeLabel: this.#modeLabel,
+        beatLabel: this.#beatLabel,
+      },
+      {
+        setView: (v) => void this.#setView(v),
+        setWindow: (w) => this.#setWindow(w),
+        setQuality: (q) => {
+          this.#prefs.quality = q;
+          savePrefs(this.#prefs);
+          this.#set3dQuality?.(q);
+        },
+        setSpeed: (s) => this.#setSpeed(s),
+        openLooks: () => this.#openLooks(),
+        toggleGuild: () => (this.#guildOpen ? this.#closeInspector() : this.#openGuild()),
+        openGuild: () => this.#openGuild(),
+        togglePlayer: () => (this.#playerOpen ? this.#closeInspector() : this.#openPlayer()),
+        toggleRealmMap: () => (this.#realmMap ? this.#closeRealmMap() : this.#openRealmMap()),
+        goHome: () => {
+          this.#busy('town', 'Heading home…');
+          void this.#session.home();
+        },
+        closeInspector: () => this.#closeInspector(),
+        togglePlay: () => this.#togglePlay(),
+        scrub: (value) => {
+          this.#scrubbing = true;
+          this.#sim.seek((value / 100) * this.#sim.duration);
+        },
+        scrubEnd: () => (this.#scrubbing = false),
+      },
     );
-    // folds to its title like the quest log (remembered)
-    const legendFold = legend.querySelector<HTMLButtonElement>('.fold')!;
-    const setLegendFolded = (folded: boolean): void => {
-      legend.classList.toggle('collapsed', folded);
-      legendFold.textContent = folded ? '▸' : '▾';
-      legendFold.setAttribute('aria-expanded', String(!folded));
-      legendFold.setAttribute('aria-label', folded ? 'Expand the value scale' : 'Collapse the value scale');
-    };
-    setLegendFolded(this.#prefs.legendFolded);
-    legend.querySelector('h4')!.onclick = () => {
-      this.#prefs.legendFolded = !this.#prefs.legendFolded;
-      savePrefs(this.#prefs);
-      setLegendFolded(this.#prefs.legendFolded);
-    };
-
-    const qualitySel = el('select', { 'aria-label': '3D quality', title: '3D image quality' });
-    for (const [value, label] of [['low', 'Quality: low'], ['medium', 'Quality: medium'], ['high', 'Quality: high']] as const) {
-      const opt = el('option', { value }, label);
-      if (this.#prefs.quality === value) opt.selected = true;
-      qualitySel.append(opt);
-    }
-    qualitySel.onchange = () => {
-      this.#prefs.quality = qualitySel.value as Prefs['quality'];
-      savePrefs(this.#prefs);
-      this.#set3dQuality?.(this.#prefs.quality);
-    };
-    const looksBtn = el('button', { class: 'btn' }, '🎨 Looks');
-    looksBtn.onclick = () => this.#openLooks();
-    const guildBtn = el('button', { class: 'btn' }, '⚙ Guild');
-    guildBtn.onclick = () => (this.#guildOpen ? this.#closeInspector() : this.#openGuild());
-    this.#inkEl.onclick = () => this.#openGuild();
-    this.#playerBtn.onclick = () => (this.#playerOpen ? this.#closeInspector() : this.#openPlayer());
-    this.#realmBtn.onclick = () => (this.#realmMap ? this.#closeRealmMap() : this.#openRealmMap());
-    this.#homeBtn.onclick = () => {
-      this.#busy('town', 'Heading home…');
-      void this.#session.home();
-    };
-    const header = el(
-      'header',
-      { class: 'topbar' },
-      el('div', { class: 'brand' }, el('strong', {}, 'Wallet-landia'), this.#sourceEl),
-      views,
-      windowSel,
-      qualitySel,
-      this.#playerBtn,
-      this.#realmBtn,
-      this.#homeBtn,
-      this.#statusEl,
-      el('div', { class: 'spacer' }),
-      this.#soundBtn,
-      this.#inkEl,
-      looksBtn,
-      guildBtn,
-      this.#tourBtn,
-    );
-    this.#tourRefs = { views, guildBtn, legend };
-
-    const close = el('button', { class: 'btn close', 'aria-label': 'Close' }, '✕');
-    close.onclick = () => this.#closeInspector();
-    this.#inspector.append(close, this.#inspectorBody);
-
-    const speeds = el('div', { class: 'seg' });
-    for (const s of SPEEDS) {
-      const b = el('button', { class: `btn${s === this.#prefs.speed ? ' on' : ''}` }, `${s}×`);
-      b.onclick = () => this.#setSpeed(s);
-      this.#speedBtns.set(s, b);
-      speeds.append(b);
-    }
-    this.#playBtn.onclick = () => this.#togglePlay();
-    this.#scrub.oninput = () => {
-      this.#scrubbing = true;
-      this.#sim.seek((Number(this.#scrub.value) / 100) * this.#sim.duration);
-    };
-    this.#scrub.onchange = () => (this.#scrubbing = false);
-
-    const timeline = el('footer', { class: 'timeline' }, this.#playBtn, speeds, this.#scrub, this.#dateLabel, this.#modeLabel, this.#beatLabel);
-    const fold = el('button', { class: 'fold', 'aria-label': 'Collapse the quest log', 'aria-expanded': 'true' }, '▾');
-    const questlog = el('section', { class: 'questlog' }, el('h4', {}, el('span', {}, 'Quest log'), fold), this.#log);
-    const setFolded = (folded: boolean): void => {
-      questlog.classList.toggle('collapsed', folded);
-      fold.textContent = folded ? '▸' : '▾';
-      fold.setAttribute('aria-expanded', String(!folded));
-      fold.setAttribute('aria-label', folded ? 'Expand the quest log' : 'Collapse the quest log');
-    };
-    setFolded(this.#prefs.questlogFolded);
-    questlog.querySelector('h4')!.onclick = () => {
-      this.#prefs.questlogFolded = !this.#prefs.questlogFolded;
-      savePrefs(this.#prefs);
-      setFolded(this.#prefs.questlogFolded);
-    };
-
-    return el('div', { class: 'app' }, header, el('main', { class: 'world' }, this.#stage, questlog, legend, this.#toasts, this.#veil, this.#inspector, this.#tooltip), timeline);
+    this.#viewBtns = layout.viewBtns;
+    this.#speedBtns = layout.speedBtns;
+    this.#tourRefs = { views: layout.views, guildBtn: layout.guildBtn, legend: layout.legend };
+    return layout.element;
   }
 
   #togglePlay(): void {
@@ -1017,149 +833,14 @@ export class App {
     if (sim.played !== this.#logCount || sim.log.at(-1)?.journey.key !== this.#selectedKey) {
       // medals for journeys just played (not for a jump along the timeline)
       const fresh = sim.played - this.#logCount;
-      if (this.#logCount >= 0 && fresh > 0 && fresh <= 3) for (const e of sim.log.slice(-fresh)) for (const m of this.#badgeMoments.get(e.journey.key) ?? []) this.#announce(m.badge, m.tier);
+      if (this.#logCount >= 0 && fresh > 0 && fresh <= 3) for (const e of sim.log.slice(-fresh)) for (const m of this.#player.momentsOf(e.journey.key)) this.#announce(m.badge, m.tier);
       this.#logCount = sim.played;
       this.#selectedKey = sim.log.at(-1)?.journey.key ?? '';
       this.#log.replaceChildren(...sim.log.slice(-8).reverse().map((e) => questLogRow(e.journey, this.#guild, (j) => this.#openJourney(j))));
     }
   }
 
-  // --- input -----------------------------------------------------------------
-
-  #bindInput(): void {
-    const stage = this.#stage;
-    // the Realm Map sits over the town inside the stage: its clicks, wheel and keys are its own
-    const inMap = (e: Event): boolean => e.target instanceof Element && e.target.closest('.realm-map') !== null;
-    const onStage = (e: Event): boolean => e.target instanceof Node && stage.contains(e.target) && !inMap(e);
-    // Left-drag pans; right-drag or shift-drag orbits (3D only).
-    let drag: { x: number; y: number; moved: boolean; orbit: boolean } | null = null;
-    // Touch: two fingers pinch to zoom and twist to orbit.
-    const touches = new Map<number, { x: number; y: number }>();
-    let pinch: { dist: number; angle: number } | null = null;
-    const twoFinger = (): { dist: number; angle: number; cx: number; cy: number } | null => {
-      const [a, b] = [...touches.values()];
-      if (!a || !b) return null;
-      return { dist: Math.hypot(b.x - a.x, b.y - a.y), angle: Math.atan2(b.y - a.y, b.x - a.x), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
-    };
-    stage.addEventListener('pointerdown', (e) => {
-      if (inMap(e)) return;
-      if (e.pointerType === 'touch') touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (touches.size >= 2) {
-        drag = null;
-        const t = twoFinger();
-        pinch = t ? { dist: t.dist, angle: t.angle } : null;
-        return;
-      }
-      drag = { x: e.clientX, y: e.clientY, moved: false, orbit: e.button === 2 || e.shiftKey };
-    });
-    const release = (e: PointerEvent): void => {
-      touches.delete(e.pointerId);
-      if (touches.size < 2) pinch = null;
-    };
-    window.addEventListener('pointercancel', release);
-    window.addEventListener('pointermove', (e) => {
-      if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pinch !== null) {
-        const t = twoFinger();
-        if (t) {
-          const r = stage.getBoundingClientRect();
-          this.#renderer.zoomAt(t.cx - r.left, t.cy - r.top, t.dist / Math.max(1, pinch.dist));
-          this.#renderer.rotate((t.angle - pinch.angle) * 160, 0);
-          pinch = { dist: t.dist, angle: t.angle };
-        }
-      }
-    });
-    stage.addEventListener('contextmenu', (e) => e.preventDefault());
-    let hoverAt: PointerEvent | null = null;
-    let hoverQueued = false;
-    window.addEventListener('pointermove', (e) => {
-      if (drag !== null) {
-        const dx = e.clientX - drag.x;
-        const dy = e.clientY - drag.y;
-        if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
-        if (drag.moved) {
-          if (drag.orbit) this.#renderer.rotate(dx, dy);
-          else this.#renderer.pan(dx, dy);
-          drag.x = e.clientX;
-          drag.y = e.clientY;
-        }
-      }
-      // hover at most once a frame: a hit test, a layout read and a tooltip rebuild per pointer event add up
-      hoverAt = onStage(e) ? e : null;
-      if (!hoverQueued) {
-        hoverQueued = true;
-        requestAnimationFrame(() => {
-          hoverQueued = false;
-          if (hoverAt !== null) this.#hover(hoverAt);
-          else if (this.#renderer.hover !== null || !this.#tooltip.hidden) {
-            this.#tooltip.hidden = true;
-            this.#renderer.hover = null;
-          }
-        });
-      }
-    });
-    window.addEventListener('pointerup', (e) => {
-      if (drag !== null && !drag.moved && !drag.orbit && onStage(e)) this.#click(e);
-      drag = null;
-      release(e);
-    });
-    stage.addEventListener(
-      'wheel',
-      (e) => {
-        if (inMap(e)) return;
-        e.preventDefault();
-        const r = stage.getBoundingClientRect();
-        this.#renderer.zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15);
-      },
-      { passive: false },
-    );
-    stage.addEventListener('pointerleave', () => {
-      this.#tooltip.hidden = true;
-      this.#renderer.hover = null;
-    });
-    // the control last pressed with the mouse: it keeps focus, but Space should still play and pause
-    const CONTROL = 'button, a[href], summary, [role="button"]';
-    let clicked: Element | null = null;
-    window.addEventListener('pointerdown', (e) => (clicked = e.target instanceof Element ? e.target.closest(CONTROL) : null), true);
-    window.addEventListener('focusin', (e) => {
-      if (e.target !== clicked) clicked = null;
-    });
-    window.addEventListener('keydown', (e) => {
-      // not while typing, not shortcuts of the browser or system (ctrl/cmd/alt), and the Realm Map has its own keys
-      if (e.ctrlKey || e.metaKey || e.altKey || inMap(e)) return;
-      const t = e.target;
-      if (t instanceof HTMLElement && (t.isContentEditable || t.matches('input, select, textarea'))) return;
-      // Space and Enter press a button or follow a link reached with the keyboard
-      if ((e.key === ' ' || e.key === 'Enter') && t instanceof HTMLElement && t !== clicked && t.matches(CONTROL)) return;
-      if (e.key === ' ') {
-        e.preventDefault();
-        this.#togglePlay();
-      } else if (e.key === 't') void this.#setView('top');
-      else if (e.key === 'i') void this.#setView('iso');
-      else if (e.key === 'm') this.#setSound(!this.#sound.on);
-      else if (e.key === '3') void this.#setView('3d');
-      else if (e.key === 'q') this.#renderer.rotate(-60, 0);
-      else if (e.key === 'e') this.#renderer.rotate(60, 0);
-      else if (e.key === '0') this.#renderer.fit();
-      else if (e.key === 'Escape') this.#closeInspector();
-    });
-    window.addEventListener('resize', () => this.#renderer.fit());
-  }
-
-  #hover(e: PointerEvent): void {
-    const r = this.#stage.getBoundingClientRect();
-    const target = this.#renderer.hitTest(e.clientX - r.left, e.clientY - r.top);
-    this.#renderer.hover = target;
-    this.#stage.style.cursor = target ? 'pointer' : 'grab';
-    if (target === null) {
-      this.#tooltip.hidden = true;
-      return;
-    }
-    this.#tooltip.hidden = false;
-    this.#tooltip.replaceChildren(...this.#tooltipContent(target));
-    this.#tooltip.style.left = `${e.clientX - r.left + 14}px`;
-    this.#tooltip.style.top = `${e.clientY - r.top + 14}px`;
-  }
+  // --- what the town shows on hover and click ----------------------------------
 
   #tooltipContent(t: HitTarget): Node[] {
     if (t.kind === 'hero') {
@@ -1200,10 +881,10 @@ export class App {
       onJourney: (j) => this.#openJourney(j),
       onReplay: (j) => this.#replay(j),
       beat: this.#realmBeat(),
-      medalsOf: (a) => this.#firstEarnedBy(a),
-      playerBadges: () => [...(this.#player?.badges.keys() ?? [])],
+      medalsOf: (a) => this.#player.firstEarnedBy(a),
+      playerBadges: () => this.#player.badgeIds(),
       onPlayer: () => this.#openPlayer(),
-      titleOf: (a) => this.#titleOf(a),
+      titleOf: (a) => this.#player.titleOf(a),
       setTitle: (a, t) => {
         if (t === null) delete this.#prefs.titles[a];
         else this.#prefs.titles[a] = t;
@@ -1293,8 +974,4 @@ export class App {
     this.#inspector.hidden = true;
     this.#renderer.selected = null;
   }
-}
-
-function short(n: number): string {
-  return n >= 1_000_000 ? `${n / 1_000_000}M` : n >= 1_000 ? `${n / 1_000}k` : String(n);
 }

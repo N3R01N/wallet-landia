@@ -24,10 +24,15 @@ for (const v of VIEWS) {
       localStorage.setItem('wallet-landia-v4/prefs/v1', JSON.stringify({ view: '3d', quality }));
     }, v.quality);
     await page.goto(`/?freeze&${v.q}`);
-    await page.waitForTimeout(5000);
-    const shot = await page.locator('.world').screenshot();
+    await expect(page.locator('.veil')).toBeHidden({ timeout: 60_000 });
+    // textures and models stream in after the veil: take the picture once the town is drawn
+    // (a blank canvas compresses to almost nothing)
+    let shot: Buffer = Buffer.alloc(0);
+    await expect(async () => {
+      shot = await page.locator('.world').screenshot();
+      expect(shot.length).toBeGreaterThan(60_000);
+    }).toPass({ timeout: 60_000 });
     await info.attach(v.name, { body: shot, contentType: 'image/png' });
-    expect(shot.length).toBeGreaterThan(60_000); // a blank canvas compresses to almost nothing
     expect(errors).toEqual([]);
   });
 }

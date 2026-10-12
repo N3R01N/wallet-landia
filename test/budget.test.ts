@@ -189,3 +189,16 @@ describe('DailyBudget', () => {
     expect(seen.at(-1)?.resetsAt).toBe(Date.parse('2026-08-10T00:00:00Z'));
   });
 });
+
+describe('several tabs on one key', () => {
+  it('count on from each other rather than overwrite each other', () => {
+    const storage = memoryStorage();
+    const a = new DailyBudget({ storage, now: () => NOON });
+    const b = new DailyBudget({ storage, now: () => NOON });
+    a.spend(10);
+    b.spend(5); // b started at 0, but a has spent 10 since
+    expect(b.used).toBe(15);
+    a.spend(1);
+    expect(a.used).toBe(16);
+  });
+});

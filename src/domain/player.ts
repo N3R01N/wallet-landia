@@ -16,7 +16,7 @@
  */
 
 import type { Guild, Hero, Journey, Verb } from './model.js';
-import { ALL_MEDALS, medalRules, type Medal } from './feats.js';
+import { ALL_MEDALS, medalRules, walkSeen, type Medal } from './feats.js';
 
 /** Counts at which a repeatable badge reaches bronze, silver, gold. */
 export const BADGE_TIERS = [1, 10, 100] as const;
@@ -161,13 +161,8 @@ export function playerProfile(guild: Guild, remembered: ReadonlyMap<string, Prov
 /** Every badge over the whole history, walking all wallets' journeys together, oldest first. */
 function lifetimeBadges(journeys: readonly Journey[], heroes: readonly Hero[]): Map<string, PlayerBadge> {
   const out = new Map<string, PlayerBadge>();
-  const seen = { initiated: 0, places: new Set<string>(), liquidated: false };
   const rules = medalRules();
-  for (const j of journeys) {
-    if (j.initiated) {
-      seen.initiated++;
-      for (const s of j.steps) if (s.target.kind === 'building') seen.places.add(s.target.protocolId);
-    }
+  walkSeen(journeys, (j, seen) => {
     for (const r of rules) {
       if (!r.journey?.(j, seen)) continue;
       const single = SINGLE.has(r.medal.id);
@@ -183,8 +178,7 @@ function lifetimeBadges(journeys: readonly Journey[], heroes: readonly Hero[]): 
         }
       }
     }
-    if (j.verb === 'liquidated') seen.liquidated = true;
-  }
+  });
   // holdings: any of the player's wallets, as they stand now
   for (const r of rules) {
     if (out.has(r.medal.id) || !r.holding) continue;

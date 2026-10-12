@@ -4,7 +4,7 @@
  */
 
 import type { AssetCategory, BuildingKind, ProtocolCategory } from './catalog.js';
-import type { Tier } from './tiers.js';
+import { tierOf, type Tier } from './tiers.js';
 
 export type HeroClass = 'merchant' | 'monk' | 'paladin' | 'bard' | 'ranger' | 'adventurer' | 'sleeper';
 
@@ -52,6 +52,13 @@ export interface Stash {
   tier: Tier;
   hasRewards: boolean;
   hasDebt: boolean;
+}
+
+/** A stash's totals from its entries (debt counts against its net worth, but toward its size). */
+export function summarizeStash(entries: StashEntry[]): Omit<Stash, 'protocolId'> {
+  const netUsd = entries.reduce((t, e) => t + e.usd, 0);
+  const grossUsd = entries.reduce((t, e) => t + Math.abs(e.usd), 0);
+  return { entries, netUsd, grossUsd, tier: tierOf(grossUsd), hasRewards: entries.some((e) => e.kind === 'reward' && e.usd >= 1), hasDebt: entries.some((e) => e.kind === 'loan') };
 }
 
 export interface Protocol {
