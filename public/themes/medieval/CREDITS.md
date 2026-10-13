@@ -6,6 +6,6 @@ Models and animations by **Quaternius** (https://quaternius.com), released under
 - Universal Base Characters (Standard): Superhero male/female bodies (head used), hairstyles rigged to the head bone
 - Modular Character Outfits – Fantasy (Standard): Peasant and Ranger, male and female
 - Farm Animals Animated: Horse, Cow, Sheep, Pig
-- Griffin and Dragon: made for this project in Blender by `scripts/blender/build_creatures.py` (original work, CC0 1.0)
+- Griffin and Dragon: made for this project in Blender (original work, CC0 1.0)
 
 Converted by `scripts/import-quaternius.ts` (textures → WebP, ≤ 1024 px).

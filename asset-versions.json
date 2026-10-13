@@ -5,8 +5,8 @@
     "where": "public/themes/highland/pack.json → \"version\""
   },
   "themes/medieval": {
-    "version": "0.4.0",
-    "hash": "1855c0b77c396e13",
+    "version": "0.4.3",
+    "hash": "75ccd64800021ca1",
     "where": "public/themes/medieval/pack.json → \"version\""
   },
   "themes/modern": {

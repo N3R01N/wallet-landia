@@ -3,14 +3,14 @@
   "id": "medieval",
   "name": "Medieval",
   "author": "wallet-landia; assets by Quaternius and ambientCG",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "license": "CC0-1.0",
   "description": "Rigged people in fantasy outfits on horses; grammar-built stone, timber and plaster buildings with PBR textures; hills, woods, meadow and props around them.",
   "slots": {},
   "theme": {
     "sky": "day",
     "notes": [
-      "Griffin and dragon mounts are made in Blender (scripts/blender/build_creatures.py)",
+      "Griffin and dragon mounts are made in Blender, not in this repo",
       "More outfits: the free kit has only Peasant and Ranger"
     ],
     "materials": {
