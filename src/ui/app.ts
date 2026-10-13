@@ -4,6 +4,7 @@
  */
 
 import { buildGuild, type HistoryWindow } from '../domain/mappers.js';
+import { exposeRoomDemo, roomHost } from './roomScene.js';
 import { CLASS_LABEL, type Guild, type HeroClass, type Journey } from '../domain/model.js';
 import { TIER_NAMES, approxUsd } from '../domain/tiers.js';
 import { setRealmChains, type RawWallet } from '../data/zerion/endpoints.js';
@@ -229,6 +230,7 @@ export class App {
     });
     this.#buildBtn.onclick = () => this.#toggleBuild();
     void this.#setView(this.#prefs.view, false);
+    if (new URLSearchParams(location.search).has('expose')) exposeRoomDemo();
     startHeartbeat((beat) => {
       this.#beat = beat;
       this.#bell();
@@ -978,9 +980,13 @@ export class App {
         }
       }
       this.#renderer = this.#r3d;
+      roomHost.threeD = true;
+      roomHost.materials = () => this.#r3d?.materials ?? null;
+      roomHost.figure = (h) => this.#r3d?.heroFigure(h.address, h.cls) ?? null;
     } else {
       this.#r2d.view = v;
       this.#renderer = this.#r2d;
+      roomHost.threeD = false;
     }
     // a hero being watched stays watched in the new view
     const watched = this.#heroCard?.address ?? null;

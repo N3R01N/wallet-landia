@@ -1788,3 +1788,101 @@ button.medal {
   font-size: 11px;
 }
 
+
+/* --- the inside of a house (a whole-screen view you look around in) ---------- */
+
+.inside-entry {
+  margin: 6px 0 10px;
+}
+
+.room-view {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: #1b120a;
+}
+
+.room-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--wood-dark);
+  color: var(--parchment);
+}
+
+.room-bar .room-step {
+  min-width: 2.2em;
+}
+
+.room-pan {
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: #5a3818;
+  cursor: grab;
+  scrollbar-width: thin;
+}
+
+.room-pan.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.room-scene {
+  width: max-content;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.room-canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.room3d-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.room3d {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.room3d-talk {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 3px 9px;
+  border: 2px solid #2b1d14;
+  border-radius: 6px;
+  background: #fffcf0;
+  color: #2b1d14;
+  font: bold 13px system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.room3d-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 8px;
+  border: 2px solid #5a3818;
+  border-radius: 5px;
+  background: #2b1d14;
+  color: #fff3d0;
+  font: 12px system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}

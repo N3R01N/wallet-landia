@@ -69,6 +69,7 @@ The full list is in [`src/assets/catalog.ts`](../src/assets/catalog.ts). Familie
 | Scenery | `prop.tree pine bush rock` (sprite for 2D, model for 3D) |
 | Buildings | `building.bazaar broker bank temple barracks alchemist auction harbour council names packing forge herald tent`, `building.tower guildhall gate`, `building.home.t0` … `t6` |
 | Names | `word.building.<kind>`, `word.district.temple alchemy civic wilds counting square market guild harbour` |
+| Inside the house | `room.coins sack pouch chest scale harvest ledger lute bench` (2D sprites; the house's own things, drawn in the room) |
 
 ## Rules the importer enforces
 - Paths must be relative and stay inside the pack: no `..`, no absolute paths, no `http:`, `data:` or other schemes.

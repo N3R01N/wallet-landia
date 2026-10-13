@@ -88,6 +88,8 @@ export interface Theme {
   surroundings?(site: Site): Surroundings;
   /** How the toll board at the Chronicle Tower looks: a painted board, an LED panel, a hologram. */
   board?: BoardLook;
+  /** The theme's materials by role (timber, planks, iron…), for the interiors built in 3D. */
+  lib?: MaterialLibrary;
   /** Free the theme's shared materials, textures and plants once no town draws with it. */
   dispose?(): void;
 }
@@ -133,6 +135,7 @@ export function bundleTheme(b: ThemeBundle): Theme {
     ...base,
     id: b.id,
     name: b.name,
+    lib,
     description: [b.description, `by ${b.author}`, b.license ? `(${b.license})` : ''].filter(Boolean).join(' '),
     status: spec.notes && spec.notes.length > 0 ? 'partial' : 'ready',
     defaultSky: spec.sky ?? 'day',

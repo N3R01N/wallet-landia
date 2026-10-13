@@ -5,7 +5,7 @@ import { defineConfig } from '@playwright/test';
  * pointer hit-testing). WebGL runs on SwiftShader so it works headless.
  */
 /** The specs that render themed 3D towns, capture pictures, or rebuild the 3D town over and over (gpu: ~2 min). */
-const SLOW = /(themes|sandbox|visual|gpu|build3d)\.spec\.ts$/;
+const SLOW = /(themes|sandbox|visual|gpu|build3d|room3d)\.spec\.ts$/;
 
 const AUTOTOWN = { name: 'wallet-landia-v4/dev/autotown', value: '1' };
 

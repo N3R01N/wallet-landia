@@ -11,7 +11,7 @@ import { BUILDING_NAMES, type AssetCategory, type BuildingKind } from '../domain
 import { CLASS_LABEL, type HeroClass } from '../domain/model.js';
 import { DISTRICT_NAMES, type District } from '../world/layout.js';
 
-export type SlotFamily = 'hero' | 'npc' | 'caravan' | 'item' | 'prop' | 'building' | 'word';
+export type SlotFamily = 'hero' | 'npc' | 'caravan' | 'item' | 'prop' | 'building' | 'word' | 'room';
 /** Which forms a slot can take: a billboard/icon sprite, 2D building sprites per projection, a 3D model, or a word. */
 export type SlotForm = 'sprite' | 'top' | 'iso' | 'model' | 'word';
 
@@ -30,6 +30,7 @@ export const FAMILY_LABEL: Record<SlotFamily, string> = {
   prop: 'Scenery',
   building: 'Buildings',
   word: 'Names (lexicon)',
+  room: 'Inside the house',
 };
 
 const TIERS = [0, 1, 2, 3, 4, 5, 6] as const;
@@ -52,6 +53,8 @@ export function catalog(): SlotInfo[] {
   for (const t of TIERS.slice(1)) out.push({ key: `caravan.t${t}`, family: 'caravan', label: `Caravan, tier ${t}`, forms: ['sprite'] });
   for (const i of ITEMS) out.push({ key: `item.${i}`, family: 'item', label: `Item: ${i}`, forms: ['sprite'] });
   for (const p of ['tree', 'pine', 'bush', 'rock']) out.push({ key: `prop.${p}`, family: 'prop', label: `Scenery: ${p}`, forms: ['sprite', 'model'] });
+  // what is inside a house (its room, 2D sprites)
+  for (const r of ['coins', 'sack', 'pouch', 'chest', 'scale', 'harvest', 'ledger', 'lute', 'bench']) out.push({ key: `room.${r}`, family: 'room', label: `Room: ${r}`, forms: ['sprite'] });
   for (const b of BUILDINGS) {
     out.push({ key: `building.${b}`, family: 'building', label: BUILDING_NAMES[b], forms: ['top', 'iso', 'model'] });
     out.push({ key: `word.building.${b}`, family: 'word', label: `Name of the ${BUILDING_NAMES[b]}`, forms: ['word'] });

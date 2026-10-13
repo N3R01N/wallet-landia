@@ -17,6 +17,8 @@ import type { HeroClass } from '../../domain/model.js';
 import { crestColors, hashString } from '../../util/rng.js';
 import type { Sim } from '../../world/sim.js';
 import { ImagePipeline, type DebugView, type Quality } from './pipeline.js';
+import type { MaterialLibrary } from './grammar/materials.js';
+import type { SandboxCharacter } from './themes.js';
 import { bundleTheme, type Theme } from './themes.js';
 import type { ThemeBundle } from '../../assets/themeBundles.js';
 import { PortraitStudio } from './portrait.js';
@@ -181,6 +183,11 @@ export class Renderer3D implements WorldView {
     const rigged = theme && theme.characters !== spriteCharacters ? theme.characters : null;
     this.#people.ready(rigged);
     if (rigged) this.element.dataset.people = 'rigged';
+  }
+
+  /** The theme's material library (null for the built-in look): the house interiors use it. */
+  get materials(): MaterialLibrary | null {
+    return this.#theme?.lib ?? null;
   }
 
   setQuality(q: Quality): void {
@@ -371,6 +378,17 @@ export class Renderer3D implements WorldView {
     this.#portraits ??= new PortraitStudio();
     // on foot: a mount would fill the frame
     return this.#portraits.shoot(`${this.#theme.id}:${cls}:${crest}:${seed}`, () => people.create({ id: `portrait:${address}`, kind: 'hero', cls, tier: 0, crest, seed }));
+  }
+
+  /**
+   * A hero's own figure in the theme's look (the town's character, with its crest and its tier), for a
+   * house's room; null in the built-in look or until the people have loaded.
+   */
+  heroFigure(address: string, cls: HeroClass): SandboxCharacter | null {
+    const people = this.#people.provider;
+    if (people === null || this.#theme === null) return null;
+    // on foot: a mount would fill the room (as in the portraits)
+    return people.create({ id: `room:${address}`, kind: 'hero', cls, tier: 0, crest: crestColors(address)[0], seed: hashString(address) });
   }
 
   /** Put the camera somewhere at once (tuning tools only): looking at (x, y) from `distance` tiles. */

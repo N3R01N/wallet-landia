@@ -19,6 +19,8 @@ import type { HeroNow } from '../world/heroNow.js';
 import type { BlockBeat } from '../data/rpc.js';
 import { formatGwei } from '../world/chain.js';
 import { el, fmtDate, safeHref, shortAddr } from './dom.js';
+import { stepInside } from './roomScene.js';
+import { roomFor } from '../world/roomLayout.js';
 
 const EXPLAIN: Record<string, string> = {
   bazaar: 'A Bazaar is a decentralised exchange (DEX). Heroes barter one token for another at its stalls, or pour pairs of tokens into its fountain (a liquidity pool) to earn a share of the trading fees.',
@@ -298,6 +300,8 @@ export function heroPanel(hero: Hero, ctx: PanelContext): HTMLElement {
     'div',
     { class: 'panel-body' },
     el('div', { class: 'sheet-head' }, portrait(hero, cls, ctx.portraitOf), el('div', {}, heroNameEditor(hero, ctx), el('div', { class: 'hero-title' }, title), el('div', { class: 'muted mono' }, shortAddr(hero.address)), el('div', { class: 'muted' }, hero.label))),
+    el('h3', {}, 'Inside'),
+    stepInside(roomFor({ kind: 'home', cls, title: `${hero.name}'s home`, tokens: hero.items, nfts: hero.nfts, positions: hero.stashes.map((stash) => ({ owner: hero.name, stash })) }), { address: hero.address, cls, tier: hero.tier }),
     el('div', { class: 'stat-row' }, el('span', {}, 'Net worth'), el('strong', {}, exactUsd(hero.netWorth)), chip(TIER_NAMES[hero.tier], TIER_COLORS[hero.tier] ?? '#888')),
     el('div', { class: 'stat-row' }, el('span', {}, 'Mount'), el('strong', {}, MOUNT_NAMES[hero.tier])),
     el('div', { class: 'stat-row' }, el('span', {}, 'Class'), select),
@@ -381,6 +385,8 @@ export function buildingPanel(b: Placed, ctx: PanelContext): HTMLElement {
     el('div', { class: 'sheet-head' }, logo, el('div', {}, el('h2', {}, protocol.name), el('div', { class: 'muted' }, `${buildingName(protocol.building)} · ${CATEGORY_LABEL[protocol.category]}`), el('div', { class: 'muted' }, district))),
     el('p', {}, EXPLAIN[protocol.building] ?? ''),
     href ? el('p', {}, el('a', { href, target: '_blank', rel: 'noopener noreferrer' }, 'Visit the real thing ↗')) : null,
+    el('h3', {}, 'Inside'),
+    stepInside(roomFor({ kind: 'protocol', title: protocol.name, tokens: [], nfts: [], positions: stashes.map(({ h, s }) => ({ owner: h.name, stash: s })) })),
     el('h3', {}, 'Your stashes here'),
     stashes.length === 0
       ? el('p', { class: 'muted' }, 'None of your heroes keeps anything here right now.')
