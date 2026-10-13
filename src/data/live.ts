@@ -5,11 +5,13 @@
  * - history is events: kept forever, only the newer tail is fetched (1 request);
  * - valuations (balances, positions, NFTs) are a measurement of now: refetched
  *   whole (4 requests) once they are older than VALUATION_TTL;
- * - a cold wallet costs ~5 requests, a reload within the TTL costs 0–1;
- * - with the wallet's on-chain fingerprint (nonce and ETH balance, free from
- *   the public RPC) a revisit costs nothing while it is unchanged: the cache
- *   is trusted for much longer, and a change fetches only the new tail and
- *   re-measures only what that tail can have moved.
+ * - a cold wallet costs ~5 requests; a reload costs nothing while the wallet
+ *   is unchanged (its on-chain fingerprint, free from the public RPC, says so)
+ *   and nothing is due: the history backstop is hourly, prices are re-read
+ *   hourly for one request (the portfolio total), and the whole measurement
+ *   is redone every six hours, or at once when a transaction moved something.
+ * - the fingerprint is optional: without it (the RPC is busy) the timers are
+ *   the same, so a reload never costs more for that reason.
  */
 
 import { ZerionClient, ZerionError } from './zerion/client.js';
@@ -28,18 +30,21 @@ import type { TransactionResource } from './zerion/types.js';
 import type { KV } from './cache.js';
 import { Ledger, isSpam, sortNewestFirst, txKey } from './ledger.js';
 
-export const VALUATION_TTL = 5 * 60_000;
-/** Reloading within this window does not even ask for the tail. */
-export const HISTORY_TTL = 2 * 60_000;
-/** When the fingerprint shows the wallet did not move: incoming tokens and prices still drift, slowly. */
-export const QUIET_HISTORY_TTL = 30 * 60_000;
-export const QUIET_VALUATION_TTL = 60 * 60_000;
+/** How long an unchanged wallet's history may go unchecked: incoming tokens do not show in the fingerprint. */
+export const HISTORY_BACKSTOP = 60 * 60_000;
+/** How long the portfolio total may go unread: prices move with no transaction (one request). */
+export const PRICE_TTL = 60 * 60_000;
+/** How long the whole measurement (balances, positions, NFTs: four requests) may go unread. */
+export const FULL_TTL = 6 * 60 * 60_000;
 /** Kept per wallet; the world shows up to 100. */
 export const HISTORY_CAP = 250;
 
 interface Entry {
   raw: RawWallet;
+  /** When the whole measurement was last made. */
   valuationsAt: number;
+  /** When the portfolio total was last read (the whole measurement reads it too). */
+  totalAt?: number;
   historyAt: number;
   /** The wallet's on-chain fingerprint when it was last brought up to date. */
   print?: string;
@@ -141,25 +146,29 @@ export class LiveLoader {
         await this.#cache.put(k, { raw, valuationsAt: now, historyAt: now, ...(opts.print ? { print: opts.print } : {}) } satisfies Entry);
         return raw;
       }
-      // with both fingerprints we know whether the wallet moved; without, go by age
-      const known = opts.print !== undefined && cached.print !== undefined;
-      const moved = known && opts.print !== cached.print;
+      // the fingerprint says whether the wallet moved (when both are known); the timers say when to look anyway
+      const moved = opts.print !== undefined && cached.print !== undefined && opts.print !== cached.print;
       // `fresh`: the player asked for it now (the tail and a full measure, not the whole history again)
-      const historyDue = opts.fresh === true || moved || now - cached.historyAt > (known ? QUIET_HISTORY_TTL : HISTORY_TTL);
+      const historyDue = opts.fresh === true || moved || now - cached.historyAt > HISTORY_BACKSTOP;
       let raw: RawWallet = { ...cached.raw, label };
       let fresh: TransactionResource[] = [];
       if (historyDue) ({ raw, fresh } = await this.#refreshTail(raw));
       // what to re-measure: what the new transactions can have moved, else only if it is old
-      let revalue: 'full' | 'tokens' | null = null;
-      if (opts.fresh === true || now - cached.valuationsAt > (known ? QUIET_VALUATION_TTL : VALUATION_TTL)) revalue = 'full';
+      // a transaction that moved something re-measures what it can have moved; otherwise the whole
+      // measure is due only every FULL_TTL, and the price (the portfolio total, one request) every PRICE_TTL
+      let revalue: 'full' | 'tokens' | 'total' | null = null;
+      if (opts.fresh === true || now - cached.valuationsAt > FULL_TTL) revalue = 'full';
       else if (fresh.length > 0) revalue = remeasureFor(fresh);
+      else if (now - (cached.totalAt ?? cached.valuationsAt) > PRICE_TTL) revalue = 'total';
       if (revalue === 'full') raw = await this.#remeasureFull(raw);
       else if (revalue === 'tokens') raw = await this.#remeasureTokens(raw);
+      else if (revalue === 'total') raw = { ...raw, portfolio: await orKeep(getPortfolio(this.client, raw.address), raw.portfolio) };
       raw.capturedAt = now;
       const print = opts.print ?? cached.print;
       await this.#cache.put(k, {
         raw,
         valuationsAt: revalue === 'full' ? now : cached.valuationsAt,
+        ...(revalue !== null ? { totalAt: now } : cached.totalAt !== undefined ? { totalAt: cached.totalAt } : {}),
         historyAt: historyDue ? now : cached.historyAt,
         ...(print !== undefined ? { print } : {}),
       } satisfies Entry);
@@ -208,7 +217,7 @@ export class LiveLoader {
             : { ...cached.raw, portfolio: await orKeep(getPortfolio(this.client, cached.raw.address), cached.raw.portfolio) };
       const now = this.#now();
       raw.capturedAt = now;
-      await this.#cache.put(k, { ...cached, raw, valuationsAt: mode === 'full' ? now : cached.valuationsAt } satisfies Entry);
+      await this.#cache.put(k, { ...cached, raw, valuationsAt: mode === 'full' ? now : cached.valuationsAt, totalAt: now } satisfies Entry);
       return raw;
     });
   }

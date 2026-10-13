@@ -45,7 +45,7 @@ function fakeZerion(feed: TransactionResource[]): { fetch: typeof fetch; urls: s
 }
 
 describe('LiveLoader request budget', () => {
-  it('cold 5, warm reload 0, stale history 1 (+2 for the tokens a new transaction moved), stale valuations 5', async () => {
+  it('cold 5, reloads free for an hour, then history 1 (+2 for the tokens a new transaction moved), prices 1 an hour, the whole measure 4 every six hours', async () => {
     const feed = [tx('0xa', '2026-10-07T10:00:00Z')];
     const z = fakeZerion(feed);
     let now = Date.parse('2026-10-08T12:00:00Z');
@@ -56,20 +56,24 @@ describe('LiveLoader request budget', () => {
     await loader.load(ADDR, 'me');
     expect(z.urls.length).toBe(5);
 
-    now += 60_000; // a reload a minute later
+    now += 60_000; // a reload a minute later: nothing is due
     await loader.load(ADDR, 'me');
     expect(z.urls.length).toBe(5);
 
-    now += 2 * 60_000; // history stale, valuations not
-    feed.push(tx('0xb', '2026-10-08T12:02:00Z'));
+    now += 60 * 60_000; // an hour: the history backstop looks (a new transaction, and its tokens)
+    feed.push(tx('0xb', '2026-10-08T12:55:00Z'));
     const raw = await loader.load(ADDR, 'me');
-    expect(z.urls.length).toBe(8);
+    expect(z.urls.length).toBe(5 + 1 + 2);
     expect(raw.transactions.map((t) => t.attributes.hash)).toEqual(['0xb', '0xa']);
 
-    now += 10 * 60_000; // both stale
+    now += 10 * 60_000; // prices are read again an hour after the last read, not before
     await loader.load(ADDR, 'me');
-    expect(z.urls.length).toBe(13);
-    expect(budget.used).toBe(13);
+    expect(z.urls.length).toBe(8);
+
+    now += 60 * 60_000; // an hour: the history backstop again, and the prices (one request)
+    await loader.load(ADDR, 'me');
+    expect(z.urls.length).toBe(10);
+    expect(budget.used).toBe(10);
   });
 
   it('with a fingerprint, an unmoved wallet comes from the cache; a moved one costs only what it moved', async () => {
@@ -93,13 +97,29 @@ describe('LiveLoader request budget', () => {
     expect(z.urls.length).toBe(8);
     expect(raw.transactions.map((t) => t.attributes.hash)).toEqual(['0xb', '0xa']);
 
-    now += 31 * 60_000; // quiet, but incoming tokens could have arrived: the tail only
+    now += 31 * 60_000; // quiet, half an hour after the last check: nothing is due
     await loader.load(ADDR, 'them', { print: '2:90' });
-    expect(z.urls.length).toBe(9);
+    expect(z.urls.length).toBe(8);
 
-    now += 30 * 60_000; // an hour since the last full measure: prices drift, measure again (the tail is 30 min old: not yet)
+    now += 30 * 60_000; // an hour since the last check: the tail (1, incoming tokens could have come) and the prices (1)
     await loader.load(ADDR, 'them', { print: '2:90' });
-    expect(z.urls.length).toBe(9 + 4);
+    expect(z.urls.length).toBe(10);
+  });
+
+  it('without the fingerprint (the RPC is busy), a reload a few minutes later costs nothing', async () => {
+    const feed = [tx('0xa', '2026-10-07T10:00:00Z')];
+    const z = fakeZerion(feed);
+    let now = Date.parse('2026-10-08T12:00:00Z');
+    const budget = new DailyBudget({ storage: null, now: () => now });
+    const client = new ZerionClient({ apiKey: 'k', transport: 'direct', fetch: z.fetch, budget, requestsPerSecond: 1000 });
+    const loader = new LiveLoader({ apiKey: 'k', budget, cache: new MemoryKV(), client, now: () => now });
+    await loader.load(ADDR, 'them');
+    expect(z.urls.length).toBe(5);
+    for (let i = 0; i < 3; i++) {
+      now += 3 * 60_000;
+      await loader.load(ADDR, 'them');
+    }
+    expect(z.urls.length).toBe(5); // nine minutes: no short timers any more
   });
 
   it('a protocol transaction re-measures positions and NFTs too', async () => {
