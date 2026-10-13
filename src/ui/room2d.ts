@@ -14,6 +14,7 @@ import type { Room, RoomObject } from '../world/roomLayout.js';
 import { roomRemark } from '../world/roomTalk.js';
 import { el, safeHref } from './dom.js';
 import { openShell } from './roomShell.js';
+import { panWith } from './roomHelpers.js';
 
 /** The room in town pixels: a little wider than the screen at 1×, so it can be looked around. */
 export const ROOM2D = { w: 320, h: 180, floor: 128 } as const;
@@ -334,30 +335,7 @@ export function openRoom2d(room: Room, look: HeroLook | null = null): () => void
   const step = (dir: -1 | 1): void => {
     pan.scrollBy({ left: dir * 120 * k, behavior: 'smooth' });
   };
-  // drag to look around; a wheel turns it sideways
-  let from: { x: number; left: number } | null = null;
-  pan.addEventListener('pointerdown', (e) => {
-    from = { x: e.clientX, left: pan.scrollLeft };
-    pan.setPointerCapture(e.pointerId);
-    pan.classList.add('dragging');
-  });
-  pan.addEventListener('pointermove', (e) => {
-    if (from !== null) pan.scrollLeft = from.left - (e.clientX - from.x);
-  });
-  const release = (): void => {
-    from = null;
-    pan.classList.remove('dragging');
-  };
-  pan.addEventListener('pointerup', release);
-  pan.addEventListener('pointercancel', release);
-  pan.addEventListener(
-    'wheel',
-    (e) => {
-      e.preventDefault();
-      pan.scrollLeft += e.deltaY + e.deltaX;
-    },
-    { passive: false },
-  );
+  panWith(pan);
   const close = openShell(room.title, pan, { hint: 'drag, or ← → to look around · Esc to leave', step });
   return () => {
     cancelAnimationFrame(frame);

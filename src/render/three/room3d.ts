@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { MaterialLibrary } from './grammar/materials.js';
 import { MeshWriter } from './grammar/meshWriter.js';
 import type { Room, RoomObject } from '../../world/roomLayout.js';
+import type { Footprint } from './roomPath.js';
 import { approxUsd } from '../../domain/tiers.js';
 
 export const ROOM3D = { w: 6, d: 5, h: 3.2 } as const;
@@ -31,7 +32,13 @@ export interface Room3D {
   /** The whole room, in metres. */
   group: THREE.Group;
   /** Hover text for each thing in the room, pinned where it stands. */
-  labels: { at: THREE.Vector3; text: string; stand: THREE.Vector3 }[];
+  labels: { at: THREE.Vector3; text: string; stand: THREE.Vector3; image?: string }[];
+  /** The furniture's footprints on the floor, for walking round them. */
+  solids: Footprint[];
+  /** The room's floor, as a footprint. */
+  floor: Footprint;
+  /** The pictures' frames: where each sits, which way it faces, its size, and its NFT's image (https) if any. */
+  frames: { center: THREE.Vector3; across: 'x' | 'z'; w: number; h: number; image?: string }[];
   /** Above the villager's head, where what they say is pinned. */
   talker: THREE.Vector3;
   /** Move the things that move, `t` seconds on the view's clock. */
@@ -40,6 +47,29 @@ export interface Room3D {
 
 /** Gold that takes the light (the theme's metal gold reflects the dark room and goes black). */
 const GOLD = { key: 'plaster' as const, tint: '#e8b020' };
+
+/**
+ * A heap of coins on a surface: layers that narrow as they rise, each coin
+ * set where a fixed pattern puts it (so the same holdings always heap the same
+ * way), tilted a little so the heap reads as loose coins, not a stack of discs.
+ */
+function coinHeap3d(w: MeshWriter, x: number, z: number, y0: number, count: number, radius: number): void {
+  let seed = Math.round(x * 1000) * 31 + Math.round(z * 1000) * 17 + count;
+  const rnd = (): number => {
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  };
+  let placed = 0;
+  for (let layer = 0; placed < count; layer++) {
+    const r = radius * Math.max(0.25, 1 - layer * 0.28);
+    const per = Math.max(1, Math.round((r / radius) * 6));
+    for (let i = 0; i < per && placed < count; i++, placed++) {
+      const a = rnd() * Math.PI * 2;
+      const d = Math.sqrt(rnd()) * r * 0.8;
+      w.cylinder(x + Math.cos(a) * d, z + Math.sin(a) * d, y0 + layer * 0.02 + rnd() * 0.004, 0.075, 0.02, 10, GOLD, { top: GOLD });
+    }
+  }
+}
 
 /** A treasure chest standing at (x, z): its front faces the camera (+z). */
 function chest3d(w: MeshWriter, x: number, z: number): void {
@@ -61,12 +91,17 @@ function chest3d(w: MeshWriter, x: number, z: number): void {
 export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibrary({})): Room3D {
   const w = new MeshWriter();
   const { w: W, d: D, h: H } = ROOM3D;
+  const solids: Footprint[] = [
+    { x0: -1.6, x1: 0.2, z0: -0.15, z1: 0.65 }, // the table
+    { x0: 0.5, x1: 1.9, z0: -1.775, z1: -1.225 }, // the counter
+    { x0: -2.8, x1: -1.4, z0: -2.15, z1: -1.75 }, // the bench
+  ];
   // where each thing's hover text is pinned, and what it says
   const labels: Room3D['labels'] = [];
   // where the hero stops to look at a thing: on the floor just in front of it, inside the room
   const tag = (o: RoomObject, x: number, y: number, z: number): void => {
     const stand = new THREE.Vector3(Math.min(2.4, Math.max(-2.4, x)), 0, Math.min(2, Math.max(-2, z + 0.7)));
-    labels.push({ at: new THREE.Vector3(x, y, z), text: `${o.label}${o.usd === null ? '' : ` · ${approxUsd(o.usd)}`}`, stand });
+    labels.push({ at: new THREE.Vector3(x, y, z), text: `${o.label}${o.usd === null ? '' : ` · ${approxUsd(o.usd)}`}`, stand, ...(o.image && (o.kind === 'coins' || o.kind === 'sack' || o.kind === 'pouch') ? { image: o.image } : {}) });
   };
   const hw = W / 2;
   const hd = D / 2;
@@ -102,6 +137,7 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
 
   // the pictures: along the back wall, then the left wall
   const pictures = room.objects.filter((o) => o.kind === 'picture');
+  const frames: Room3D['frames'] = [];
   pictures.forEach((o, k) => {
     const tint = tintFor(o.label);
     if (k < 6) {
@@ -109,11 +145,13 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
       w.box([x, 1.9, -hd + 0.04], [0.8, 1.0, 0.06], 'timber');
       w.box([x, 1.9, -hd + 0.08], [0.66, 0.86, 0.04], { key: 'plaster', tint });
       tag(o, x, 2.2, -hd + 0.1);
+      frames.push({ center: new THREE.Vector3(x, 1.9, -hd + 0.08), across: 'x', w: 0.66, h: 0.86, ...(o.image ? { image: o.image } : {}) });
     } else {
       const z = -1.6 + (k - 6) * 0.95;
       w.box([-hw + 0.04, 1.9, z], [0.06, 1.0, 0.8], 'timber');
       w.box([-hw + 0.08, 1.9, z], [0.04, 0.86, 0.66], { key: 'plaster', tint });
       tag(o, -hw + 0.1, 2.2, z);
+      frames.push({ center: new THREE.Vector3(-hw + 0.08, 1.9, z), across: 'z', w: 0.66, h: 0.86, ...(o.image ? { image: o.image } : {}) });
     }
   });
 
@@ -124,9 +162,8 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
       const x = -1.35 + i * 0.4;
       tag(o, x, 1.05, 0.2);
       if (o.kind === 'coins') {
-        // a stack of gold coins: one disc per step of value
-        const n = 3 + Math.round(o.size * 6);
-        for (let k = 0; k < n; k++) w.cylinder(x, 0.2, 0.84 + k * 0.022, 0.1, 0.024, 12, GOLD, { top: GOLD });
+        // a heap of gold coins: more of them for more value
+        coinHeap3d(w, x, 0.2, 0.84, 8 + Math.round(o.size * 22), 0.2);
       } else {
         // a sack: a round body, a neck and a tie (a pouch is darker)
         const tint = o.kind === 'pouch' ? '#9a7442' : '#c9a46a';
@@ -140,6 +177,7 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
   // (on the floor beside the table, where the camera sees them whole)
   room.objects.filter((o) => o.kind === 'chest').forEach((o, i) => {
     chest3d(w, 0.55 + i * 0.7, 0.5);
+    solids.push({ x0: 0.55 + i * 0.7 - 0.37, x1: 0.55 + i * 0.7 + 0.37, z0: 0.26, z1: 0.74 });
     tag(o, 0.55 + i * 0.7, 0.6, 0.5);
   });
 
@@ -157,7 +195,7 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
     });
 
   // the hero whose house it is stands here (the view places their own figure), and talks about the house
-  const talker = new THREE.Vector3(0.9, 1.9, -0.2);
+  const talker = new THREE.Vector3(-2.5, 1.9, -1.2);
 
   // a merchant's ledger on the counter, a bard's lute on the right wall, a sleeper's bench by the back wall
   for (const o of room.objects.filter((o) => o.kind === 'ledger' || o.kind === 'lute' || o.kind === 'bench')) {
@@ -230,5 +268,5 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
     dustPos.needsUpdate = true;
   };
   animate(0);
-  return { group, talker, labels, animate };
+  return { group, talker, labels, solids, floor: { x0: -hw + 0.1, x1: hw - 0.1, z0: -hd + 0.1, z1: hd - 0.1 }, frames, animate };
 }

@@ -86,6 +86,7 @@ export function roomFor(src: RoomSource): Room {
       size: sizeOf(t.usd ?? 0, most),
       label: `${t.symbol}: ${t.quantity.toLocaleString('en-US', { maximumSignificantDigits: 4 })}`,
       usd: t.usd,
+      ...(t.iconUrl ? { image: t.iconUrl } : {}),
     });
   });
   const rest = tokens.slice(TABLE_X.length);

@@ -1886,3 +1886,25 @@ button.medal {
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* an NFT picture laid over its frame in the 3D room: the whole picture, centred, on a mat */
+.room3d-pic {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  background: #efe2c4;
+  pointer-events: none;
+}
+
+/* a token's logo over its heap of coins in the 3D room */
+.room3d-logo {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  transform: translate(-50%, -100%);
+  object-fit: cover;
+  border-radius: 50%;
+  border: 2px solid #2b1d14;
+  background: #fffcf0;
+  pointer-events: none;
+}

@@ -11,6 +11,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { openShell } from '../../ui/roomShell.js';
 import { el } from '../../ui/dom.js';
+import { isClick, keepInside } from '../../ui/roomHelpers.js';
+import { safeHref } from '../../ui/dom.js';
+import { walkPath, type Point } from './roomPath.js';
 import type { Room } from '../../world/roomLayout.js';
 import { roomRemark } from '../../world/roomTalk.js';
 import { MaterialLibrary } from './grammar/materials.js';
@@ -60,6 +63,54 @@ export function openRoom3d(room: Room, lib: MaterialLibrary | null, figure: Sand
   const labels: Label[] = built.labels;
 
   // the hero, standing by the table at their own height; their words are pinned above their head
+  // a token's logo over its heap of coins, so it is at once clear what the coins are
+  const logos = built.labels
+    .map((l) => ({ l, src: l.image === undefined ? null : safeHref(l.image) }))
+    .filter((x): x is { l: (typeof built.labels)[number]; src: string } => x.src !== null)
+    .map((x) => ({ at: x.l.at.clone().add(new THREE.Vector3(0, 0.08, 0)), img: el('img', { class: 'room3d-logo', alt: '', referrerpolicy: 'no-referrer', src: x.src }) }));
+  for (const { img } of logos) wrap.append(img);
+
+  // the NFT pictures: an <img> over each frame (WebGL textures would need CORS, which the picture hosts do not send)
+  const pictures = built.frames
+    .map((f) => ({ f, src: f.image === undefined ? null : safeHref(f.image) }))
+    .filter((p): p is { f: (typeof built.frames)[number]; src: string } => p.src !== null)
+    .map((p) => ({ f: p.f, img: el('img', { class: 'room3d-pic', alt: '', referrerpolicy: 'no-referrer', src: p.src }) }));
+  for (const { img } of pictures) wrap.append(img);
+
+  // the NFT pictures as textures, on the frames: through our own picture proxy (same origin, so WebGL may read them);
+  // until one loads, or where there is no proxy (the dev server), the image above stays
+  const textured = new Set<(typeof built.frames)[number]>();
+  const textures: THREE.Texture[] = [];
+  const meshes: THREE.Mesh[] = [];
+  let closed = false;
+  const loader = new THREE.TextureLoader();
+  for (const f of built.frames) {
+    const src = f.image === undefined ? null : safeHref(f.image);
+    if (src === null) continue;
+    loader.load(
+      `/api/image?u=${encodeURIComponent(src)}`,
+      (tex) => {
+        if (closed) return tex.dispose(); // (the room was left before the picture came)
+        tex.colorSpace = THREE.SRGBColorSpace;
+        textures.push(tex);
+        // the picture is fitted whole into the frame's inside, centred
+        const aspect = tex.image.width / tex.image.height;
+        const frameAspect = f.w / f.h;
+        const pw = aspect > frameAspect ? f.w : f.h * aspect;
+        const ph = aspect > frameAspect ? f.w / aspect : f.h;
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 }));
+        // just in front of the frame, facing into the room
+        mesh.position.copy(f.center).add(f.across === 'x' ? new THREE.Vector3(0, 0, 0.02) : new THREE.Vector3(0.02, 0, 0));
+        if (f.across === 'z') mesh.rotation.y = Math.PI / 2;
+        scene.add(mesh);
+        meshes.push(mesh);
+        textured.add(f);
+      },
+      undefined,
+      () => undefined, // no texture: the image over the frame stays
+    );
+  }
+
   const talker = built.talker.clone();
   const body = figure?.object ?? null;
   if (figure !== null && body !== null) {
@@ -121,14 +172,18 @@ export function openRoom3d(room: Room, lib: MaterialLibrary | null, figure: Sand
 
   // where the hero is going to, and what they look at when they get there
   let goal: { stand: THREE.Vector3; look: THREE.Vector3 } | null = null;
+  // the way round the furniture to the goal (its last point is the goal)
+  let path: Point[] = [];
   let walking = false;
 
   const draw = (t: number, dt: number): void => {
     built.animate(t);
     if (figure !== null && body !== null) {
       if (goal !== null) {
-        const dx = goal.stand.x - body.position.x;
-        const dz = goal.stand.z - body.position.z;
+        // the next point on the way round the furniture
+        const next = path[0] ?? goal.stand;
+        const dx = next.x - body.position.x;
+        const dz = next.z - body.position.z;
         const d = Math.hypot(dx, dz);
         if (d > 0.04) {
           // walk: the way they go, and the face they show
@@ -139,6 +194,8 @@ export function openRoom3d(room: Room, lib: MaterialLibrary | null, figure: Sand
           if (!walking) figure.setState('walk');
           walking = true;
           figure.update(dt, WALK / METRES_PER_TILE, heading, camera);
+        } else if (path.length > 1) {
+          path.shift();
         } else {
           // arrived: stand, and look at the thing
           if (walking) figure.setState('idle');
@@ -154,12 +211,30 @@ export function openRoom3d(room: Room, lib: MaterialLibrary | null, figure: Sand
       talker.set(body.position.x, HERO_HEIGHT + 0.12, body.position.z);
     }
     renderer.render(scene, camera);
+    for (const { at, img } of logos) {
+      const p = place(at);
+      img.hidden = !p.visible;
+      img.style.left = `${p.x}px`;
+      img.style.top = `${p.y}px`;
+    }
+    // each picture is laid over its frame, the size the frame has on screen
+    for (const { f, img } of pictures) {
+      const c = place(f.center);
+      const side = new THREE.Vector3(f.across === 'x' ? f.w / 2 : 0, 0, f.across === 'z' ? f.w / 2 : 0);
+      const up = new THREE.Vector3(0, f.h / 2, 0);
+      const pw = Math.abs(place(f.center.clone().add(side)).x - place(f.center.clone().sub(side)).x);
+      const ph = Math.abs(place(f.center.clone().add(up)).y - place(f.center.clone().sub(up)).y);
+      img.hidden = !c.visible || textured.has(f);
+      img.style.left = `${c.x}px`;
+      img.style.top = `${c.y}px`;
+      img.style.width = `${pw * 0.82}px`;
+      img.style.height = `${ph * 0.82}px`;
+    }
     // the hero's words follow them on screen, kept inside the view so they are never cut off
     const v = place(talker);
     talk.hidden = !v.visible;
     if (v.visible) {
-      const half = talk.offsetWidth / 2;
-      const x = Math.min(Math.max(v.x, half + 6), canvas.clientWidth - half - 6);
+      const x = keepInside(v.x, talk.offsetWidth, canvas.clientWidth);
       talk.style.transform = `translate(${x}px, ${v.y}px) translate(-50%, -100%)`;
     }
   };
@@ -181,38 +256,45 @@ export function openRoom3d(room: Room, lib: MaterialLibrary | null, figure: Sand
   let press: { x: number; y: number } | null = null;
   canvas.addEventListener('pointerdown', (e) => (press = { x: e.clientX, y: e.clientY }));
   canvas.addEventListener('pointerup', (e) => {
-    const moved = press === null || Math.hypot(e.clientX - press.x, e.clientY - press.y) > 5;
+    const click = isClick(press, { x: e.clientX, y: e.clientY });
     press = null;
-    if (moved || body === null) return;
+    if (!click || body === null) return;
     const r = canvas.getBoundingClientRect();
     const hit = under(e.clientX - r.left, e.clientY - r.top);
-    if (hit !== null) goal = { stand: hit.label.stand.clone(), look: hit.label.at.clone() };
+    if (hit === null) return;
+    const stand = hit.label.stand.clone();
+    goal = { stand, look: hit.label.at.clone() };
+    path = walkPath({ x: body.position.x, z: body.position.z }, stand, built.solids, built.floor);
   });
 
-  let frame = 0;
   let last = performance.now();
-  const loop = (): void => {
+  const tick = (): void => {
     const now = performance.now();
     controls.update();
     draw(now / 1000, (now - last) / 1000);
     last = now;
-    frame = requestAnimationFrame(loop);
   };
   if (still) {
     controls.addEventListener('change', () => draw(0, 0));
     draw(0, 0);
   } else {
-    loop();
+    renderer.setAnimationLoop(tick);
   }
 
   return () => {
-    cancelAnimationFrame(frame);
+    closed = true;
+    renderer.setAnimationLoop(null);
     window.removeEventListener('resize', fit);
     controls.dispose();
     figure?.dispose();
     built.group.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); // (the theme's materials are shared: kept)
     });
+    for (const m of meshes) {
+      m.geometry.dispose();
+      (m.material as THREE.Material).dispose();
+    }
+    for (const t of textures) t.dispose();
     renderer.dispose();
     renderer.forceContextLoss(); // (a browser allows only so many WebGL contexts: free this one now)
     close();

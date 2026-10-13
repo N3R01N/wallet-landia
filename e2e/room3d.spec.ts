@@ -66,6 +66,7 @@ test('the same demo house in 3D: the scale, the chest and the reward mound, in t
     }
   }
   expect(named, 'hovering a thing names it').toBe(true);
+  await page.locator('.room-view').screenshot({ path: test.info().outputPath('room3d-start.png') });
   // click it: the hero walks over and looks at it
   await page.mouse.down();
   await page.mouse.up();
