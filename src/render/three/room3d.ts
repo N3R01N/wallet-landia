@@ -31,7 +31,7 @@ export interface Room3D {
   /** The whole room, in metres. */
   group: THREE.Group;
   /** Hover text for each thing in the room, pinned where it stands. */
-  labels: { at: THREE.Vector3; text: string }[];
+  labels: { at: THREE.Vector3; text: string; stand: THREE.Vector3 }[];
   /** Above the villager's head, where what they say is pinned. */
   talker: THREE.Vector3;
   /** Move the things that move, `t` seconds on the view's clock. */
@@ -63,8 +63,10 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
   const { w: W, d: D, h: H } = ROOM3D;
   // where each thing's hover text is pinned, and what it says
   const labels: Room3D['labels'] = [];
+  // where the hero stops to look at a thing: on the floor just in front of it, inside the room
   const tag = (o: RoomObject, x: number, y: number, z: number): void => {
-    labels.push({ at: new THREE.Vector3(x, y, z), text: `${o.label}${o.usd === null ? '' : ` · ${approxUsd(o.usd)}`}` });
+    const stand = new THREE.Vector3(Math.min(2.4, Math.max(-2.4, x)), 0, Math.min(2, Math.max(-2, z + 0.7)));
+    labels.push({ at: new THREE.Vector3(x, y, z), text: `${o.label}${o.usd === null ? '' : ` · ${approxUsd(o.usd)}`}`, stand });
   };
   const hw = W / 2;
   const hd = D / 2;

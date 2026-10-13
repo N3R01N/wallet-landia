@@ -3,7 +3,8 @@
  * `room3d.ts`, lit by a hearth-warm light, with a camera inside it that you
  * turn to look around (drag; scroll to lean in, Esc to leave). The hero whose
  * house it is stands in it, as the town draws them, and talks about the house.
- * Hover a thing to read its name. People who ask for less motion get a still room.
+ * Hover a thing to read its name; click it and the hero walks over and looks
+ * at it. People who ask for less motion get the hero placed at once.
  */
 
 import * as THREE from 'three';
@@ -13,18 +14,29 @@ import { el } from '../../ui/dom.js';
 import type { Room } from '../../world/roomLayout.js';
 import { roomRemark } from '../../world/roomTalk.js';
 import { MaterialLibrary } from './grammar/materials.js';
+import { METRES_PER_TILE } from './grammar/medieval.js';
 import { buildRoom3d, ROOM3D } from './room3d.js';
 import type { SandboxCharacter } from './themes.js';
 
 /** A hero's height in the room, in metres. */
 const HERO_HEIGHT = 1.8;
+/** A hero's walk, in metres a second. */
+const WALK = 1.2;
+/** How far (px) a pointer may be from a thing and still be on it. */
+const REACH = 70;
+
+interface Label {
+  at: THREE.Vector3;
+  text: string;
+  stand: THREE.Vector3;
+}
 
 export function openRoom3d(room: Room, lib: MaterialLibrary | null, figure: SandboxCharacter | null = null): () => void {
   const canvas = el('canvas', { class: 'room3d', role: 'img', 'aria-label': room.empty ? `${room.title}: nothing here yet` : `${room.title}: the inside` });
-  const talk = el('div', { class: 'room3d-talk' }, roomRemark(room));
+  const talk = el('div', { class: 'room3d-talk', role: 'status' }, roomRemark(room));
   const tip = el('div', { class: 'room3d-tip', hidden: '' });
   const wrap = el('div', { class: 'room3d-wrap' }, canvas, talk, tip);
-  const close = openShell(room.title, wrap, { hint: 'drag to look around · scroll to lean in · hover for names · Esc to leave' });
+  const close = openShell(room.title, wrap, { hint: 'drag to look around · scroll to lean in · click a thing to go and look at it · Esc to leave' });
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -45,11 +57,12 @@ export function openRoom3d(room: Room, lib: MaterialLibrary | null, figure: Sand
   }
   const built = buildRoom3d(room, lib ?? new MaterialLibrary({}));
   scene.add(built.group);
+  const labels: Label[] = built.labels;
 
-  // the hero, standing by the door at their own height; their words are pinned above their head
+  // the hero, standing by the table at their own height; their words are pinned above their head
   const talker = built.talker.clone();
-  if (figure !== null) {
-    const body = figure.object;
+  const body = figure?.object ?? null;
+  if (figure !== null && body !== null) {
     scene.add(body);
     body.position.set(talker.x, 0, talker.z);
     body.updateMatrixWorld(true);
@@ -85,6 +98,9 @@ export function openRoom3d(room: Room, lib: MaterialLibrary | null, figure: Sand
   window.addEventListener('resize', fit);
   fit();
 
+  // people who ask for less motion get the hero placed at once, not walking
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
   // screen position of a point in the room, in the view's pixels
   const screen = new THREE.Vector3();
   const place = (at: THREE.Vector3): { x: number; y: number; visible: boolean } => {
@@ -92,13 +108,50 @@ export function openRoom3d(room: Room, lib: MaterialLibrary | null, figure: Sand
     return { x: ((screen.x + 1) / 2) * canvas.clientWidth, y: ((1 - screen.y) / 2) * canvas.clientHeight, visible: screen.z <= 1 };
   };
 
-  let last = performance.now();
+  /** The nearest thing under a point on the canvas (its screen place, and what it is). */
+  const under = (px: number, py: number): { label: Label; x: number; y: number } | null => {
+    let best: { label: Label; x: number; y: number; d: number } | null = null;
+    for (const label of labels) {
+      const p = place(label.at);
+      const d = Math.hypot(p.x - px, p.y - py);
+      if (p.visible && d < REACH && (best === null || d < best.d)) best = { label, x: p.x, y: p.y, d };
+    }
+    return best === null ? null : { label: best.label, x: best.x, y: best.y };
+  };
+
+  // where the hero is going to, and what they look at when they get there
+  let goal: { stand: THREE.Vector3; look: THREE.Vector3 } | null = null;
+  let walking = false;
+
   const draw = (t: number, dt: number): void => {
     built.animate(t);
-    if (figure !== null) {
-      // the hero turns to face whoever is looking
-      const heading = Math.atan2(camera.position.z - talker.z, camera.position.x - talker.x);
-      figure.update(dt, 0, heading, camera, heading);
+    if (figure !== null && body !== null) {
+      if (goal !== null) {
+        const dx = goal.stand.x - body.position.x;
+        const dz = goal.stand.z - body.position.z;
+        const d = Math.hypot(dx, dz);
+        if (d > 0.04) {
+          // walk: the way they go, and the face they show
+          const step = still ? d : Math.min(d, WALK * dt);
+          body.position.x += (dx / d) * step;
+          body.position.z += (dz / d) * step;
+          const heading = Math.atan2(dz, dx);
+          if (!walking) figure.setState('walk');
+          walking = true;
+          figure.update(dt, WALK / METRES_PER_TILE, heading, camera);
+        } else {
+          // arrived: stand, and look at the thing
+          if (walking) figure.setState('idle');
+          walking = false;
+          const look = Math.atan2(goal.look.z - body.position.z, goal.look.x - body.position.x);
+          figure.update(dt, 0, look, camera, look);
+        }
+      } else {
+        // standing: towards whoever is looking
+        const heading = Math.atan2(camera.position.z - body.position.z, camera.position.x - body.position.x);
+        figure.update(dt, 0, heading, camera, heading);
+      }
+      talker.set(body.position.x, HERO_HEIGHT + 0.12, body.position.z);
     }
     renderer.render(scene, camera);
     // the hero's words follow them on screen, kept inside the view so they are never cut off
@@ -114,26 +167,30 @@ export function openRoom3d(room: Room, lib: MaterialLibrary | null, figure: Sand
   // hover: the nearest thing under the pointer names itself
   const hover = (e: PointerEvent): void => {
     const r = canvas.getBoundingClientRect();
-    const px = e.clientX - r.left;
-    const py = e.clientY - r.top;
-    let best: { text: string; x: number; y: number; d: number } | null = null;
-    for (const l of built.labels) {
-      const p = place(l.at);
-      const d = Math.hypot(p.x - px, p.y - py);
-      if (p.visible && d < 70 && (best === null || d < best.d)) best = { text: l.text, x: p.x, y: p.y, d };
-    }
-    tip.hidden = best === null;
-    if (best !== null) {
-      tip.textContent = best.text;
-      tip.style.transform = `translate(${best.x}px, ${best.y - 14}px) translate(-50%, -100%)`;
+    const hit = under(e.clientX - r.left, e.clientY - r.top);
+    tip.hidden = hit === null;
+    if (hit !== null) {
+      tip.textContent = hit.label.text;
+      tip.style.transform = `translate(${hit.x}px, ${hit.y - 14}px) translate(-50%, -100%)`;
     }
   };
   canvas.addEventListener('pointermove', hover);
   canvas.addEventListener('pointerleave', () => (tip.hidden = true));
 
-  // people who ask for less motion get a still room, redrawn when they turn it
-  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // click (not a drag) on a thing: the hero goes to it and looks at it
+  let press: { x: number; y: number } | null = null;
+  canvas.addEventListener('pointerdown', (e) => (press = { x: e.clientX, y: e.clientY }));
+  canvas.addEventListener('pointerup', (e) => {
+    const moved = press === null || Math.hypot(e.clientX - press.x, e.clientY - press.y) > 5;
+    press = null;
+    if (moved || body === null) return;
+    const r = canvas.getBoundingClientRect();
+    const hit = under(e.clientX - r.left, e.clientY - r.top);
+    if (hit !== null) goal = { stand: hit.label.stand.clone(), look: hit.label.at.clone() };
+  });
+
   let frame = 0;
+  let last = performance.now();
   const loop = (): void => {
     const now = performance.now();
     controls.update();
