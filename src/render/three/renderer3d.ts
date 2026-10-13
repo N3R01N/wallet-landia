@@ -32,6 +32,9 @@ import { TownScene } from './townScene.js';
 import { PeopleLayer, type PersonDebug } from './peopleLayer.js';
 import { DayNight } from './dayNight.js';
 import { Overlay3D } from './overlay3d.js';
+import { Farm, loadFarmSources } from './farm.js';
+import { herdFor, paddockSpot } from '../../world/farmPlan.js';
+import { guildNetWorth } from '../../world/population.js';
 
 export class Renderer3D implements WorldView {
   readonly element: HTMLElement;
@@ -57,6 +60,8 @@ export class Renderer3D implements WorldView {
   #raycaster = new THREE.Raycaster();
   /** The theme bundle drawing the town, or null for the built-in look. */
   #theme: Theme | null = null;
+  #farm: Farm | null = null;
+  #farmLoading = false;
 
   #pipeline: ImagePipeline;
   #lastSize = '';
@@ -141,6 +146,40 @@ export class Renderer3D implements WorldView {
       this.#people.refresh(sim);
       if (this.#town.smoke) this.#lastSize = ''; // size the new puffs to the viewport
     } else this.#build();
+    this.#syncFarm();
+  }
+
+  /** The farm: the herd for the guild's net worth, in the medieval town (its animals are the medieval theme's). */
+  #syncFarm(): void {
+    const sim = this.#sim;
+    if (this.#theme?.id !== 'medieval' || sim === null) {
+      this.#farm?.dispose();
+      this.#farm = null;
+      return;
+    }
+    if (this.#farm !== null) {
+      this.#farm.setHerd(herdFor(guildNetWorth(sim.guild)));
+      return;
+    }
+    const spot = paddockSpot(sim.plan.walkable, sim.plan.buildings);
+    if (this.#farmLoading || spot === null) return;
+    this.#farmLoading = true;
+    loadFarmSources()
+      .then((src) => {
+        this.#farmLoading = false;
+        // (the town may have been rebuilt while the animals loaded: use the current one; a theme change drops them)
+        const now = this.#sim;
+        if (this.#theme?.id !== 'medieval' || now === null) return;
+        const at = paddockSpot(now.plan.walkable, now.plan.buildings) ?? spot;
+        const farm = new Farm(src, { x: at.x, z: at.y });
+        farm.setHerd(herdFor(guildNetWorth(now.guild)));
+        this.#scene.add(farm.group);
+        this.#farm = farm;
+      })
+      .catch((e: unknown) => {
+        this.#farmLoading = false;
+        console.warn('the farm could not be loaded', e);
+      });
   }
 
   /**
@@ -166,6 +205,7 @@ export class Renderer3D implements WorldView {
     const old = this.#theme;
     this.#theme = theme;
     this.#people.setTheme(theme);
+    this.#syncFarm();
     // for tests and debugging: which theme draws the town, and whether its people are in
     this.element.dataset.theme = theme?.id ?? '';
     this.element.dataset.people = 'sprites';
@@ -287,6 +327,7 @@ export class Renderer3D implements WorldView {
     this.#cam.shake(this.#sim.shake);
     this.#cam.place(dt, this.#sim);
     this.#people.sync(this.#sim, dt, this.#cam.yaw);
+    this.#farm?.update(dt);
     this.#highlight();
     this.#drawBuild();
     // the land's stakes (while building, the build layer draws the land instead)
@@ -340,6 +381,11 @@ export class Renderer3D implements WorldView {
   stats(): { calls: number; triangles: number; geometries: number; textures: number; persons: number; agents: number; rebuilds: number; updates: number } {
     const i = this.#gl.info;
     return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures, persons: this.#people.rigCount(), agents: this.#sim.agents.length, rebuilds: this.#rebuilds, updates: this.#updates };
+  }
+
+  /** For tests: how many animals graze on the farm (0: none, or not in the medieval town yet). */
+  farmCount(): number {
+    return this.#farm?.count ?? 0;
   }
 
   /** Agents and their rigged stand-ins (`ox`/`oz`: the model, if one is made), for tests and tuning tools only. */

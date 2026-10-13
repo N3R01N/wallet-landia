@@ -33,9 +33,13 @@ describe('what the townsfolk say about the price move', () => {
     const guild = buildGuild(demo);
     const sim = new Sim(guild, planTown(guild));
     sim.setPriceMove(priceMove(2500, { usd: 3000, at: 0 }));
-    for (let i = 0; i < 600; i++) sim.step(0.05);
-    const said = sim.effects.filter((e) => e.kind === 'bubble' && e.sticky === true);
-    expect(said.length).toBeGreaterThan(0);
-    for (const e of said) expect(phrasesFor('crash')).toContain(e.text);
+    // a bubble lasts a few seconds: look at every step, not only the last
+    const said = new Set<string>();
+    for (let i = 0; i < 1500; i++) {
+      sim.step(0.05); // (a bigger guild fills the streets more slowly)
+      for (const e of sim.effects) if (e.kind === 'bubble' && e.sticky === true && e.text !== undefined) said.add(e.text);
+    }
+    expect(said.size).toBeGreaterThan(0);
+    for (const text of said) expect(phrasesFor('crash')).toContain(text);
   });
 });

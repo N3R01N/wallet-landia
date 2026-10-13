@@ -16,6 +16,8 @@ export const SPEEDS = [0.5, 1, 2, 4, 8];
 export interface LayoutParts {
   source: HTMLElement;
   status: HTMLElement;
+  /** The town's population and the net worth it comes from. */
+  population: HTMLElement;
   playerBtn: HTMLElement;
   realmBtn: HTMLElement;
   homeBtn: HTMLElement;
@@ -134,6 +136,7 @@ export function buildLayout(prefs: Prefs, parts: LayoutParts, act: LayoutActions
     parts.realmBtn,
     parts.homeBtn,
     parts.status,
+    parts.population,
     el('div', { class: 'spacer' }),
     parts.soundBtn,
     parts.inkBtn,

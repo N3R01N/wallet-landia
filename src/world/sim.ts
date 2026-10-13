@@ -7,6 +7,7 @@
 import type { Goods, Guild, HeroClass, Journey, JourneyStep, Target } from '../domain/model.js';
 import { makeRng } from '../util/rng.js';
 import { type Placed, type Pt, type TownPlan } from './layout.js';
+import { guildNetWorth, populationFor } from './population.js';
 import { harvestOf, harvestOfUsd, loanHealth, type Harvest, type LoanHealth, type PriceMove } from '../domain/risk.js';
 import { ethPriceFrom, initialChain, nextChain, type BlockInfo, type ChainState } from './chain.js';
 import { doorSlot, flightRoute, walkRoute } from './route.js';
@@ -148,6 +149,8 @@ export class Sim {
     this.duration = (last?.at ?? 0) + 12;
     const town = this.#town();
     this.#folk = new Townsfolk(town);
+    // the town's people: as many as the guild's wealth brings
+    this.#folk.target = populationFor(guildNetWorth(guild));
     this.#spawnHeroes();
     this.#readStashes();
     this.#spawnWatchers();

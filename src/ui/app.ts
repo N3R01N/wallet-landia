@@ -4,6 +4,7 @@
  */
 
 import { buildGuild, type HistoryWindow } from '../domain/mappers.js';
+import { guildNetWorth, populationFor } from '../world/population.js';
 import { exposeRoomDemo, roomHost } from './roomScene.js';
 import { CLASS_LABEL, type Guild, type HeroClass, type Journey } from '../domain/model.js';
 import { TIER_NAMES, approxUsd } from '../domain/tiers.js';
@@ -53,6 +54,7 @@ export class App {
   #prefs: Prefs;
   #sourceEl = el('span', { class: 'muted' }, 'Loading…');
   #statusEl = el('span', { class: 'status' });
+  #populationEl = el('span', { class: 'chip population', title: 'The townsfolk in your town: more as your net worth grows' });
   /** The first-visit tour, and what it points at. */
   #tourBtn = el('button', { class: 'btn', title: 'Show the tour again', 'aria-label': 'Show the tour again' }, '?');
   #tourRefs: { views: HTMLElement; guildBtn: HTMLElement; legend: HTMLElement; buildBtn: HTMLElement } | null = null;
@@ -573,11 +575,18 @@ export class App {
     };
   }
 
+  /** The top bar's population: the townsfolk the guild's net worth brings, and that net worth. */
+  #showPopulation(): void {
+    const worth = guildNetWorth(this.#guild);
+    this.#populationEl.textContent = `👥 ${populationFor(worth)} · ${approxUsd(worth)}`;
+  }
+
   #rebuild(): void {
     this.#world = buildGuild(this.#raws, this.#prefs.window, { names: this.#names });
     this.#nameHeroes();
     this.#guild = realmGuild(this.#world, this.#prefs.realm);
     if (!this.#shown?.visiting) this.#remember();
+    this.#showPopulation();
     const plan = this.#plan();
     this.#sim = new Sim(this.#guild, plan);
     this.#sim.realm = this.#prefs.realm;
@@ -1028,6 +1037,7 @@ export class App {
       {
         source: this.#sourceEl,
         status: this.#statusEl,
+        population: this.#populationEl,
         playerBtn: this.#player.button,
         realmBtn: this.#realmBtn,
         homeBtn: this.#homeBtn,

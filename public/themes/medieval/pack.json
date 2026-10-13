@@ -3,14 +3,14 @@
   "id": "medieval",
   "name": "Medieval",
   "author": "wallet-landia; assets by Quaternius and ambientCG",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "CC0-1.0",
   "description": "Rigged people in fantasy outfits on horses; grammar-built stone, timber and plaster buildings with PBR textures; hills, woods, meadow and props around them.",
   "slots": {},
   "theme": {
     "sky": "day",
     "notes": [
-      "Real griffin and dragon mounts (wings are placeholders)",
+      "Griffin and dragon mounts are made in Blender (scripts/blender/build_creatures.py)",
       "More outfits: the free kit has only Peasant and Ranger"
     ],
     "materials": {
@@ -297,7 +297,7 @@
           "tint": "#4a4048"
         },
         "t5": {
-          "model": "animals/Horse.fbx",
+          "model": "animals/Griffin.glb",
           "height": 2.0,
           "clips": {
             "idle": [
@@ -320,16 +320,11 @@
             "from": "Torso",
             "to": "Shoulders",
             "t": 0.33
-          },
-          "tint": "#d8b060",
-          "wings": {
-            "color": "#f2ead8",
-            "span": 0.48
           }
         },
         "t6": {
-          "model": "animals/Horse.fbx",
-          "height": 2.0,
+          "model": "animals/Dragon.glb",
+          "height": 2.4,
           "clips": {
             "idle": [
               "Idle"
@@ -351,11 +346,6 @@
             "from": "Torso",
             "to": "Shoulders",
             "t": 0.33
-          },
-          "tint": "#a8302a",
-          "wings": {
-            "color": "#5a1a18",
-            "span": 0.62
           }
         }
       }

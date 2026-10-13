@@ -156,7 +156,7 @@ export function trimHold(clip: THREE.AnimationClip): void {
  * draw call per colour. Bake each material's colour into vertex colours and
  * draw it with one material. Textured materials are left alone.
  */
-function singleMaterial(scene: THREE.Object3D): void {
+export function singleMaterial(scene: THREE.Object3D): void {
   scene.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh || !Array.isArray(mesh.material) || mesh.material.length < 2) return;
@@ -183,7 +183,7 @@ function singleMaterial(scene: THREE.Object3D): void {
 }
 
 /** Shadows on, and Phong/Lambert materials (FBX) swapped for PBR so the sky lights them consistently. */
-function prepareMaterials(scene: THREE.Object3D, toStandard = false): void {
+export function prepareMaterials(scene: THREE.Object3D, toStandard = false): void {
   scene.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
