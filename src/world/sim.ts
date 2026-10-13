@@ -10,7 +10,7 @@ import { type Placed, type Pt, type TownPlan } from './layout.js';
 import { guildNetWorth, populationFor } from './population.js';
 import { harvestOf, harvestOfUsd, loanHealth, type Harvest, type LoanHealth, type PriceMove } from '../domain/risk.js';
 import { ethPriceFrom, initialChain, nextChain, type BlockInfo, type ChainState } from './chain.js';
-import { doorSlot, flightRoute, walkRoute } from './route.js';
+import { doorSlot, flightRoute, walkRoute, walkableAt } from './route.js';
 import { realmOf } from '../domain/realms.js';
 import { WALK_SPEED, type ActTask, type Agent, type AgentKind, type Coin, type Effect, type Task, type Town } from './agents.js';
 import { TowerQueue } from './towerQueue.js';
@@ -70,6 +70,8 @@ export interface LogEntry {
 
 /** Tiles between the points of an agent's trail. */
 const TRAIL_STEP = 0.12;
+/** A townsperson's hitbox radius, in tiles: two on the ground keep at least twice this apart. */
+const VILLAGER_RADIUS = 0.3;
 /** How far back on its hero's trail a caravan rolls (index into the trail: ~1.4 tiles). */
 export const CARAVAN_BACK = 12;
 /** Mounts by tier, as multiples of walking: a donkey's amble up to a griffin's flight. */
@@ -472,6 +474,7 @@ export class Sim {
     }
 
     for (const a of this.agents) this.#advance(a, dt);
+    this.#keepApart();
     this.agents = this.agents.filter((a) => !a.gone);
     this.#queue.tend(dtReal, this.chain.congestion);
     // the replay's end charts the whole map (buildings known only for what is kept there)
@@ -650,6 +653,41 @@ export class Sim {
   }
 
   // --- movement --------------------------------------------------------------
+
+  /**
+   * Townsfolk on the ground push each other apart when they overlap, but only onto ground they may walk on
+   * (never into a building, a doorway or the water). Heroes, people indoors, in a queue or at a door keep their place.
+   */
+  #keepApart(): void {
+    const folk = this.agents.filter((a) => a.kind === 'villager' && !a.gone && !a.inside && !a.queued && a.doorway === null && a.acting === null && a.alt === 0);
+    const min = 2 * VILLAGER_RADIUS;
+    for (let i = 0; i < folk.length; i++) {
+      for (let j = i + 1; j < folk.length; j++) {
+        const a = folk[i]!;
+        const b = folk[j]!;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy);
+        if (d >= min) continue;
+        // (two on the same spot part along x)
+        const ux = d > 1e-6 ? dx / d : 1;
+        const uy = d > 1e-6 ? dy / d : 0;
+        const push = (min - d) / 2;
+        const ax = a.x - ux * push;
+        const ay = a.y - uy * push;
+        const bx = b.x + ux * push;
+        const by = b.y + uy * push;
+        if (walkableAt(this.plan, { x: ax, y: ay })) {
+          a.x = ax;
+          a.y = ay;
+        }
+        if (walkableAt(this.plan, { x: bx, y: by })) {
+          b.x = bx;
+          b.y = by;
+        }
+      }
+    }
+  }
 
   #advance(a: Agent, dt: number): void {
     a.phase += dt * (a.path.length > 0 ? 2.5 + a.speed * 1.6 : 2); // steps keep time with the pace

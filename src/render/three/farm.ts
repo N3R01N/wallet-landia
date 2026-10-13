@@ -1,8 +1,9 @@
 /**
- * The farm: a small herd of the theme's animals grazing in a paddock on the
+ * The farm: a small herd of the theme's animals in a fenced paddock on the
  * meadow. Each animal is the Quaternius model, sized to its real height, and
- * plays its own walk or idle clip; they wander round their paddock, pausing to
- * graze. The herd grows and shrinks with the guild's net worth (farmPlan.ts).
+ * plays its own walk or idle clip. They wander the paddock, pausing to graze,
+ * and keep their distance from each other and from the fence (their hitbox is
+ * a radius, farmPlan.ts). The herd grows and shrinks with the guild's net worth.
  */
 
 import * as THREE from 'three';
@@ -10,6 +11,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { METRES_PER_TILE } from './grammar/medieval.js';
 import { prepareMaterials, singleMaterial } from './rigged.js';
+import { PADDOCK, separateHerd, type Rect } from '../../world/farmPlan.js';
 
 /** The animals (the medieval theme's files), each at its height in metres. */
 const SPECIES = [
@@ -18,9 +20,9 @@ const SPECIES = [
   { url: '/themes/medieval/animals/Pig.fbx', height: 0.7 },
 ] as const;
 
-/** How far from the paddock's middle they wander, and how fast (tiles). */
-const RADIUS = 2.2;
+/** How fast they walk (tiles a second), and how far in from the fence they stop. */
 const SPEED = 0.35;
+const EDGE = 0.45;
 
 interface Source {
   scene: THREE.Group;
@@ -57,17 +59,66 @@ interface Beast {
 const clipNamed = (clips: readonly THREE.AnimationClip[], name: string): THREE.AnimationClip | undefined =>
   clips.find((c) => c.name.toLowerCase().includes(name));
 
+/** A fence round the paddock, posts and two rails a side, with a gap on the town's side for the gate. */
+function buildFence(r: Rect, wood: THREE.Material, post: THREE.BufferGeometry): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'paddock-fence';
+  const rail = (ax: number, az: number, bx: number, bz: number, y: number): void => {
+    const len = Math.hypot(bx - ax, bz - az);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.07, 0.06), wood);
+    m.position.set((ax + bx) / 2, y, (az + bz) / 2);
+    m.rotation.y = -Math.atan2(bz - az, bx - ax);
+    g.add(m);
+  };
+  // the sides, each as a line of posts with rails through them; the gate is the middle of the z1 side
+  const sides: [number, number, number, number][] = [
+    [r.x0, r.z0, r.x1, r.z0],
+    [r.x0, r.z1, r.x1, r.z1],
+    [r.x0, r.z0, r.x0, r.z1],
+    [r.x1, r.z0, r.x1, r.z1],
+  ];
+  const gateMid = Math.floor((r.x0 + r.x1) / 2);
+  for (const [ax, az, bx, bz] of sides) {
+    const gap = bz === r.z1 && az === r.z1; // the town's side (the gate)
+    const steps = Math.max(Math.abs(bx - ax), Math.abs(bz - az));
+    for (let i = 0; i <= steps; i++) {
+      const x = ax + ((bx - ax) * i) / steps;
+      const z = az + ((bz - az) * i) / steps;
+      if (gap && Math.abs(x - gateMid) < 1) continue;
+      const p = new THREE.Mesh(post, wood);
+      p.position.set(x, 0.475, z);
+      g.add(p);
+    }
+    if (gap) {
+      rail(ax, az, gateMid - 0.5, bz, 0.3);
+      rail(gateMid + 0.5, bz, bx, bz, 0.3);
+      rail(ax, az, gateMid - 0.5, bz, 0.65);
+      rail(gateMid + 0.5, bz, bx, bz, 0.65);
+    } else {
+      rail(ax, az, bx, bz, 0.3);
+      rail(ax, az, bx, bz, 0.65);
+    }
+  }
+  return g;
+}
+
 export class Farm {
   readonly group = new THREE.Group();
   readonly #sources: readonly Source[];
-  readonly #centre: { x: number; z: number };
+  readonly #rect: Rect;
+  readonly #points: { x: number; z: number }[] = [];
   #beasts: Beast[] = [];
+  readonly #fence: THREE.Group;
+  readonly #wood = new THREE.MeshStandardMaterial({ color: '#7a5230', roughness: 0.9 });
+  readonly #post = new THREE.BoxGeometry(0.1, 0.95, 0.1);
 
-  /** `centre`: the paddock's middle, in tiles (x, z). */
-  constructor(sources: readonly Source[], centre: { x: number; z: number }) {
+  /** `rect`: the paddock's tiles. */
+  constructor(sources: readonly Source[], rect: Rect) {
     this.#sources = sources;
-    this.#centre = centre;
+    this.#rect = rect;
     this.group.name = 'farm';
+    this.#fence = buildFence(rect, this.#wood, this.#post);
+    this.group.add(this.#fence);
   }
 
   /** The herd is this many animals (added or taken away as the net worth moves). */
@@ -98,6 +149,7 @@ export class Farm {
     // start where they graze: somewhere in the paddock
     root.position.set(beast.target.x, 0, beast.target.z);
     this.group.add(root);
+    this.#points.push(beast.target);
     this.#play(beast, false);
     return beast;
   }
@@ -107,12 +159,17 @@ export class Farm {
     this.group.remove(b.root);
     b.mixer.stopAllAction();
     b.mixer.uncacheRoot(b.root);
+    const i = this.#beasts.indexOf(b);
+    if (i >= 0) this.#points.splice(i, 1);
   }
 
+  /** A spot inside the fence, away from its edge. */
   #spot(): { x: number; z: number } {
-    const a = Math.random() * Math.PI * 2;
-    const r = Math.sqrt(Math.random()) * RADIUS;
-    return { x: this.#centre.x + Math.cos(a) * r, z: this.#centre.z + Math.sin(a) * r };
+    const r = this.#rect;
+    return {
+      x: r.x0 + EDGE + Math.random() * (r.x1 - r.x0 - 2 * EDGE),
+      z: r.z0 + EDGE + Math.random() * (r.z1 - r.z0 - 2 * EDGE),
+    };
   }
 
   #play(b: Beast, walking: boolean): void {
@@ -124,7 +181,7 @@ export class Farm {
     to?.reset().fadeIn(0.3).play();
   }
 
-  /** Per frame: each animal walks to its spot, or pauses to graze, and its clip plays. */
+  /** Per frame: each animal walks to its spot, or pauses to graze; then they keep their distance. */
   update(dt: number): void {
     for (const b of this.#beasts) {
       if (b.pause > 0) {
@@ -147,6 +204,23 @@ export class Farm {
       }
       b.mixer.update(dt);
     }
+    // hitboxes: the animals keep apart and inside the fence
+    for (let i = 0; i < this.#beasts.length; i++) {
+      const p = this.#points[i]!;
+      p.x = this.#beasts[i]!.root.position.x;
+      p.z = this.#beasts[i]!.root.position.z;
+    }
+    separateHerd(this.#points, PADDOCK.radius, this.#rect);
+    for (let i = 0; i < this.#beasts.length; i++) {
+      const b = this.#beasts[i]!;
+      b.root.position.x = this.#points[i]!.x;
+      b.root.position.z = this.#points[i]!.z;
+    }
+  }
+
+  /** The paddock's tiles (the people's plan keeps out of them). */
+  get rect(): Rect {
+    return this.#rect;
   }
 
   /** How many animals graze here now (for tests). */
@@ -157,6 +231,12 @@ export class Farm {
   dispose(): void {
     for (const b of this.#beasts) this.#release(b);
     this.#beasts = [];
+    this.#fence.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh) m.geometry.dispose();
+    });
+    this.#wood.dispose();
+    this.#post.dispose();
     this.group.removeFromParent();
   }
 }

@@ -33,7 +33,7 @@ import { PeopleLayer, type PersonDebug } from './peopleLayer.js';
 import { DayNight } from './dayNight.js';
 import { Overlay3D } from './overlay3d.js';
 import { Farm, loadFarmSources } from './farm.js';
-import { herdFor, paddockSpot } from '../../world/farmPlan.js';
+import { blockPaddock, herdFor, paddockRect, paddockSpot } from '../../world/farmPlan.js';
 import { guildNetWorth } from '../../world/population.js';
 
 export class Renderer3D implements WorldView {
@@ -158,6 +158,8 @@ export class Renderer3D implements WorldView {
       return;
     }
     if (this.#farm !== null) {
+      // (a rebuilt plan may have the paddock walkable again: keep people out of it)
+      blockPaddock(sim.plan.walkable, this.#farm.rect);
       this.#farm.setHerd(herdFor(guildNetWorth(sim.guild)));
       return;
     }
@@ -171,7 +173,9 @@ export class Renderer3D implements WorldView {
         const now = this.#sim;
         if (this.#theme?.id !== 'medieval' || now === null) return;
         const at = paddockSpot(now.plan.walkable, now.plan.buildings) ?? spot;
-        const farm = new Farm(src, { x: at.x, z: at.y });
+        const rect = paddockRect(at);
+        blockPaddock(now.plan.walkable, rect);
+        const farm = new Farm(src, rect);
         farm.setHerd(herdFor(guildNetWorth(now.guild)));
         this.#scene.add(farm.group);
         this.#farm = farm;
