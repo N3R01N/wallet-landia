@@ -33,7 +33,7 @@ import { el } from '../ui/dom.js';
 
 type SkyChoice = SkyId | 'auto' | 'none';
 type View = DebugView | 'wireframe' | 'normals';
-type Cam = 'overview' | 'characters' | 'buildings' | 'closeup';
+type Cam = 'overview' | 'characters' | 'buildings' | 'closeup' | 'mounts';
 
 const ROWS: { z: number; kinds: { kind: PlacedKind; tier?: Tier; label: string; protocol?: string }[] }[] = [
   {
@@ -119,6 +119,8 @@ class Sandbox {
   view: View;
   anim: AnimState;
   tier: Tier;
+  /** Every tier's hero at once, in a row (their mounts side by side), instead of one tier's classes. */
+  allTiers: boolean;
   frozen: boolean;
 
   #stage = new THREE.Group();
@@ -149,6 +151,7 @@ class Sandbox {
     this.view = param<View>('debug', ['final', 'nopost', 'ao', 'nograde', 'wireframe', 'normals'], 'final');
     this.anim = param<AnimState>('anim', ['idle', 'walk', 'run'], 'walk');
     this.tier = Number(param('tier', ['0', '1', '2', '3', '4', '5', '6'], '3')) as Tier;
+    this.allTiers = param('mounts', ['one', 'all'], 'one') === 'all';
     this.frozen = new URLSearchParams(location.search).has('freeze');
     const quality = param<Quality>('quality', ['low', 'medium', 'high'], 'medium');
 
@@ -177,7 +180,7 @@ class Sandbox {
     this.#build();
     this.ready = this.theme.prepare === undefined;
     if (this.theme.prepare) void this.setTheme(this.theme.id);
-    this.cameraTo(param<Cam>('cam', ['overview', 'characters', 'buildings', 'closeup'], 'overview'));
+    this.cameraTo(param<Cam>('cam', ['overview', 'characters', 'buildings', 'closeup', 'mounts'], 'overview'));
     this.#applySky();
   }
 
@@ -244,11 +247,13 @@ class Sandbox {
       this.#lamps = s.lamps;
     } else this.#meadow(t, lamps);
 
-    // characters: one hero per class at the chosen tier, and some villagers
-    const looks: CharacterLook[] = [
-      ...CLASSES.map((cls, i) => ({ id: `hero-${cls}`, kind: 'hero' as const, cls, tier: this.tier, crest: crestColors(`0x${cls}`)[0], seed: hashString(cls) + i })),
-      ...[0, 1, 2, 3, 4].map((i) => ({ id: `villager-${i}`, kind: 'villager' as const, cls: 'adventurer' as const, tier: 0 as Tier, crest: '#888', seed: 1000 + i * 37 })),
-    ];
+    // characters: one hero per class at the chosen tier, and some villagers; or every tier's hero in a row, mounts and all
+    const looks: CharacterLook[] = this.allTiers
+      ? ([0, 1, 2, 3, 4, 5, 6] as Tier[]).map((tier, i) => ({ id: `tier-${tier}`, kind: 'hero' as const, cls: 'adventurer' as const, tier, crest: crestColors(`0xtier${tier}`)[0], seed: hashString(`tier${tier}`) + i }))
+      : [
+          ...CLASSES.map((cls, i) => ({ id: `hero-${cls}`, kind: 'hero' as const, cls, tier: this.tier, crest: crestColors(`0x${cls}`)[0], seed: hashString(cls) + i })),
+          ...[0, 1, 2, 3, 4].map((i) => ({ id: `villager-${i}`, kind: 'villager' as const, cls: 'adventurer' as const, tier: 0 as Tier, crest: '#888', seed: 1000 + i * 37 })),
+        ];
     looks.forEach((look, i) => {
       const char = t.characters.create(look);
       char.setState(this.anim);
@@ -317,6 +322,11 @@ class Sandbox {
     this.#build();
   }
 
+  setAllTiers(on: boolean): void {
+    this.allTiers = on;
+    this.#build();
+  }
+
   setView(v: View): void {
     this.view = v;
     this.scene.overrideMaterial = v === 'wireframe' ? new THREE.MeshBasicMaterial({ color: '#2b1d14', wireframe: true }) : v === 'normals' ? new THREE.MeshNormalMaterial() : null;
@@ -347,6 +357,7 @@ class Sandbox {
       characters: [new THREE.Vector3(0, 5, 17), new THREE.Vector3(0, 1, 6)],
       buildings: [new THREE.Vector3(6, 9, 8), new THREE.Vector3(0, 1.5, -5)],
       closeup: [new THREE.Vector3(3.5, 2.4, 11.5), new THREE.Vector3(0, 1.1, 8.5)],
+      mounts: [new THREE.Vector3(0, 6, 27), new THREE.Vector3(0, 1.1, 9)],
     };
     const [pos, target] = at[c];
     this.camera.position.copy(pos);
@@ -402,9 +413,10 @@ class Sandbox {
     const perimeter = Math.PI * (3 * (TRACK.rx + TRACK.rz) - Math.sqrt((3 * TRACK.rx + TRACK.rz) * (TRACK.rx + 3 * TRACK.rz)));
     const n = this.#characters.length;
     this.#characters.forEach((c, i) => {
-      if (speed === 0) {
-        c.char.object.position.set((i - (n - 1) / 2) * 1.7, 0, 9);
-        c.char.update(dt, 0, 0, this.camera);
+      // (all tiers: they stand in a row, so every mount can be compared; the clips still play)
+      if (speed === 0 || this.allTiers) {
+        c.char.object.position.set((i - (n - 1) / 2) * (this.allTiers ? 3.2 : 1.7), 0, 9);
+        c.char.update(this.frozen ? 0 : dt, 0, 0, this.camera);
         return;
       }
       const a = c.offset + (this.#t * speed * Math.PI * 2) / perimeter;
@@ -454,7 +466,7 @@ class Sandbox {
       this.setHourOf(Number(hour.value));
       hourOut.textContent = `${Number(hour.value).toFixed(2)}h`;
     };
-    const cams = el('div', { class: 'cams' }, ...(['overview', 'characters', 'buildings', 'closeup'] as Cam[]).map((c) => {
+    const cams = el('div', { class: 'cams' }, ...(['overview', 'characters', 'buildings', 'closeup', 'mounts'] as Cam[]).map((c) => {
       const b = el('button', { class: 'btn' }, c);
       b.onclick = () => this.cameraTo(c);
       return b;
@@ -467,6 +479,7 @@ class Sandbox {
       this.#noteEl,
       el('h2', {}, 'Characters'),
       select<AnimState>('Animation', this.anim, [['idle', 'Idle'], ['walk', 'Walk'], ['run', 'Run']], (v) => this.setAnim(v)),
+      select('Mounts', this.allTiers ? 'all' : 'one', [['one', 'One tier (its classes)'], ['all', 'All tiers, in a row']], (v) => this.setAllTiers(v === 'all')),
       select('Hero tier', String(this.tier), ([0, 1, 2, 3, 4, 5, 6] as Tier[]).map((t) => [String(t), `${t} · ${TIER_NAMES[t]}`] as [string, string]), (v) => this.setTier(Number(v) as Tier)),
       el('h2', {}, 'Light'),
       select<SkyChoice>('Sky', this.sky, [['auto', 'By the hour'], ...(Object.keys(SKIES) as SkyId[]).map((k) => [k, SKIES[k].label] as [SkyChoice, string]), ['none', 'None (flat colour)']], (v) => this.setSky(v)),

@@ -21,7 +21,8 @@ the old one.
 
 - **Changed files in `public/themes/<id>/` or `public/packs/<id>/`**
   (textures, models, animations, art): bump `version` in that folder's
-  `pack.json`.
+  `pack.json` (castle themes, e.g. `public/themes/medieval-castle/`: its
+  `theme.json`).
 - **Changed sky images in `public/env/`**: bump `SKY_VERSION` in
   `src/render/three/environment.ts`.
 - Then run `npm run assets:versions -- write` to record it in

@@ -1,0 +1,9 @@
+{
+  "format": "wallet-landia-theme/1",
+  "id": "medieval-castle",
+  "name": "Medieval castle",
+  "version": "0.8.0",
+  "author": "wallet-landia; models and art made in Blender for this theme",
+  "license": "All rights reserved",
+  "description": "The castle view's medieval theme: the keep, moat, drawbridge, border post, town buildings, people, icons, badges and ranks. File names follow docs/ASSET_SPEC.md."
+}

@@ -35,6 +35,6 @@ describe("the page's security policy", () => {
   });
 
   it('allows no WebSockets in a build (the dev server adds them for hot reload)', () => {
-    for (const page of ['index.html', 'sandbox.html']) expect(directive(page, 'connect-src').some((s) => s.startsWith('ws'))).toBe(false);
+    for (const page of ['index.html', 'sandbox.html', 'castle.html', 'assets.html']) expect(directive(page, 'connect-src').some((s) => s.startsWith('ws'))).toBe(false);
   });
 });

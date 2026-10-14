@@ -20,6 +20,8 @@
   Cache-Control: no-cache
 /themes/:id/pack.json
   Cache-Control: no-cache
+/themes/:id/theme.json
+  Cache-Control: no-cache
 /packs/index.json
   Cache-Control: no-cache
 /packs/:id/pack.json

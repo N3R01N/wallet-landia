@@ -68,3 +68,17 @@ export async function reverseName(address: string): Promise<string | null> {
   const forward = await resolveName(name);
   return forward === address.toLowerCase() ? name : null;
 }
+
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/** A wallet the player typed: a 0x address (lowercased), or an ENS name resolved to one. Throws a plain-words reason otherwise. */
+export async function toAddress(input: string): Promise<string> {
+  const v = input.trim();
+  if (ADDRESS.test(v)) return v.toLowerCase();
+  if (isEnsName(v)) {
+    const a = await resolveName(v);
+    if (a === null) throw new Error(`${v} does not resolve to an address.`);
+    return a;
+  }
+  throw new Error('Enter a 0x… address or an ENS name.');
+}

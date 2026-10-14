@@ -38,7 +38,7 @@ describe('theme bundles (pack format 2)', () => {
       expect(b.spec.characters?.outfits.default).toBeDefined();
     }
     expect(modern!.spec.buildings?.style).toBe('modern');
-    expect(modern!.spec.characters?.mounts.t4?.vehicle).toBe('motorbike');
+    expect(modern!.spec.characters?.mounts.t4?.model).toMatch(/Motorbike\.glb$/); // a model now, not the built-in vehicle
     expect(modern!.spec.materials.asphalt?.color).toBe('/themes/modern/materials/asphalt/color.webp');
     expect(modern!.spec.materials.grass?.color).toBe('/themes/medieval/materials/grass/color.webp');
     expect(scifi!.spec.surroundings?.lamps).toBe('beacon');

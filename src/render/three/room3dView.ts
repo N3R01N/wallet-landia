@@ -19,6 +19,7 @@ import { roomRemark } from '../../world/roomTalk.js';
 import { MaterialLibrary } from './grammar/materials.js';
 import { METRES_PER_TILE } from './grammar/medieval.js';
 import { buildRoom3d, ROOM3D } from './room3d.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { SandboxCharacter } from './themes.js';
 
 /** A hero's height in the room, in metres. */
@@ -60,6 +61,27 @@ export function openRoom3d(room: Room, lib: MaterialLibrary | null, figure: Sand
   }
   const built = buildRoom3d(room, lib ?? new MaterialLibrary({}));
   scene.add(built.group);
+
+  // the loot props: each file loaded once, and a copy placed per use
+  const propLoader = new GLTFLoader();
+  const propFiles = new Map<string, Promise<THREE.Group>>();
+  for (const pr of built.props) {
+    let file = propFiles.get(pr.url);
+    if (!file) {
+      file = propLoader.loadAsync(pr.url).then((g) => g.scene);
+      propFiles.set(pr.url, file);
+    }
+    file
+      .then((scene) => {
+        const copy = scene.clone(true);
+        copy.position.copy(pr.at);
+        copy.rotation.y = pr.turn ?? 0;
+        copy.scale.setScalar(pr.scale ?? 1);
+        copy.updateMatrixWorld(true);
+        built.group.add(copy);
+      })
+      .catch((e: unknown) => console.warn('a loot prop could not be loaded', pr.url, e));
+  }
   const labels: Label[] = built.labels;
 
   // the hero, standing by the table at their own height; their words are pinned above their head

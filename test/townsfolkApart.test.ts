@@ -17,7 +17,7 @@ async function overlaps(d: number, steps: number): Promise<{ frames: number; pai
   let folkSeen = 0;
   for (let i = 0; i < steps; i++) {
     sim.step(0.05);
-    const folk = sim.agents.filter((a) => a.kind === 'villager' && !a.gone && !a.inside && !a.queued && a.doorway === null && a.acting === null && a.alt === 0);
+    const folk = sim.agents.filter((a) => a.kind === 'villager' && !a.gone && !a.inside && a.doorway === null && a.acting === null && a.alt === 0);
     folkSeen = Math.max(folkSeen, folk.length);
     let any = false;
     for (let a = 0; a < folk.length; a++) {

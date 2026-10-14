@@ -18,10 +18,10 @@ export class Townsfolk {
     this.#town = town;
   }
 
-  /** Villagers out in the streets (not in line, not indoors). */
+  /** Villagers out in the streets (not indoors). */
   street(): number {
     let n = 0;
-    for (const x of this.#town.agents()) if (x.kind === 'villager' && !x.queued && !x.inside) n++;
+    for (const x of this.#town.agents()) if (x.kind === 'villager' && !x.inside) n++;
     return n;
   }
 
@@ -55,13 +55,6 @@ export class Townsfolk {
       // pacing outside, waiting for the loan to slip
       const at = a.loiterAt;
       a.tasks = [{ type: 'walk', to: { x: at.x + (town.rng() - 0.5) * 1.4, y: at.y + town.rng() * 0.8 } }, { type: 'act', verb: 'unknown', seconds: 2 + town.rng() * 4 }];
-      return;
-    }
-    if (a.queued) {
-      // waiting their turn: face the tower
-      const door = plan.tower.doorAt;
-      if (Math.abs(door.x - a.x) > 0.05) a.facing = door.x > a.x ? 1 : -1;
-      a.face = door;
       return;
     }
     if (a.kind === 'villager') {
@@ -103,7 +96,7 @@ export class Townsfolk {
     const most = big * 2;
     const near = town
       .agents()
-      .filter((o) => o.kind === 'villager' && !o.gone && !o.queued && !o.inside && o.doorway === null && o.acting === null && o.alt === 0 && Math.hypot(o.x - at.x, o.y - at.y) < reach)
+      .filter((o) => o.kind === 'villager' && !o.gone && !o.inside && o.doorway === null && o.acting === null && o.alt === 0 && Math.hypot(o.x - at.x, o.y - at.y) < reach)
       .sort((p, q) => Math.hypot(p.x - at.x, p.y - at.y) - Math.hypot(q.x - at.x, q.y - at.y))
       .slice(0, most);
     for (const o of near) {
@@ -130,7 +123,7 @@ export class Townsfolk {
   /** Stop a passer-by for a chat: walk up, face each other, talk a while. */
   #chat(a: Agent): boolean {
     const town = this.#town;
-    const mate = town.agents().find((o) => o !== a && o.kind === 'villager' && !o.queued && !o.inside && o.doorway === null && o.acting === null && o.path.length > 0 && o.alt === 0 && Math.hypot(o.x - a.x, o.y - a.y) < 4);
+    const mate = town.agents().find((o) => o !== a && o.kind === 'villager' && !o.inside && o.doorway === null && o.acting === null && o.path.length > 0 && o.alt === 0 && Math.hypot(o.x - a.x, o.y - a.y) < 4);
     if (mate === undefined) return false;
     const d = Math.hypot(a.x - mate.x, a.y - mate.y);
     if (d < 0.1) return false;

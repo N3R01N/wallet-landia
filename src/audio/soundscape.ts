@@ -3,8 +3,7 @@
  * the tower bell for each sealed block, coins for tolls and trades, a chime
  * for big ones, keys for approvals, a puff for a failed journey, the alarm
  * and thunder of a liquidation, a fanfare for a medal; under them the
- * ambience: rain when the market sets it, the murmur of the queue at the
- * tower, birds by day and crickets at night.
+ * ambience: rain when the market sets it, birds by day and crickets at night.
  *
  * Off by default. Browsers only let audio start from a click or key press,
  * so a context is made (or resumed) on the first gesture after it is on.
@@ -25,7 +24,6 @@ export class Soundscape {
   #noise: AudioBuffer | null = null;
   /** The ambience beds, with their gains. */
   #rain: GainNode | null = null;
-  #crowd: GainNode | null = null;
   #nextBird = 0;
   #nextCricket = 0;
   #started = 0;
@@ -82,7 +80,7 @@ export class Soundscape {
     comp.ratio.value = 6;
     master.connect(comp).connect(ctx.destination);
     this.#master = master;
-    // two seconds of noise, the stuff of rain, crowds, puffs and thunder
+    // two seconds of noise, the stuff of rain, puffs and thunder
     const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const data = buf.getChannelData(0);
     let pink = 0;
@@ -92,16 +90,14 @@ export class Soundscape {
     }
     this.#noise = buf;
     this.#rain = this.#bed(ctx, 'highpass', 900, 0.4);
-    this.#crowd = this.#bed(ctx, 'bandpass', 420, 1.2, true);
     this.#started = ctx.currentTime;
   }
 
   /** A looping noise bed through a filter, silent until `update` raises it. */
-  #bed(ctx: Ctx, type: BiquadFilterType, freq: number, q: number, murmur = false): GainNode {
+  #bed(ctx: Ctx, type: BiquadFilterType, freq: number, q: number): GainNode {
     const src = ctx.createBufferSource();
     src.buffer = this.#noise;
     src.loop = true;
-    src.playbackRate.value = murmur ? 0.6 : 1;
     const f = ctx.createBiquadFilter();
     f.type = type;
     f.frequency.value = freq;
@@ -109,15 +105,6 @@ export class Soundscape {
     const g = ctx.createGain();
     g.gain.value = 0;
     src.connect(f).connect(g).connect(this.#master!);
-    if (murmur) {
-      // voices rise and fall
-      const lfo = ctx.createOscillator();
-      lfo.frequency.value = 0.35;
-      const depth = ctx.createGain();
-      depth.gain.value = 180;
-      lfo.connect(depth).connect(f.frequency);
-      lfo.start();
-    }
     src.start();
     return g;
   }
@@ -139,7 +126,6 @@ export class Soundscape {
     }
     const rain = Math.max(0, sim.gloom - 0.05);
     this.#rain?.gain.setTargetAtTime(rain * 0.35, t, 0.8);
-    this.#crowd?.gain.setTargetAtTime(Math.min(1, sim.queue.length / 18) * 0.09, t, 1.2);
     // birds by day (not in the rain), crickets at night
     if (t - this.#started > 1) {
       if (night < 0.4 && rain < 0.2 && t > this.#nextBird) {
@@ -261,6 +247,20 @@ export class Soundscape {
   #thunder(t: number): void {
     this.#noiseBurst(t, 'lowpass', 140, 0.5, 2.8);
     this.#noiseBurst(t + 0.25, 'lowpass', 90, 0.4, 3.5);
+  }
+
+  /** The bell, rung now (the castle rings it for each block). Silent while sound is off. */
+  ringNow(loud = 1): void {
+    if (!this.#on || !this.#ctx || !this.#master) return;
+    this.bell(this.#ctx.currentTime, loud);
+    this.played.bell = (this.played.bell ?? 0) + 1;
+  }
+
+  /** Coins at the toll, now (a courier paying at the castle's barrier). Silent while sound is off. */
+  tollNow(drama = 0): void {
+    if (!this.#on || !this.#ctx || !this.#master) return;
+    this.#coins(this.#ctx.currentTime, 'paid', drama);
+    this.played.coins = (this.played.coins ?? 0) + 1;
   }
 
   /** A medal: a short fanfare. */

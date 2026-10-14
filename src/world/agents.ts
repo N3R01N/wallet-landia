@@ -1,7 +1,7 @@
 /**
  * The people of the town (heroes, couriers, townsfolk, bailiffs), what they
  * can be asked to do, and the effects they leave behind; plus what the parts
- * of the living town that move them (`townsfolk.ts`, `towerQueue.ts`) may ask
+ * of the living town that move them (`townsfolk.ts`) may ask
  * of the Sim that owns them.
  */
 
@@ -83,8 +83,6 @@ export interface Agent {
   alt: number;
   /** Height it keeps when not flying: griffins and dragons hover low over the road. */
   hover: number;
-  /** Waiting in line at the Chronicle Tower (a transaction waiting for a page). */
-  queued?: boolean;
   /** Hangs about here (bailiffs watching a risky loan's Counting House). */
   loiterAt?: Pt;
   /** The door this agent is waiting at, if any (see door slots). */

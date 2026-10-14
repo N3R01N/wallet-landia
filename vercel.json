@@ -41,7 +41,7 @@
       ]
     },
     {
-      "source": "/(themes|packs)/(index\\.json|[^/]+/pack\\.json)",
+      "source": "/(themes|packs)/(index\\.json|[^/]+/(pack|theme)\\.json)",
       "headers": [
         {
           "key": "Cache-Control",

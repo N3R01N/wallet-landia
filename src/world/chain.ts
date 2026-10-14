@@ -1,8 +1,8 @@
 /**
  * How busy the real chain is, as the town shows it at the Chronicle Tower:
- * the queue at its door (how full blocks are), the toll board (the base fee,
- * what a simple transfer costs, and which way it is heading) and the beacon
- * on its top (how expensive, at a glance from anywhere in town).
+ * the toll board (the base fee, what a simple transfer costs, and which way it
+ * is heading) and the beacon on its top (how expensive, at a glance from
+ * anywhere in town).
  *
  * Ethereum aims for half-full blocks: fuller than that and the base fee rises
  * by up to 12.5% a block, emptier and it falls. So fullness is how busy the
@@ -14,8 +14,6 @@ export interface ChainState {
   block: number | null;
   /** That block's fullness, gas used / gas limit (0..1). */
   busy: number;
-  /** Fullness smoothed over recent blocks (0..1): the queue's length. */
-  congestion: number;
   baseFeeGwei: number | null;
   txCount: number;
 }
@@ -29,7 +27,7 @@ export interface BlockInfo {
 
 export function initialChain(): ChainState {
   // a calm default until the first block arrives (offline, or the RPC is down)
-  return { block: null, busy: 0.5, congestion: 0.35, baseFeeGwei: null, txCount: 0 };
+  return { block: null, busy: 0.5, baseFeeGwei: null, txCount: 0 };
 }
 
 /** The state after a new block (a repeat of the same block changes nothing). */
@@ -39,7 +37,6 @@ export function nextChain(prev: ChainState, b: BlockInfo): ChainState {
   return {
     block: b.number,
     busy,
-    congestion: prev.block === null ? busy : prev.congestion * 0.6 + busy * 0.4,
     baseFeeGwei: b.baseFeeGwei,
     txCount: b.txCount,
   };

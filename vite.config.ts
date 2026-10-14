@@ -36,8 +36,8 @@ export default defineConfig({
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 700,
-    // Two pages: the town, and the look sandbox.
-    rollupOptions: { input: { main: 'index.html', sandbox: 'sandbox.html' } },
+    // Four pages: the town, the look sandbox, the castle view (in progress), and the asset gallery.
+    rollupOptions: { input: { main: 'index.html', sandbox: 'sandbox.html', castle: 'castle.html', assets: 'assets.html' } },
   },
   // Pre-bundle three.js add-ons that are only reached through the lazily loaded
   // 3D view, so the dev server never finds one mid-session and reloads the page.

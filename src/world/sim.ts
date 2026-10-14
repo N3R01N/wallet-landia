@@ -13,7 +13,6 @@ import { ethPriceFrom, initialChain, nextChain, type BlockInfo, type ChainState 
 import { doorSlot, flightRoute, walkRoute, walkableAt } from './route.js';
 import { realmOf } from '../domain/realms.js';
 import { WALK_SPEED, type ActTask, type Agent, type AgentKind, type Coin, type Effect, type Task, type Town } from './agents.js';
-import { TowerQueue } from './towerQueue.js';
 import { bubble, Townsfolk } from './townsfolk.js';
 import { phrasesFor } from './marketChatter.js';
 
@@ -100,14 +99,12 @@ export class Sim {
   priceMove: PriceMove | null = null;
   /** The weather the market sets: rain after a drop, a storm after a crash (0..1, the floor under `gloom`). */
   #mood = 0;
-  /** The real chain, as of the last bell: the queue, the toll board and the beacon read it. */
+  /** The real chain, as of the last bell: the toll board and the beacon read it. */
   chain: ChainState = initialChain();
   /** Which realm (chain id) this town is: Ethereum's rings with real blocks; a province's tower has no feed yet. */
   realm = 'ethereum';
   /** ETH in USD, from what the guild holds (for the toll in dollars), or null; a province's town is given the whole guild's. */
   ethUsd: number | null;
-  /** The line at the tower door (see `towerQueue.ts`). */
-  readonly #queue: TowerQueue;
   /** Townsfolk, and what anyone idle does next (see `townsfolk.ts`). */
   readonly #folk: Townsfolk;
   /** Fog of war: buildings stay hidden until a hero first visits them in the replay. */
@@ -158,13 +155,9 @@ export class Sim {
     this.#spawnWatchers();
     for (let i = 0; i < this.#folk.target; i++) this.#folk.spawn(true);
     this.ethUsd = ethPriceFrom(guild.heroes.flatMap((h) => h.items));
-    this.#queue = new TowerQueue(town);
-    // the town opens with the line already standing
-    for (let i = 0; i < this.queueTarget; i++) this.#queue.join(this.queueLine[i]!);
-    this.#queue.place();
   }
 
-  /** The Sim as its townsfolk and its tower queue see it (they share its people, effects and dice). */
+  /** The Sim as its townsfolk see it (they share its people, effects and dice). */
   #town(): Town {
     return {
       plan: this.plan,
@@ -178,21 +171,6 @@ export class Sim {
       enterable: (b) => this.#enterable(b),
       doorway: (b) => this.doorway(b),
     };
-  }
-
-  /** The line at the tower door, front first. */
-  get queue(): readonly Agent[] {
-    return this.#queue.line;
-  }
-
-  /** Where the line stands: spots along the road from the tower door, front first. */
-  get queueLine(): readonly Pt[] {
-    return this.#queue.spots;
-  }
-
-  /** How long the line should be: a couple of people when the chain is calm, the whole street when blocks are full. */
-  get queueTarget(): number {
-    return this.#queue.target(this.chain.congestion);
   }
 
   get live(): boolean {
@@ -284,7 +262,7 @@ export class Sim {
     this.#chatterIn -= dt;
     if (this.#chatterIn > 0) return;
     this.#chatterIn = 5 + this.#rng() * 4;
-    const folk = this.agents.filter((a) => a.kind === 'villager' && !a.gone && !a.queued && !a.inside && a.doorway === null && a.alt === 0);
+    const folk = this.agents.filter((a) => a.kind === 'villager' && !a.gone && !a.inside && a.doorway === null && a.alt === 0);
     if (folk.length === 0) return;
     const who = folk[Math.floor(this.#rng() * folk.length)]!;
     bubble(this.#town(), who, 3.5, 0, phrasesFor(this.priceMove.mood), true);
@@ -447,13 +425,10 @@ export class Sim {
   /** A new block was sealed on the real chain. */
   bell(block: BlockInfo): void {
     const t = this.plan.tower;
-    const fresh = block.number !== this.chain.block;
     this.chain = nextChain(this.chain, block);
     this.effects.push({ kind: 'ring', x: t.x + t.w / 2, y: t.y + t.h / 2, age: 0, ttl: 2.2, drama: 1, text: `#${block.number}` });
     // Busier blocks bring more people into the streets.
     this.#folk.target = Math.round(6 + block.busy * 14);
-    // the block takes in the front of the line
-    if (fresh) this.#queue.admit(block.busy);
   }
 
   step(dtReal: number): void {
@@ -476,7 +451,6 @@ export class Sim {
     for (const a of this.agents) this.#advance(a, dt);
     this.#keepApart();
     this.agents = this.agents.filter((a) => !a.gone);
-    this.#queue.tend(dtReal, this.chain.congestion);
     // the replay's end charts the whole map (buildings known only for what is kept there)
     if (this.t >= this.duration) this.#chart(this.elapsed);
 
@@ -656,10 +630,10 @@ export class Sim {
 
   /**
    * Townsfolk on the ground push each other apart when they overlap, but only onto ground they may walk on
-   * (never into a building, a doorway or the water). Heroes, people indoors, in a queue or at a door keep their place.
+   * (never into a building, a doorway or the water). Heroes, people indoors or at a door keep their place.
    */
   #keepApart(): void {
-    const folk = this.agents.filter((a) => a.kind === 'villager' && !a.gone && !a.inside && !a.queued && a.doorway === null && a.acting === null && a.alt === 0);
+    const folk = this.agents.filter((a) => a.kind === 'villager' && !a.gone && !a.inside && a.doorway === null && a.acting === null && a.alt === 0);
     const min = 2 * VILLAGER_RADIUS;
     for (let i = 0; i < folk.length; i++) {
       for (let j = i + 1; j < folk.length; j++) {

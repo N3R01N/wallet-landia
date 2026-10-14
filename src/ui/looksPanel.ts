@@ -43,7 +43,7 @@ function gameOptions(ctx: LooksContext): HTMLElement {
       vol.oninput = () => ctx.onVolume(Number(vol.value));
       return el('label', { class: 'check-row' }, el('span', {}, 'Volume'), vol);
     })(),
-    el('div', { class: 'muted small' }, 'Sounds: the tower bell for each block, coins for tolls and trades, keys, the bailiffs’ alarm, rain when the market falls, the crowd at the tower, birds by day and crickets at night. Turn them on with 🔇 in the top bar (or press M).'),
+    el('div', { class: 'muted small' }, 'Sounds: the tower bell for each block, coins for tolls and trades, keys, the bailiffs’ alarm, rain when the market falls, birds by day and crickets at night. Turn them on with 🔇 in the top bar (or press M).'),
   );
 }
 

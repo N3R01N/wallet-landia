@@ -412,6 +412,9 @@ function largestSkinned(root: THREE.Object3D): THREE.SkinnedMesh | null {
 
 // --- a character ----------------------------------------------------------------
 
+/** A wheel's radius, in metres, for the spin of a model mount's wheels (the vehicles use the same). */
+const WHEEL_RADIUS_M = 0.335;
+
 /** Riding pose on top of the chair-sitting clip (radians). */
 const STRADDLE = { thigh: 0.8, spread: 0.15, roll: 0.55, calf: 0.6 };
 const _q0 = new THREE.Quaternion();
@@ -449,6 +452,8 @@ interface Mount {
   mixer: THREE.AnimationMixer | null;
   /** Vehicles: wheels, rotors and hover. */
   vehicle?: Vehicle;
+  /** Model mounts: any node named Wheel… (its axle along X), turned as the mount travels. */
+  wheels?: THREE.Object3D[];
   idle?: THREE.AnimationAction;
   walk?: THREE.AnimationAction;
   run?: THREE.AnimationAction;
@@ -561,6 +566,9 @@ class RiggedCharacter implements SandboxCharacter {
     const metres = spec.height; // overall height incl. head
     const s = metres / Math.max(size.y, 1e-3) / METRES_PER_TILE;
     root.scale.multiplyScalar(s);
+    // stand the model on the floor: its lowest point at y = 0, whatever its origin (wheels may sit below it)
+    root.updateMatrixWorld(true);
+    root.position.y -= new THREE.Box3().setFromObject(root).min.y;
     const tint = spec.tint;
     if (tint) {
       root.traverse((o) => {
@@ -606,7 +614,11 @@ class RiggedCharacter implements SandboxCharacter {
       }
       return undefined;
     };
-    const m: Mount = { root, mixer, wings, saddle: backTop(root, spec.seat), speeds: spec.speeds ?? { walk: 1.6, run: 5 } };
+    const wheels: THREE.Object3D[] = [];
+    root.traverse((o) => {
+      if (o.name.startsWith('Wheel')) wheels.push(o);
+    });
+    const m: Mount = { root, mixer, wings, wheels, saddle: backTop(root, spec.seat), speeds: spec.speeds ?? { walk: 1.6, run: 5 } };
     const idle = find(spec.clips.idle);
     const walk = find(spec.clips.walk);
     const run = find(spec.clips.run);
@@ -732,6 +744,8 @@ class RiggedCharacter implements SandboxCharacter {
       this.#straddle();
     }
     this.#mount?.mixer?.update(dt);
+    // wheels roll at the speed the mount travels (a vehicle's spinners do the same below)
+    for (const w of this.#mount?.wheels ?? []) w.rotation.x += (metres / WHEEL_RADIUS_M) * dt;
     const v = this.#mount?.vehicle;
     if (v) {
       for (const sp of v.spinners) {

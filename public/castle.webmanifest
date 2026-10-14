@@ -1,0 +1,16 @@
+{
+  "name": "Wallet-landia: your castle",
+  "short_name": "Wallet-landia",
+  "description": "Your Ethereum wallets as a castle, and the chain as the town in front of it.",
+  "start_url": "/castle.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#2b2a33",
+  "theme_color": "#2b2a33",
+  "icons": [
+    { "src": "/themes/medieval-castle/art/app/icon.192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/themes/medieval-castle/art/app/icon.512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/themes/medieval-castle/art/app/icon.maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -28,9 +28,19 @@ function tintFor(name: string): string {
   return PICTURE_TINTS[h % PICTURE_TINTS.length]!;
 }
 
+/** The medieval loot props (GLBs, loaded by the view): the sack and the pouch on the table. */
+export const LOOT = {
+  sack: '/themes/medieval/props/CoinSack.glb',
+  pouch: '/themes/medieval/props/LeatherPouch.glb',
+  coinPile: '/themes/medieval/props/CoinPile.glb',
+  chest: '/themes/medieval/props/TreasureChest.glb',
+} as const;
+
 export interface Room3D {
   /** The whole room, in metres. */
   group: THREE.Group;
+  /** Props to load and stand on the table: their file and where their base goes. */
+  props: { url: string; at: THREE.Vector3; scale?: number; turn?: number }[];
   /** Hover text for each thing in the room, pinned where it stands. */
   labels: { at: THREE.Vector3; text: string; stand: THREE.Vector3; image?: string }[];
   /** The furniture's footprints on the floor, for walking round them. */
@@ -45,48 +55,6 @@ export interface Room3D {
   animate(t: number): void;
 }
 
-/** Gold that takes the light (the theme's metal gold reflects the dark room and goes black). */
-const GOLD = { key: 'plaster' as const, tint: '#e8b020' };
-
-/**
- * A heap of coins on a surface: layers that narrow as they rise, each coin
- * set where a fixed pattern puts it (so the same holdings always heap the same
- * way), tilted a little so the heap reads as loose coins, not a stack of discs.
- */
-function coinHeap3d(w: MeshWriter, x: number, z: number, y0: number, count: number, radius: number): void {
-  let seed = Math.round(x * 1000) * 31 + Math.round(z * 1000) * 17 + count;
-  const rnd = (): number => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
-  };
-  let placed = 0;
-  for (let layer = 0; placed < count; layer++) {
-    const r = radius * Math.max(0.25, 1 - layer * 0.28);
-    const per = Math.max(1, Math.round((r / radius) * 6));
-    for (let i = 0; i < per && placed < count; i++, placed++) {
-      const a = rnd() * Math.PI * 2;
-      const d = Math.sqrt(rnd()) * r * 0.8;
-      w.cylinder(x + Math.cos(a) * d, z + Math.sin(a) * d, y0 + layer * 0.02 + rnd() * 0.004, 0.075, 0.02, 10, GOLD, { top: GOLD });
-    }
-  }
-}
-
-/** A treasure chest standing at (x, z): its front faces the camera (+z). */
-function chest3d(w: MeshWriter, x: number, z: number): void {
-  w.box([x, 0.22, z], [0.72, 0.44, 0.5], 'timber');
-  // a stepped lid, so it reads as arched
-  w.box([x, 0.5, z], [0.74, 0.08, 0.52], 'timber');
-  w.box([x, 0.58, z], [0.68, 0.07, 0.46], 'timber');
-  w.box([x, 0.645, z], [0.5, 0.05, 0.36], 'timber');
-  // iron straps across the front and the lid, corner bands down the sides
-  for (const y of [0.12, 0.34]) w.box([x, y, z + 0.255], [0.74, 0.04, 0.02], 'iron');
-  w.box([x, 0.5, z + 0.27], [0.76, 0.03, 0.02], 'iron');
-  for (const dx of [-0.35, 0.35]) for (const dz of [-0.25, 0.25]) w.box([x + dx, 0.22, z + dz], [0.06, 0.46, 0.06], 'iron');
-  // the lock, and coins spilling from the lid
-  w.box([x, 0.36, z + 0.262], [0.13, 0.14, 0.03], GOLD);
-  for (const [dx, dz] of [[-0.12, 0.05], [0.1, -0.06], [0.0, 0.12], [-0.05, -0.12]] as const) w.cylinder(x + dx, z + dz, 0.685, 0.1, 0.03, 10, GOLD, { top: GOLD });
-}
-
 /** Build the room and its holdings. `lib`: the theme's materials (a fresh, plain library when the theme has none). */
 export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibrary({})): Room3D {
   const w = new MeshWriter();
@@ -98,6 +66,7 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
   ];
   // where each thing's hover text is pinned, and what it says
   const labels: Room3D['labels'] = [];
+  const props: Room3D['props'] = [];
   // where the hero stops to look at a thing: on the floor just in front of it, inside the room
   const tag = (o: RoomObject, x: number, y: number, z: number): void => {
     const stand = new THREE.Vector3(Math.min(2.4, Math.max(-2.4, x)), 0, Math.min(2, Math.max(-2, z + 0.7)));
@@ -162,23 +131,21 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
       const x = -1.35 + i * 0.4;
       tag(o, x, 1.05, 0.2);
       if (o.kind === 'coins') {
-        // a heap of gold coins: more of them for more value
-        coinHeap3d(w, x, 0.2, 0.84, 8 + Math.round(o.size * 22), 0.2);
+        // a loose heap of gold coins: the coin-pile prop, turned a little for each place
+        props.push({ url: LOOT.coinPile, at: new THREE.Vector3(x, 0.84, 0.2), turn: i * 0.9 });
       } else {
-        // a sack: a round body, a neck and a tie (a pouch is darker)
-        const tint = o.kind === 'pouch' ? '#9a7442' : '#c9a46a';
-        w.dome(x, 0.2, 0.84, 0.15, 0.2, 10, 4, { key: 'plaster', tint });
-        w.cylinder(x, 0.2, 1.0, 0.06, 0.09, 8, { key: 'plaster', tint });
-        w.cylinder(x, 0.2, 1.02, 0.07, 0.02, 8, 'timber');
+        // a pouch for a small holding, a sack for a larger one: the prop is loaded by the view
+        props.push({ url: o.kind === 'pouch' ? LOOT.pouch : LOOT.sack, at: new THREE.Vector3(x, 0.84, 0.2) });
       }
     });
 
   // the chests on the floor, in front of the table: a body with iron straps and corner bands, a stepped arched lid, a gold lock, coins spilling out
   // (on the floor beside the table, where the camera sees them whole)
   room.objects.filter((o) => o.kind === 'chest').forEach((o, i) => {
-    chest3d(w, 0.55 + i * 0.7, 0.5);
-    solids.push({ x0: 0.55 + i * 0.7 - 0.37, x1: 0.55 + i * 0.7 + 0.37, z0: 0.26, z1: 0.74 });
-    tag(o, 0.55 + i * 0.7, 0.6, 0.5);
+    const x = 0.55 + i * 0.7;
+    props.push({ url: LOOT.chest, at: new THREE.Vector3(x, 0, 0.5) });
+    solids.push({ x0: x - 0.4, x1: x + 0.4, z0: 0.26, z1: 0.74 });
+    tag(o, x, 0.6, 0.5);
   });
 
   // the post of the Banker's Scale stays on the counter; the beam and pans are their own group (below)
@@ -186,12 +153,13 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
   if (scales.length > 0) w.box([1.2, 1.28, -1.5], [0.05, 0.64, 0.05], 'timber');
 
   // rewards to claim: gold mounds (on the counter by the scale), as their own group so they can bob
-  const rewards = new MeshWriter();
+  // (on the counter, beside the scale: a coin pile, scaled by the reward's size)
   room.objects
     .filter((o) => o.kind === 'harvest')
     .forEach((o, i) => {
-      rewards.dome(1.45 + i * 0.1, -1.6, 0.95, 0.22, 0.2, 12, 4, { key: 'plaster', tint: '#e8b020' }); // (on the counter, beside the scale)
-      tag(o, 1.45 + i * 0.1, 1.2, -1.6);
+      const at = new THREE.Vector3(1.45 + i * 0.1, 0.95, -1.6);
+      props.push({ url: LOOT.coinPile, at, scale: 0.5 + 0.7 * o.size, turn: i * 1.3 });
+      tag(o, at.x, 1.2, at.z);
     });
 
   // the hero whose house it is stands here (the view places their own figure), and talks about the house
@@ -217,8 +185,6 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
   const group = new THREE.Group();
   group.name = 'room';
   group.add(w.build(lib));
-  const rewardGroup = rewards.build(lib);
-  group.add(rewardGroup);
 
   // the Banker's Scale: its beam pivots at the middle; a tipped beam sits lower on the debt side (its left)
   const beams: { pivot: THREE.Group; tilt: number }[] = [];
@@ -256,7 +222,6 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
   group.add(dust);
 
   const animate = (t: number): void => {
-    rewardGroup.position.y = Math.sin(t * 2.2) * 0.01; // the reward mound bobs
     for (const { pivot, tilt } of beams) {
       // a level scale hangs still; a tipped one sways a little either way
       pivot.rotation.z = 0.08 * tilt + (tilt === 0 ? 0 : Math.sin(t * 1.4) * 0.015);
@@ -268,5 +233,5 @@ export function buildRoom3d(room: Room, lib: MaterialLibrary = new MaterialLibra
     dustPos.needsUpdate = true;
   };
   animate(0);
-  return { group, talker, labels, solids, floor: { x0: -hw + 0.1, x1: hw - 0.1, z0: -hd + 0.1, z1: hd - 0.1 }, frames, animate };
+  return { group, talker, labels, props, solids, floor: { x0: -hw + 0.1, x1: hw - 0.1, z0: -hd + 0.1, z1: hd - 0.1 }, frames, animate };
 }

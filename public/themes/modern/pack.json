@@ -3,7 +3,7 @@
   "id": "modern",
   "name": "Modern",
   "author": "wallet-landia; textures by ambientCG",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "license": "CC0-1.0",
   "description": "Brick, render and glass on asphalt streets: shopfronts, offices, a container port, a skyscraper for the richest; bikes, motorbikes, a helicopter and a jet as mounts.",
   "slots": {},
@@ -109,20 +109,62 @@
       "wardrobe": "modern",
       "mounts": {
         "t2": {
-          "vehicle": "bicycle"
+          "model": "animals/Bicycle.glb",
+          "height": 1.12,
+          "pose": "straddle",
+          "seat": {
+            "from": "SeatCluster",
+            "to": "Saddle",
+            "t": 0.5
+          },
+          "speeds": {
+            "walk": 1.6,
+            "run": 5
+          }
         },
         "t3": {
-          "vehicle": "scooter"
+          "model": "animals/Scooter.glb",
+          "height": 1.555,
+          "pose": "straddle",
+          "seat": {
+            "from": "Footboard",
+            "to": "Seat",
+            "t": 0.7
+          },
+          "speeds": {
+            "walk": 1.6,
+            "run": 6
+          }
         },
         "t4": {
-          "vehicle": "motorbike"
+          "model": "animals/Motorbike.glb",
+          "height": 1.968,
+          "pose": "straddle",
+          "seat": {
+            "from": "FuelTank",
+            "to": "RiderSaddle",
+            "t": 0.6
+          },
+          "speeds": {
+            "walk": 3,
+            "run": 18
+          }
         },
         "t5": {
-          "vehicle": "helicopter"
+          "model": "animals/Convertible.glb",
+          "height": 1.607,
+          "pose": "sit",
+          "seat": {
+            "from": "DriverSeatCushion",
+            "to": "DriverSeatBack",
+            "t": 0.5
+          },
+          "speeds": {
+            "walk": 3,
+            "run": 14
+          }
         },
-        "t6": {
-          "vehicle": "jet"
-        }
+        "t6": {"model": "animals/Supercar.glb", "height": 1.294, "pose": "sit", "seat": {"from": "SeatCushion", "to": "SeatBack", "t": 0.5}, "speeds": {"walk": 3, "run": 20}}
       }
     }
   }

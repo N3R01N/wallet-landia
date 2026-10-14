@@ -5,13 +5,18 @@
     "where": "public/themes/highland/pack.json → \"version\""
   },
   "themes/medieval": {
-    "version": "0.4.3",
-    "hash": "75ccd64800021ca1",
+    "version": "0.5.1",
+    "hash": "d4a9f3b8b96454a6",
     "where": "public/themes/medieval/pack.json → \"version\""
   },
+  "themes/medieval-castle": {
+    "version": "0.8.0",
+    "hash": "3db1daa2fd094035",
+    "where": "public/themes/medieval-castle/theme.json → \"version\""
+  },
   "themes/modern": {
-    "version": "0.1.0",
-    "hash": "70f3946694a2be9c",
+    "version": "0.6.0",
+    "hash": "65bc6d5f2610a67f",
     "where": "public/themes/modern/pack.json → \"version\""
   },
   "themes/scifi": {

@@ -4,7 +4,8 @@
  * (`?v=`). So whenever those files change, their version must change too,
  * or players keep the old files.
  *
- * `asset-versions.json` records, for each theme, pack and the skies, the
+ * `asset-versions.json` records, for each theme (pack.json, or theme.json for
+ * a castle theme), pack and the skies, the
  * version and a fingerprint of its files. `npm run check` fails if files
  * changed but the version did not (test/assetVersions.test.ts).
  *
@@ -59,11 +60,12 @@ export function currentVersions(): Record<string, Entry> {
     for (const id of readdirSync(base)) {
       const dir = join(base, id);
       if (!statSync(dir).isDirectory()) continue;
-      const pack = join(dir, 'pack.json');
-      if (!existsSync(pack)) continue;
-      const version = String((JSON.parse(readFileSync(pack, 'utf8')) as { version?: unknown }).version ?? '');
-      // pack.json itself is fetched fresh each visit: only the files it points to are kept
-      out[`${kind}/${id}`] = { version, hash: fingerprint(dir, (rel) => rel === 'pack.json' || rel.endsWith('.md')), where: `public/${kind}/${id}/pack.json → "version"` };
+      // A pack or town theme has pack.json; a castle theme (src/castle/) has theme.json.
+      const manifest = ['pack.json', 'theme.json'].find((m) => existsSync(join(dir, m)));
+      if (!manifest) continue;
+      const version = String((JSON.parse(readFileSync(join(dir, manifest), 'utf8')) as { version?: unknown }).version ?? '');
+      // the manifest itself is fetched fresh each visit: only the files it points to are kept
+      out[`${kind}/${id}`] = { version, hash: fingerprint(dir, (rel) => rel === manifest || rel.endsWith('.md')), where: `public/${kind}/${id}/${manifest} → "version"` };
     }
   }
   const env = readFileSync(join(ROOT, 'src/render/three/environment.ts'), 'utf8');

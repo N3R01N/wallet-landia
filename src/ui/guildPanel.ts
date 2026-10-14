@@ -4,7 +4,7 @@
  */
 
 import { realmOf } from '../domain/realms.js';
-import { isEnsName, resolveName } from '../data/ens.js';
+import { toAddress } from '../data/ens.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { untilReset } from '../data/zerion/budget.js';
 import { loadApiKey, saveApiKey, savePrefs, type Prefs } from '../settings.js';
@@ -71,18 +71,6 @@ function heroCard(hero: Hero, ctx: GuildPanelContext): HTMLElement {
   );
 }
 
-const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
-
-async function toAddress(input: string): Promise<string> {
-  const v = input.trim();
-  if (ADDRESS.test(v)) return v.toLowerCase();
-  if (isEnsName(v)) {
-    const a = await resolveName(v);
-    if (a === null) throw new Error(`${v} does not resolve to an address.`);
-    return a;
-  }
-  throw new Error('Enter a 0x… address or an ENS name.');
-}
 
 function walletRow(address: string, ctx: GuildPanelContext, actions: HTMLElement[]): HTMLElement {
   const name = ctx.prefs.ens[address];
@@ -222,7 +210,7 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
     ctx.refresh();
   });
 
-  // --- the Ethereum node (the bell, the queue, wallet checks)
+  // --- the Ethereum node (the bell, wallet checks)
   const rpcInput = el('input', { type: 'text', placeholder: DEFAULT_RPC, spellcheck: 'false', autocomplete: 'off', 'aria-label': 'Ethereum RPC address' });
   rpcInput.defaultValue = p.rpcUrl;
   const rpcMsg = el('div', { class: 'form-msg' });
@@ -330,7 +318,7 @@ export function guildPanel(ctx: GuildPanelContext): HTMLElement {
     chainsMsg,
 
     el('h3', {}, 'Ethereum node'),
-    el('p', { class: 'muted small' }, 'The bell, the tower queue and the check for wallet changes ask an Ethereum node about once a block (12 s) while the town is open. The free public node is shared by everyone; with many players it may slow down or refuse, so you can use your own (e.g. a free Alchemy, Infura or Ankr address).'),
+    el('p', { class: 'muted small' }, 'The bell and the check for wallet changes ask an Ethereum node about once a block (12 s) while the town is open. The free public node is shared by everyone; with many players it may slow down or refuse, so you can use your own (e.g. a free Alchemy, Infura or Ankr address).'),
     el('div', { class: 'form-row' }, rpcInput, rpcSave, rpcReset),
     rpcMsg,
 
