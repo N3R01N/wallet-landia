@@ -1,37 +1,7 @@
 {
-  "themes/highland": {
-    "version": "0.1.0",
-    "hash": "e3b0c44298fc1c14",
-    "where": "public/themes/highland/pack.json → \"version\""
-  },
-  "themes/medieval": {
-    "version": "0.5.1",
-    "hash": "d4a9f3b8b96454a6",
-    "where": "public/themes/medieval/pack.json → \"version\""
-  },
   "themes/medieval-castle": {
     "version": "0.8.0",
     "hash": "3db1daa2fd094035",
     "where": "public/themes/medieval-castle/theme.json → \"version\""
-  },
-  "themes/modern": {
-    "version": "0.6.0",
-    "hash": "65bc6d5f2610a67f",
-    "where": "public/themes/modern/pack.json → \"version\""
-  },
-  "themes/scifi": {
-    "version": "0.1.0",
-    "hash": "09c76d251bbc47e1",
-    "where": "public/themes/scifi/pack.json → \"version\""
-  },
-  "packs/ember-frost": {
-    "version": "0.1.0",
-    "hash": "4d8422078100d315",
-    "where": "public/packs/ember-frost/pack.json → \"version\""
-  },
-  "skies": {
-    "version": "1",
-    "hash": "60f02764edb140e4",
-    "where": "src/render/three/environment.ts → SKY_VERSION"
   }
 }

@@ -8,7 +8,7 @@ test('the player card, every medal (earned ones first), and a badge’s sheet', 
   test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/castle.html');
+  await page.goto('/');
   await page.locator('.tab', { hasText: 'Badges' }).click();
   const tab = page.locator('.badges-tab');
   await expect(tab.locator('.player-card h2')).toContainText(/Level \d+ · /, { timeout: 30_000 });

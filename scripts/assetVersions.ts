@@ -1,11 +1,11 @@
 /**
- * Asset versions: players' devices keep theme, pack and sky files forever
+ * Asset versions: players' devices keep theme and pack files forever
  * (service worker + cache headers), keyed by the version in their URL
  * (`?v=`). So whenever those files change, their version must change too,
  * or players keep the old files.
  *
  * `asset-versions.json` records, for each theme (pack.json, or theme.json for
- * a castle theme), pack and the skies, the
+ * a castle theme) and pack, the
  * version and a fingerprint of its files. `npm run check` fails if files
  * changed but the version did not (test/assetVersions.test.ts).
  *
@@ -57,6 +57,7 @@ export function currentVersions(): Record<string, Entry> {
   const out: Record<string, Entry> = {};
   for (const kind of ['themes', 'packs'] as const) {
     const base = join(ROOT, 'public', kind);
+    if (!existsSync(base)) continue;
     for (const id of readdirSync(base)) {
       const dir = join(base, id);
       if (!statSync(dir).isDirectory()) continue;
@@ -68,9 +69,6 @@ export function currentVersions(): Record<string, Entry> {
       out[`${kind}/${id}`] = { version, hash: fingerprint(dir, (rel) => rel === manifest || rel.endsWith('.md')), where: `public/${kind}/${id}/${manifest} → "version"` };
     }
   }
-  const env = readFileSync(join(ROOT, 'src/render/three/environment.ts'), 'utf8');
-  const sky = /const SKY_VERSION = (\d+);/.exec(env)?.[1] ?? '?';
-  out.skies = { version: sky, hash: fingerprint(join(ROOT, 'public/env'), (rel) => rel.endsWith('.md')), where: 'src/render/three/environment.ts → SKY_VERSION' };
   return out;
 }
 

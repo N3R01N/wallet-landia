@@ -32,6 +32,8 @@ export interface CastleViewOptions {
   onSelectErrand?: (errand: Errand) => void;
   /** A courier pays the toll at the barrier (for the coins' sound). */
   onToll?: (errand: Errand) => void;
+  /** A failed transaction's courier is turned back at the barrier. */
+  onRefused?: (errand: Errand) => void;
   /** The hour of the day to light the scene by (default: the player's local time, followed as it passes). */
   hour?: number;
   /** The market's weather to start with. */
@@ -164,8 +166,9 @@ interface Run {
   cargo: THREE.Object3D;
   /** Its figure is a standin (no model): its geometry is its own to free. */
   standin: boolean;
-  /** It has paid the toll (told once). */
+  /** It has paid the toll, and been refused (each told once). */
   tolled?: boolean;
+  refusedTold?: boolean;
 }
 
 export class CastleView {
@@ -748,6 +751,10 @@ export class CastleView {
       states.push(s);
       run.figure.object.position.set(s.x, run.script.height, s.z);
       refused ||= s.refused;
+      if (s.refused && !run.refusedTold) {
+        run.refusedTold = true;
+        this.#opts.onRefused?.(run.errand);
+      }
       run.figure.object.rotation.y = s.heading;
       run.figure.play(s.clip);
       run.cargo.visible = s.carrying;

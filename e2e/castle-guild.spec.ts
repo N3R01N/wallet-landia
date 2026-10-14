@@ -7,7 +7,7 @@ test.use({ viewport: { width: 390, height: 844 } });
 test('wallets are added and removed, nonsense is refused with a reason, and a bad key is not kept', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/castle.html');
+  await page.goto('/');
   await page.locator('.tab', { hasText: 'Guild' }).click();
   const tab = page.locator('.guild-tab');
   await expect(tab.locator('.source')).not.toHaveText('Loading…');
@@ -38,7 +38,7 @@ test('wallets are added and removed, nonsense is refused with a reason, and a ba
 });
 
 test('the history file and the Ethereum node: a refused node address says why, a good one is kept', async ({ page }) => {
-  await page.goto('/castle.html');
+  await page.goto('/');
   await page.locator('.tab', { hasText: 'Guild' }).click();
   const tab = page.locator('.guild-tab');
   await expect(tab.locator('h2', { hasText: 'Your history' })).toBeVisible();

@@ -5,7 +5,7 @@
  * strings (token and protocol names) only ever go in as text.
  */
 
-import { el, fmtDate, safeHref, shortAddr } from '../ui/dom.js';
+import { el, fmtDate, safeHref, shortAddr } from '../util/dom.js';
 import { approxUsd } from '../domain/tiers.js';
 import { EXPLORERS, VERB_EXPLAIN } from '../domain/verbs.js';
 import type { PositionKind } from '../domain/model.js';

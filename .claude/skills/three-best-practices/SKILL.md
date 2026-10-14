@@ -1,11 +1,11 @@
 ---
 name: three-best-practices
-description: Three.js rules for wallet-landia's WebGL code (src/render/three/**, room and farm views): freeing GPU memory, the render loop, pixel ratio, draw calls, instancing, shadows, animation mixers, textures and loading. Use when writing, reviewing or changing any WebGL view or three.js object.
+description: Three.js rules for wallet-landia's WebGL code (the castle view, src/castle/scene/** and src/castle/assets/**): freeing GPU memory, the render loop, pixel ratio, draw calls, instancing, shadows, animation mixers, textures and loading. Use when writing, reviewing or changing any WebGL view or three.js object.
 ---
 
 # Three.js best practices (wallet-landia)
 
-Target: plain WebGL with `WebGLRenderer` and `three/addons`, on the current three.js release. We do not use WebGPU or TSL. Our own helpers come first: `dispose.ts` (`keep`, `disposeTree`, `resourceMark`), `MeshWriter` for merged props, `houseFade.ts` for patched materials.
+Target: plain WebGL with `WebGLRenderer` and `three/addons`, on the current three.js release. We do not use WebGPU or TSL. Our own helpers come first: `ModelLibrary` (one load per asset name, instances via `SkeletonUtils.clone`, standin fallback) and `disposeTree` in `src/castle/assets/models.ts`; the `Figure` class (one mixer per animated model, cross-faded clips) and `paint` (per-colour copies of the `Tint`/`Trim` materials) in `src/castle/scene/castleView.ts`.
 
 ## 1. Memory: free what you create, keep what you share
 
@@ -54,15 +54,15 @@ Target: plain WebGL with `WebGLRenderer` and `three/addons`, on the current thre
 - Anisotropic filtering for ground and wall textures: `texture.anisotropy = renderer.capabilities.getMaxAnisotropy()`.
 - Mipmaps and non-power-of-two textures are fine on WebGL 2. Do not size textures to powers of two for their own sake.
 - Transparency: prefer `alphaTest` for cut-outs and sorted transparency only where needed. Note that `alphaTest` compiles to a discard in the shader.
-- Patching built-in shaders with `onBeforeCompile` is how our effects work (cloth ripple, lit windows, cloud shadows, building fade). Keep those patches. Chain onto a material's existing hook rather than replacing it, and give patched materials a distinct `customProgramCacheKey`.
+- If a shader needs patching, use `onBeforeCompile`: chain onto a material's existing hook rather than replacing it, and give patched materials a distinct `customProgramCacheKey`. (The castle has none today: runtime colours go through material copies, see `paint`.)
 - Clone a material only when one object needs a different value; a clone is a new program and new state.
 
 ## 7. Loading and assets
 
 - Prefer glTF/GLB for models. FBX is fine for animated characters we already import; convert once, do not load FBX at runtime when a GLB exists.
 - Load asynchronously and use `Promise.all` for independent files. Show progress where the wait is long.
-- Load optional assets after the critical ones, and only when the view needs them (the farm loads when the medieval town opens).
-- Dispose what a theme switch removes (`disposeKit`, `dispose`) before loading the next theme.
+- Load optional assets after the critical ones, and only when the view needs them (the castle skips decorations whose model is missing instead of showing standins).
+- A view owns its `ModelLibrary`: closing the view disposes the scene and the library together (`CastleView.dispose`).
 - Compressed textures (KTX2) and Draco are worth it only for large assets that ship over the network; check the size first.
 
 ## 8. Animation
@@ -74,23 +74,23 @@ Target: plain WebGL with `WebGLRenderer` and `three/addons`, on the current thre
 ## 9. Lights
 
 - Few lights, and only the ones that show. Count the shadow-casting lights first: shadows cost most.
-- A hemisphere light plus one warm point light per room is a fine interior setup.
+- A hemisphere light plus one sun is the castle's whole setup (their intensities follow the hour).
 
 ## 10. Camera and controls
 
-- Near and far planes as tight as the scene allows, since depth precision depends on the near/far ratio. Our town uses 0.5 to 400 (kept), the rooms 0.05 to 40.
+- Near and far planes as tight as the scene allows, since depth precision depends on the near/far ratio. The castle's orthographic camera uses 1 to 400, standing back along its view direction so a tall phone view's near ground is never clipped.
 - Clamp orbit controls: `minDistance`, `maxDistance`, `minPolarAngle`, `maxPolarAngle`. Stop the camera going below the floor or into walls.
 
 ## 11. Debugging
 
 - Use `renderer.info` while measuring; reset it with `autoReset = false` and `info.reset()` once per frame only if you need per-frame counts.
 - Use `AxesHelper`, `GridHelper`, `CameraHelper` and `BoxHelper` while building; take them out before committing.
-- Test hooks: read-only accessors (`town3d.farmCount()`, `town3d.houseState()`). Remove temporary probes before committing.
+- Test hooks: read-only accessors (`castleView.state()`, `screenPoint()`, `courierPoint()`), exposed on `window` in the dev server only. Remove temporary probes before committing.
 
 ## Conflicts resolved for this repo
 
 - **Loop:** `setAnimationLoop` (section 2), not hand-written `requestAnimationFrame`.
-- **Patches vs. TSL:** keep `onBeforeCompile` patches; do not rewrite them as TSL.
+- **Patches vs. TSL:** use `onBeforeCompile` patches, not TSL.
 - **Dispose vs. share:** keep anything shared, dispose only what the view created.
 - **Damping vs. on-demand rendering:** keep the loop running while damping settles.
 

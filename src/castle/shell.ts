@@ -5,7 +5,7 @@
  * docked sheet. The state and the rules live in shellState.ts.
  */
 
-import { el } from '../ui/dom.js';
+import { el } from '../util/dom.js';
 import {
   TAB_LABEL,
   DESKTOP_MIN_WIDTH,

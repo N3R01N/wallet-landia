@@ -1,5 +1,5 @@
 /**
- * The castle view's entry (castle.html). The guild's wallets come from the
+ * The castle view's entry (index.html). The guild's wallets come from the
  * same session as the town (src/data/session.ts: the demo or captured wallets,
  * or live from Zerion with the player's key), become the castle's world
  * (world/world.ts), and the Castle and Town tabs show it in 3D. New
@@ -8,23 +8,25 @@
  * placeholders for now.
  */
 
-import { el } from '../ui/dom.js';
+import { inject } from '@vercel/analytics';
+import { el } from '../util/dom.js';
 import { Shell } from './shell.js';
 import { TAB_LABEL, type SheetState, type TabId } from './shellState.js';
 import { CastleView } from './scene/castleView.js';
 import { assetPath } from './assets/manifest.js';
 import { loadCastleTheme, themeFileUrl } from './assets/theme.js';
 import { newErrands, worldFromGuild, type CastleWorld } from './world/world.js';
-import { weatherFor, type Weather } from './world/sky.js';
+import { lightAt, weatherFor, type Weather } from './world/sky.js';
 import { priceMove } from '../domain/risk.js';
 import { chronicleSheet, errandSheet, protocolSheet } from './sheets.js';
 import { buildGuild } from '../domain/mappers.js';
 import { Session, type Mode, type Shown } from '../data/session.js';
+import { setRealmChains } from '../data/zerion/endpoints.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { guildTab, modeText } from './guildTab.js';
 import { BADGE_SHEET, badgeSheet, badgesTab, castleBadgeSheet } from './badgesTab.js';
 import { castleBadges } from './world/castleBadges.js';
-import { PlayerController } from '../ui/playerController.js';
+import { PlayerController } from './player.js';
 import type { CastleTheme } from './assets/theme.js';
 import { setRpcUrl, startHeartbeat, validRpcUrl } from '../data/rpc.js';
 import { loadPrefs, savePrefs } from '../settings.js';
@@ -38,6 +40,8 @@ const CHRONICLE_SHEET = 'chronicle';
 /** The theme's manifest, read once: its version keeps players' copies of the models fresh. */
 const theme = loadCastleTheme(import.meta.env.BASE_URL);
 const prefs = loadPrefs();
+// Ethereum only for now (docs/REDESIGN.md §14b): the castle's town is mainnet; other chains come later.
+setRealmChains(['ethereum']);
 // the crests the player chose (in the town) colour their towers' flags here too
 setCrests(prefs.crests);
 /** The theme once its manifest is read (the badge and rank pictures need its version). */
@@ -74,6 +78,7 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       onSelect: (b) => open({ id: SHEET_PREFIX + b.protocol.id, title: b.protocol.name }),
       onSelectErrand: (e) => open({ id: ERRAND_SHEET + e.key, title: e.label || 'A transaction' }),
       onToll: (e) => sound.tollNow(Math.min(3, e.tier / 2)),
+      onRefused: () => sound.refused(),
     });
     // Test hook (dev server only): the browser tests find buildings on screen through it.
     if (import.meta.env.DEV) (window as unknown as { castleView?: CastleView }).castleView = view;
@@ -143,7 +148,7 @@ const sound = new Soundscape();
 sound.setVolume(prefs.volume);
 
 const root = document.querySelector<HTMLDivElement>('#app');
-if (!root) throw new Error('#app is missing from castle.html');
+if (!root) throw new Error('#app is missing from index.html');
 
 const shell = new Shell({ renderTab, renderSheet, topbar: { guild: 'Your guild', rank: 'Wanderer', level: 'Lv 1' } });
 root.replaceChildren(shell.element);
@@ -164,6 +169,11 @@ soundBtn.addEventListener('click', () => {
 if (prefs.sound) sound.setOn(true);
 showSound();
 shell.addTopbarAction(soundBtn);
+// the ambience: rain from the market, birds by day, crickets at night
+setInterval(() => {
+  const now = new Date();
+  sound.ambience(weather.rain, lightAt(pinnedHour ?? now.getHours() + now.getMinutes() / 60).night);
+}, 1000);
 // Test hook (dev server only): what the sound has played.
 if (import.meta.env.DEV) (window as unknown as { castleSound?: Soundscape }).castleSound = sound;
 
@@ -264,3 +274,23 @@ void theme.then((t) => {
 });
 
 void session.home();
+
+// Keep the castle's files on the device (public/sw.js): a returning player
+// downloads nothing that has not changed. Production only: in development
+// the dev server's files change constantly.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch((e: unknown) => console.warn('service worker', e));
+  });
+}
+
+// Vercel Web Analytics: cookie-less page views, on the deployed site only (the
+// script and its reports are same-origin there, /_vercel/insights/, so the
+// page's security policy needs no change). Query strings are dropped: only the
+// page path is counted.
+if (import.meta.env.PROD) {
+  inject({
+    mode: 'production',
+    beforeSend: (event) => ({ ...event, url: event.url.split('?')[0] ?? event.url }),
+  });
+}

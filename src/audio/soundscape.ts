@@ -1,15 +1,12 @@
 /**
- * The town's sounds, made in the browser with Web Audio (no audio files):
- * the tower bell for each sealed block, coins for tolls and trades, a chime
- * for big ones, keys for approvals, a puff for a failed journey, the alarm
- * and thunder of a liquidation, a fanfare for a medal; under them the
- * ambience: rain when the market sets it, birds by day and crickets at night.
+ * The castle's sounds, made in the browser with Web Audio (no audio files):
+ * the tower bell for each sealed block, coins at the toll, a puff for a
+ * failed transaction, a fanfare for a medal; under them the ambience: rain
+ * when the market sets it, birds by day and crickets at night.
  *
  * Off by default. Browsers only let audio start from a click or key press,
  * so a context is made (or resumed) on the first gesture after it is on.
  */
-
-import type { Effect, Sim } from '../world/sim.js';
 
 type Ctx = AudioContext;
 
@@ -18,9 +15,6 @@ export class Soundscape {
   #master: GainNode | null = null;
   #on = false;
   #volume = 0.6;
-  /** Effects already heard (so each plays once). */
-  #heard = new WeakSet<Effect>();
-  #lastCoins = 0;
   #noise: AudioBuffer | null = null;
   /** The ambience beds, with their gains. */
   #rain: GainNode | null = null;
@@ -109,23 +103,12 @@ export class Soundscape {
     return g;
   }
 
-  /** Each frame: play what just happened, and set the ambience. `night` 0..1. */
-  update(sim: Sim, night: number): void {
+  /** The ambience, called now and then (every second is plenty): `rain` and `night` 0..1. */
+  ambience(rain: number, night: number): void {
     const ctx = this.#ctx;
-    if (!this.#on || ctx === null || ctx.state !== 'running') {
-      // keep effects marked as heard, so turning sound on does not replay a backlog
-      for (const e of sim.effects) this.#heard.add(e);
-      return;
-    }
+    if (!this.#on || ctx === null || ctx.state !== 'running') return;
     const t = ctx.currentTime;
-    for (const e of sim.effects) {
-      if (this.#heard.has(e)) continue;
-      this.#heard.add(e);
-      if (e.age > 0.5) continue; // old news
-      this.#play(e, sim);
-    }
-    const rain = Math.max(0, sim.gloom - 0.05);
-    this.#rain?.gain.setTargetAtTime(rain * 0.35, t, 0.8);
+    this.#rain?.gain.setTargetAtTime(Math.max(0, rain) * 0.35, t, 0.8);
     // birds by day (not in the rain), crickets at night
     if (t - this.#started > 1) {
       if (night < 0.4 && rain < 0.2 && t > this.#nextBird) {
@@ -139,47 +122,23 @@ export class Soundscape {
     }
   }
 
+  /** A bright chime (a badge just earned). Silent while sound is off. */
+  chime(drama = 1): void {
+    if (!this.#on || !this.#ctx || !this.#master) return;
+    this.#chime(this.#ctx.currentTime, drama);
+    this.played.chime = (this.played.chime ?? 0) + 1;
+  }
+
+  /** A failed transaction turned back at the barrier: a puff. Silent while sound is off. */
+  refused(): void {
+    if (!this.#on || !this.#ctx || !this.#master) return;
+    this.#puff(this.#ctx.currentTime);
+    this.played.refused = (this.played.refused ?? 0) + 1;
+  }
+
   /** The audio context's state ('none' before sound was first turned on). */
   get state(): string {
     return this.#ctx?.state ?? 'none';
-  }
-
-  #play(e: Effect, sim: Sim): void {
-    const t = this.#ctx!.currentTime;
-    this.played[e.kind] = (this.played[e.kind] ?? 0) + 1;
-    switch (e.kind) {
-      case 'ring':
-        // a province's bell is smaller, and rings higher
-        this.bell(t, (0.5 + sim.chain.busy * 0.5) * (sim.realm === 'ethereum' ? 1 : 0.75), sim.realm === 'ethereum' ? 196 : 294);
-        break;
-      case 'coins':
-        if (t - this.#lastCoins < 0.12) return; // a busy replay: one jingle at a time
-        this.#lastCoins = t;
-        this.#coins(t, e.seized === true ? 'seized' : 'paid', e.drama);
-        break;
-      case 'transfer':
-        // goods changing hands: a jingle as they land
-        if (t - this.#lastCoins < 0.12) return;
-        this.#lastCoins = t;
-        this.#coins(t + (e.delay ?? 0) + 0.7, e.seized === true ? 'seized' : 'paid', Math.min(1, e.drama));
-        break;
-      case 'sparkle':
-        this.#chime(t, e.drama);
-        break;
-      case 'key':
-        this.#keys(t);
-        break;
-      case 'smoke':
-        this.#puff(t);
-        break;
-      case 'alarm':
-        for (let i = 0; i < 3 + e.drama; i++) this.bell(t + i * 0.35, 0.7, 330);
-        break;
-      case 'storm':
-        this.#thunder(t);
-        break;
-      default:
-    }
   }
 
   /** The tower bell: inharmonic partials, the low hum ringing longest. */
@@ -233,20 +192,9 @@ export class Soundscape {
     notes.forEach((f, i) => this.#tone(t + i * 0.09, f, 0.07, 0.6, 'sine'));
   }
 
-  /** A ring of keys: two quick metal clicks. */
-  #keys(t: number): void {
-    this.#tone(t, 3200, 0.05, 0.06, 'square');
-    this.#tone(t + 0.07, 3900, 0.04, 0.05, 'square');
-  }
-
   /** A failed journey: a dull puff. */
   #puff(t: number): void {
     this.#noiseBurst(t, 'lowpass', 600, 0.25, 0.4);
-  }
-
-  #thunder(t: number): void {
-    this.#noiseBurst(t, 'lowpass', 140, 0.5, 2.8);
-    this.#noiseBurst(t + 0.25, 'lowpass', 90, 0.4, 3.5);
   }
 
   /** The bell, rung now (the castle rings it for each block). Silent while sound is off. */

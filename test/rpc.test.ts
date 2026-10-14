@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { blockFullness, nextPollDelay, PROVINCE_RPC, validRpcUrl } from '../src/data/rpc.js';
-import { formatGwei } from '../src/world/chain.js';
-import { versioned } from '../src/assets/themeBundles.js';
 
 describe('the heartbeat asks about once a block', () => {
   const t0 = 1_000_000_000;
@@ -40,12 +38,6 @@ describe('province towers', () => {
     expect(blockFullness('arbitrum', 1_750_000, 1_125_899_906_842_624)).toBe(0.5);
   });
 
-  it('show L2 fees, which are thousandths of a gwei', () => {
-    expect(formatGwei(0.0042)).toBe('0.0042');
-    expect(formatGwei(0.05)).toBe('0.05');
-    expect(formatGwei(12.3)).toBe('12');
-  });
-
   it('are allowed by the page’s security policy', () => {
     const html = readFileSync(resolve(__dirname, '../index.html'), 'utf8');
     for (const url of Object.values(PROVINCE_RPC)) expect(html).toContain(url);
@@ -61,12 +53,5 @@ describe('own RPC addresses', () => {
     expect(validRpcUrl('https://evil.example.com')).toBe(false); // not allowed by the page's security policy
     expect(validRpcUrl('https://g.alchemy.com.evil.io')).toBe(false);
     expect(validRpcUrl('not a url')).toBe(false);
-  });
-});
-
-describe('versioned file URLs', () => {
-  it('stamp the pack version so caches keep a file until a new release', () => {
-    expect(versioned('/themes/medieval/a.webp', '1.2.0')).toBe('/themes/medieval/a.webp?v=1.2.0');
-    expect(versioned('/x.glb?y=1', '2')).toBe('/x.glb?y=1&v=2');
   });
 });

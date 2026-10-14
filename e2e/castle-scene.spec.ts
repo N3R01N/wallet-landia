@@ -9,7 +9,7 @@ test('the guild’s transactions play as errands: the drawbridge lowers, the bar
   test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/castle.html');
+  await page.goto('/');
   await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
 
   // the bridge starts raised (−90°) and lowers as the courier sets out
@@ -33,14 +33,14 @@ test('the guild’s transactions play as errands: the drawbridge lowers, the bar
 });
 
 test('the town tab: tapping a building opens its sheet', async ({ page }) => {
-  await page.goto('/castle.html');
+  await page.goto('/');
   await page.locator('.tab', { hasText: 'Town' }).click();
   const name = await tapBuilding(page, 1);
   await expect(page.locator('.sheet .sheet-title')).toHaveText(name);
 });
 
 test('a building’s sheet says what the guild keeps there; a courier’s sheet is its transaction, with an explorer link', async ({ page }) => {
-  await page.goto('/castle.html');
+  await page.goto('/');
   await page.locator('.tab', { hasText: 'Town' }).click();
   await tapBuilding(page);
   const sheet = page.locator('.sheet');
@@ -55,7 +55,7 @@ test('a building’s sheet says what the guild keeps there; a courier’s sheet 
 
 test('sound is off until switched on, the choice is kept, and coins ring at the toll', async ({ page }) => {
   test.setTimeout(60_000);
-  await page.goto('/castle.html');
+  await page.goto('/');
   const toggle = page.locator('.sound-toggle');
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await toggle.click();
@@ -69,7 +69,7 @@ test('sound is off until switched on, the choice is kept, and coins ring at the 
 });
 
 test('the chronicle lists the recent transactions, newest first; a row opens its sheet', async ({ page }) => {
-  await page.goto('/castle.html');
+  await page.goto('/');
   await page.locator('.chronicle-btn').click();
   const sheet = page.locator('.sheet');
   await expect(sheet.locator('.sheet-title')).toHaveText('Chronicle');

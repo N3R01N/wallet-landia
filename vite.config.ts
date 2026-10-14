@@ -32,16 +32,16 @@ const devSockets: Plugin = {
 
 export default defineConfig({
   plugins: [devSockets],
-  // three.js + post-processing is ~650 kB but only loads when the 3D view opens.
+  // three.js is most of the castle page's code.
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 700,
-    // Four pages: the town, the look sandbox, the castle view (in progress), and the asset gallery.
-    rollupOptions: { input: { main: 'index.html', sandbox: 'sandbox.html', castle: 'castle.html', assets: 'assets.html' } },
+    // Two pages: the castle, and the asset gallery.
+    rollupOptions: { input: { main: 'index.html', assets: 'assets.html' } },
   },
-  // Pre-bundle three.js add-ons that are only reached through the lazily loaded
-  // 3D view, so the dev server never finds one mid-session and reloads the page.
-  optimizeDeps: { include: ['three/addons/environments/RoomEnvironment.js'] },
+  // Pre-bundle the three.js add-ons the castle uses, so the dev server never
+  // finds one mid-session and reloads the page.
+  optimizeDeps: { include: ['three/examples/jsm/loaders/GLTFLoader.js', 'three/examples/jsm/utils/SkeletonUtils.js'] },
   // /api/zerion → api.zerion.io for `vite preview` (production builds use the
   // proxy transport; on Vercel the edge function in api/ answers instead).
   server: { proxy: { '/api/zerion': zerionProxy } },

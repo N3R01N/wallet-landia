@@ -6,7 +6,7 @@
  * pictures are the theme's badge and rank art. Tapping a badge opens its sheet.
  */
 
-import { el, fmtDate, shortAddr } from '../ui/dom.js';
+import { el, fmtDate, shortAddr } from '../util/dom.js';
 import { ALL_MEDALS, type Medal } from '../domain/feats.js';
 import { BADGE_TIER_NAMES, type PlayerBadge, type PlayerProfile } from '../domain/player.js';
 import { assetPath } from './assets/manifest.js';

@@ -2,9 +2,9 @@
  * Wallet-landia's service worker: keeps the town's files on the device.
  *
  * - App code (/assets/, names carry a content hash) and versioned files
- *   (?v=: theme textures, models, animations, skies, pack art) never change
+ *   (?v=: the theme's models and art) never change
  *   under their URL: served from the device, fetched once.
- * - The page, the theme and pack lists (index.json, pack.json) can change:
+ * - The page and the theme's manifest (theme.json) can change:
  *   fetched fresh when online, the stored copy only when offline.
  * - Nothing from other sites (the Ethereum node, logos) and nothing under
  *   /api/ (Zerion through our proxy) is touched: wallet data lives in
@@ -13,7 +13,7 @@
  * Bump VERSION to drop everything stored by an older worker.
  */
 
-const VERSION = 'wl-3';
+const VERSION = 'wl-4';
 const KEEP = `${VERSION}-keep`;
 const PAGES = `${VERSION}-pages`;
 

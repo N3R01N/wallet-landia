@@ -6,7 +6,7 @@
  */
 
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { el } from '../ui/dom.js';
+import { el } from '../util/dom.js';
 import { ASSETS, THEME_DIR, assetPath, tierColor, type AssetSpec } from './assets/manifest.js';
 import { buildStandin } from './assets/standin.js';
 import { Thumbnailer } from './assets/thumbnail.js';

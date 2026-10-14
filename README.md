@@ -1,8 +1,12 @@
 # Wallet-landia
 
-Ethereum wallets as a cosy fantasy town. Each wallet is a **hero** whose mount and home show what it's worth. Protocols are **buildings** (Uniswap is the Bazaar, Aave the Counting House, Lido the Temple). Transactions are **journeys** the heroes walk, paying a toll at the **Chronicle Tower** (the blockchain), whose bell rings on every real mainnet block.
+Your Ethereum wallets as a castle, and the chain as the town in front of it.
 
-The design lives in [`docs/WORLD_BIBLE.md`](docs/WORLD_BIBLE.md) (every metaphor) and [`docs/PLAN.md`](docs/PLAN.md) (architecture, phases, decisions).
+- **The castle** grows with your guild: one **tower** per wallet (at that wallet's value tier), the **keep** at what all your wallets are worth together, a **wing** for each kind of protocol you use.
+- **The town** is the chain: a **building** per protocol you hold value in or use (32 protocols have their own building; the rest get one for their kind), the **bell tower** in the middle rings on every real mainnet block, and the paths light up.
+- **Every transaction is a courier**: the drawbridge lowers, the courier crosses the moat, pays the toll (the gas fee) at the border post, walks to the protocol's door, and the person inside comes out to take the goods. What arrives comes the other way; a failed transaction is turned back at the barrier; goods between your own wallets go along the castle walls.
+
+Plan and decisions: [`docs/REDESIGN.md`](docs/REDESIGN.md). The assets (names, sizes, style) every theme provides: [`docs/ASSET_SPEC.md`](docs/ASSET_SPEC.md).
 
 ## Run it
 
@@ -11,20 +15,12 @@ npm install
 npm run dev
 ```
 
-This opens the town with whatever is in `fixtures/`. If there are no real captures, it falls back to the synthetic demo in `fixtures/demo/`.
+This opens the castle with whatever is in `fixtures/`. If there are no real captures, it falls back to the synthetic demo in `fixtures/demo/`. `/assets.html` is the asset gallery: every asset the theme provides, with its spec.
 
-- **Top-down / Isometric / 3D**: three views of the same world (keys `t` / `i` / `3`). In 3D, right-drag or shift-drag orbits, and `q` / `e` rotate.
-- **Drag** to pan, **wheel** to zoom, `0` to fit, **space** to pause.
-- **Hover** anything for an approximate value; **click** a hero or home for the character sheet, or a building for its interior with exact values.
-- The bar at the bottom replays the window (last 30 days / last N transactions) in compressed event time, then goes **LIVE**.
-
-## Live wallets (in the browser)
-
-Open **⚙ Guild**, paste your free Zerion key (stored only in this browser), and add your wallets by address, ENS name or "Connect wallet". The town goes live: cached in IndexedDB, and updated when the chain shows one of your wallets changed. Follow other addresses to visit their towns. The ✒ counter shows Zerion requests left today (300 on the free plan).
-
-## Looks (asset packs)
-
-**🎨 Looks** restyles the town with asset packs: heroes, townsfolk, caravans, treasure icons, 2D and 3D buildings, scenery, and place names. Packs are data only (images, glTF models, words). Try the bundled **Ember & Frost** pack with "Use everywhere", or import your own pack folder. To make one, see [`docs/PACKS.md`](docs/PACKS.md).
+- **Castle / Town**: the scene; drag to pan, pinch or wheel to zoom, tap a building (what your guild keeps there) or a courier (its transaction). **📜 Chronicle** lists the recent transactions.
+- **Badges**: your level and rank from all your wallets' history, the castle's badges and the medals.
+- **Guild**: your free Zerion key (kept only in this browser), your wallets (address, ENS name or "Connect wallet"), the history file, the Ethereum node.
+- `?hour=23` shows the castle at night.
 
 ## Captured fixtures (for development)
 
@@ -32,7 +28,7 @@ Put your free Zerion key in `.env.local` (gitignored) as `ZERION_API_KEY=zk_...`
 
 ```sh
 npm run capture -- 0xabc... 0xdef...   # ~5 requests per wallet, of 300/day on the free plan
-npm run inspect                        # text check: heroes, protocols, verb coverage
+npm run inspect                        # text check: wallets, protocols, verb coverage
 ```
 
 The key is read from the environment and is never written to the fixtures.
@@ -41,13 +37,14 @@ The key is read from the environment and is never written to the fixtures.
 
 ```
 src/
-  data/       Zerion client (ported from v3), fixtures, the RPC heartbeat
-  domain/     tiers, asset/protocol classification, raw → Guild (heroes, protocols, journeys)
-  world/      town layout + pathfinding, the simulation (replay clock, agents, effects)
-  render/     pixel-art sprites drawn in code, ground, the 2D renderer (two projections), three/ for 3D
-  ui/         app shell, character sheet, building interiors
+  castle/     the castle page: the shell (tabs, sheets), the scene (plan, couriers, the 3D view),
+              the world (wallets, protocols, errands from the guild), badges, the asset contract
+  data/       Zerion client, the lifetime ledger, fixtures, the RPC heartbeat, the session
+  domain/     tiers, protocol classification, raw → Guild (wallets, protocols, journeys), the player
+  audio/      the sounds, made with Web Audio
+public/themes/medieval-castle/   the theme: models, art, theme.json (its version)
 ```
 
-`npm test` · `npm run e2e` (browser smoke tests, all three views) · `npm run typecheck` · `npm run lint` · `npm run build` (static files in `dist/`)
+`npm run check` (typecheck, unit and browser tests) · `npm run lint` · `npm run build` (static files in `dist/`)
 
 Captured wallets in `fixtures/*.json` are gitignored; only the synthetic demo is committed.

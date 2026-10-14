@@ -6,7 +6,8 @@
 
 import type { HeroClass } from './domain/model.js';
 import type { HistoryWindow } from './domain/mappers.js';
-import type { ViewKind } from './render/view.js';
+/** The old town's view choice (kept in saved preferences; the castle has one view). */
+type ViewKind = 'top' | 'iso' | '3d';
 import { DEFAULT_CHAINS } from './data/zerion/endpoints.js';
 
 export interface Prefs {

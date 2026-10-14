@@ -5,7 +5,7 @@
  * live; requests left today). Uses the same key and wallet list as the town.
  */
 
-import { el, shortAddr } from '../ui/dom.js';
+import { el, shortAddr } from '../util/dom.js';
 import { toAddress } from '../data/ens.js';
 import { loadApiKey, saveApiKey, savePrefs, type Prefs } from '../settings.js';
 import type { Mode } from '../data/session.js';

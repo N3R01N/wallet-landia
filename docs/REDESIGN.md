@@ -474,3 +474,17 @@ The castle page (`castle.html`) now covers the core: wallets, value, protocols, 
 | RPC node setting, L2 chain choice (Guild panel) | No | Port the node setting into the Guild tab; chains with the realm switch |
 
 **Suggested order:** port Quest Replay and the building holdings (sheets), the transaction log, visiting, sound and the history file; then make `castle.html` the main page and delete the rest in one change (old views, their tests and assets, the old themes and packs).
+
+### 14b. Decided (2026-10-14)
+
+**Keep and port to the castle:** visiting followed wallets' castles, following wallets, sharing a castle link; teaching quests, the first-visit tour, the full Quest Replay, the replay timeline; crest customisation, build mode, titles (as a player title); Vercel Web Analytics on the castle page.
+
+**Drop:** other chains for now (Ethereum only: no realm switch or realm map; the harbour assets wait), fog of war, the house interiors (rooms), heroes and their sheets, mounts and gear, the 2D views, the old 3D town and its grammar, the look and vehicle sandboxes, the old theme packs and the Looks panel.
+
+**Order:** delete first (the state before is commit `bc06046`), then port the kept features onto the castle code; the old implementations are read from git when porting.
+
+### 14c. Cleanup done (2026-10-14)
+
+The castle is the app: `index.html` opens it (with the service worker and Vercel Web Analytics), `assets.html` is the asset gallery. Deleted: the old views (2D, the 3D town and its grammar, rooms, the sandboxes), heroes, the old simulation and town layout, the Looks panel, packs and the old themes (`highland`, `medieval`, `modern`, `scifi`), the HDRI skies, the asset import scripts and their packages, and their tests and docs (`PACKS.md`, `VISUAL_CONTRACT.md`, `RESEARCH_REALISM.md`; `PLAN.md` and `WORLD_BIBLE.md` are marked historical). The sounds, the player's level and the DOM helper moved to the castle's side. The history file no longer carries town designs. The castle loads Ethereum only. The service worker is `wl-4`, so devices drop the old themes' stored files. `assets-src/` (785 MB of git-ignored source downloads) is left for the developer to remove.
+
+**Next (the kept features, §14b):** visiting followed wallets' castles, following, sharing a link; teaching quests, the first-visit tour, the full Quest Replay, the replay timeline; crest customisation, build mode, a player title. The old implementations are in commit `bc06046`.

@@ -1,5 +1,7 @@
 # Wallet-landia: World Bible
 
+> **Historical.** Written for the town app (heroes, 2D and 3D town views) that was replaced by the castle on 2026-10-14 (the last state with it: commit `bc06046`). The data and domain parts still hold; for the castle see [`REDESIGN.md`](REDESIGN.md) and [`ASSET_SPEC.md`](ASSET_SPEC.md).
+
 How every on-chain concept appears in the RPG world. This is the source of truth for visual and naming decisions. When a new on-chain concept shows up, add it here before building it.
 
 > Working tone: **cosy Stardew-like fantasy town**, readable for newcomers. Each metaphor should **teach** the real concept instead of hiding it, so hover text always names the real thing ("Aave Counting House · lending protocol").

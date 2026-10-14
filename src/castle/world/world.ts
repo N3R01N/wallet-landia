@@ -8,7 +8,7 @@
 import type { ProtocolCategory } from '../../domain/catalog.js';
 import type { Guild, Journey, PositionKind, Verb } from '../../domain/model.js';
 import { tierOf } from '../../domain/tiers.js';
-import { ethPriceFrom } from '../../world/chain.js';
+import { ethPriceFrom } from '../../domain/risk.js';
 import { SIGNATURE_PROTOCOLS, protocolFamily } from '../assets/manifest.js';
 
 /** The castle's building categories (docs/ASSET_SPEC.md §3.5). */

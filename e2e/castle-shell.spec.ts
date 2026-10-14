@@ -9,7 +9,7 @@ test.describe('phone', () => {
   test('bottom tabs, no horizontal scroll, the sheet rises and closes', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto('/castle.html');
+    await page.goto('/');
     const shell = page.locator('.shell');
     await expect(shell).toHaveAttribute('data-layout', 'phone');
 
@@ -44,7 +44,7 @@ test.describe('phone', () => {
   });
 
   test('switching tabs closes the sheet', async ({ page }) => {
-    await page.goto('/castle.html');
+    await page.goto('/');
     await page.locator('.tab', { hasText: 'Town' }).click();
     await tapBuilding(page);
     await expect(page.locator('.sheet')).toBeVisible();
@@ -57,7 +57,7 @@ test.describe('desktop', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
   test('side rail, and the sheet docks beside the stage without covering it', async ({ page }) => {
-    await page.goto('/castle.html');
+    await page.goto('/');
     await expect(page.locator('.shell')).toHaveAttribute('data-layout', 'desktop');
 
     const tabs = await page.locator('.tabs').boundingBox();
@@ -80,10 +80,10 @@ test.describe('desktop', () => {
 });
 
 test('the castle page can be installed: its manifest names the theme’s app icons, and they exist', async ({ page, request }) => {
-  await page.goto('/castle.html');
+  await page.goto('/');
   const href = await page.locator('link[rel="manifest"]').getAttribute('href');
   const manifest = (await (await request.get(href!)).json()) as { icons: { src: string; purpose: string }[]; start_url: string };
-  expect(manifest.start_url).toBe('/castle.html');
+  expect(manifest.start_url).toBe('/');
   expect(manifest.icons.some((i) => i.purpose === 'maskable')).toBe(true);
   for (const icon of manifest.icons) {
     const res = await request.get(icon.src);

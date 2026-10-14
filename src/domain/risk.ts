@@ -85,3 +85,11 @@ export function priceMove(nowUsd: number, then: { usd: number; at: number }): Pr
 }
 
 export const MOOD_COLORS: Record<PriceMood, string> = { boom: '#5fe07a', up: '#9fdc6a', flat: '#e8dcc0', down: '#ff9a6a', crash: '#ff4a4a' };
+
+/** An ETH price from what the guild holds (USD value per ETH), or null. */
+export function ethPriceFrom(items: readonly { symbol: string; category: string; quantity: number; usd: number | null }[]): number | null {
+  const prices = items.filter((i) => i.category === 'native' && i.symbol.toUpperCase() === 'ETH' && i.quantity > 0 && (i.usd ?? 0) > 0).map((i) => (i.usd ?? 0) / i.quantity);
+  if (prices.length === 0) return null;
+  prices.sort((a, b) => a - b);
+  return prices[Math.floor(prices.length / 2)]!;
+}
