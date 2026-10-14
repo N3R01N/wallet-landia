@@ -29,6 +29,7 @@ import { attachTimeline } from './timeline.js';
 import { attachArrange, type ArrangeTap } from './arrange.js';
 import { Tour } from './tour.js';
 import { tourSteps } from './tourSteps.js';
+import { LoadingScreen } from './loadingScreen.js';
 import { BADGE_SHEET, badgeSheet, badgesTab, castleBadgeSheet, playerTitle, type WalletQuest } from './badgesTab.js';
 import { teachingQuests } from '../domain/feats.js';
 import type { Guild } from '../domain/model.js';
@@ -88,6 +89,7 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       weather,
       ...(pinnedHour !== undefined ? { hour: pinnedHour } : {}),
       onSelect: (b) => open({ id: SHEET_PREFIX + b.protocol.id, title: b.protocol.name }),
+      onReady: () => loading.report('welcome'),
       onSelectErrand: (e) => open({ id: ERRAND_SHEET + e.key, title: e.label || 'A transaction' }),
       onToll: (e) => sound.tollNow(Math.min(3, e.tier / 2)),
       onRefused: () => sound.refused(),
@@ -185,6 +187,13 @@ function renderSheet(sheet: SheetState): HTMLElement {
 /** Sound: off until the player turns it on (the same setting as the town). */
 const sound = new Soundscape();
 sound.setVolume(prefs.volume);
+
+/** The first load: the wallets, the castle's models, a welcome (loadingScreen.ts). */
+const loading = new LoadingScreen();
+document.body.append(loading.element);
+loading.report('wallets');
+// Test hook (dev server only): the phases the loader showed.
+if (import.meta.env.DEV) (window as unknown as { castleLoading?: LoadingScreen }).castleLoading = loading;
 
 const root = document.querySelector<HTMLDivElement>('#app');
 if (!root) throw new Error('#app is missing from index.html');
@@ -315,6 +324,9 @@ function showTopbar(): void {
 const session = new Session(prefs, {
   onTown: (town) => {
     shown = town;
+    // the wallets are in: next the castle's models (or, on a tab with no scene, straight to the welcome)
+    const tab = shell.state.tab;
+    loading.report(tab === 'castle' || tab === 'town' ? 'castle' : 'welcome');
     world = worldOf(town);
     mode = town.mode;
     settlePrice(world);
@@ -333,7 +345,11 @@ const session = new Session(prefs, {
     if (rebuild) redrawForData();
     else view?.enqueue(fresh);
   },
-  onStatus: (text, kind) => shell.setStatus(text, kind),
+  onStatus: (text, kind) => {
+    shell.setStatus(text, kind);
+    if (kind === 'busy') loading.status(text);
+    else if (kind === 'error' && !world) loading.fail(text);
+  },
   onBudget: (snap) => {
     budget = snap;
   },

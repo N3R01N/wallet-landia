@@ -40,6 +40,8 @@ export interface CastleViewOptions {
   weather?: Weather;
   /** The player's own arrangement of the town (build mode): protocol id → plot. */
   arranged?: Record<string, number>;
+  /** Every model is placed: the scene is ready to look at. */
+  onReady?: () => void;
   /** In build mode, a tap on a building (its protocol) or on an empty plot. */
   onArrangeTap?: (tap: { protocolId: string } | { slot: number }) => void;
 }
@@ -472,6 +474,7 @@ export class CastleView {
     this.element.append(this.#weatherEl);
     this.#ready = true;
     this.element.dataset.ready = 'true';
+    this.#opts.onReady?.();
   }
 
   /** Places the town as the plan has it: buildings, paths, the castle's pieces, decorations, the bell, each building's person. */

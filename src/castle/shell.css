@@ -1159,3 +1159,289 @@ h1 {
 .castle-view[data-arranging='true'] .replay-open {
   display: none;
 }
+
+/* ---------- the first load (loadingScreen.ts) ---------- */
+
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--gutter);
+  background: radial-gradient(circle at 50% 40%, #3a3945, #1c1b22);
+  transition: opacity 0.35s ease-out;
+}
+
+.loading-screen.leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.load-card {
+  width: min(320px, 100%);
+  padding: 22px 20px 18px;
+  border: 2px solid var(--gold);
+  border-radius: 14px;
+  background: var(--parchment);
+  color: var(--ink);
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.load-title {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+}
+
+.load-stage {
+  position: relative;
+  height: 120px;
+  margin: 8px 0 4px;
+}
+
+.load-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.loading-screen[data-phase='wallets'] .art-wallets,
+.loading-screen[data-phase='castle'] .art-castle,
+.loading-screen[data-phase='welcome'] .art-welcome,
+.loading-screen[data-phase='done'] .art-welcome {
+  opacity: 1;
+}
+
+.load-text {
+  margin: 4px 0 2px;
+  font-weight: 700;
+}
+
+.load-status {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.loading-screen[data-failed='true'] .load-status {
+  color: #b0473a;
+}
+
+.load-continue {
+  margin-top: 10px;
+}
+
+.load-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.load-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.15);
+  transition: background 0.3s;
+}
+
+.load-dots span.on {
+  background: var(--gold);
+}
+
+/* the wallets: coins into the chest */
+.art-wallets .chest {
+  fill: #6b4a2b;
+}
+
+.art-wallets .chest-lid {
+  fill: #8a6a4a;
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
+  transform: rotate(-24deg);
+}
+
+.art-wallets .chest-band,
+.art-wallets .chest-lock {
+  fill: var(--gold);
+}
+
+.art-wallets .coin {
+  fill: var(--gold-hi);
+  stroke: #9a7a2a;
+  stroke-width: 1.2;
+  animation: coin-in 1.5s ease-in infinite;
+}
+
+.art-wallets .coin-1 {
+  animation-delay: 0.5s;
+}
+
+.art-wallets .coin-2 {
+  animation-delay: 1s;
+}
+
+@keyframes coin-in {
+  0% {
+    transform: translate(-46px, -50px);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  55% {
+    transform: translate(-14px, -58px);
+  }
+  85% {
+    transform: translate(0, -4px);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(0, 4px);
+    opacity: 0;
+  }
+}
+
+/* the castle: rising block by block */
+.art-castle .ground {
+  stroke: #5b7a4a;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.art-castle .stone,
+.art-castle rect {
+  fill: #a8a193;
+}
+
+.art-castle .stone.dark {
+  fill: #8a8478;
+}
+
+.art-castle .gate {
+  fill: #6b4a2b;
+}
+
+.art-castle .pole {
+  stroke: #6b4a2b;
+  stroke-width: 2;
+}
+
+.art-castle .banner {
+  fill: #b0302a;
+}
+
+.art-castle .rise {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: rise 2.6s ease-out infinite;
+}
+
+.art-castle .rise-1 {
+  animation-delay: 0.2s;
+}
+
+.art-castle .rise-2 {
+  animation-delay: 0.35s;
+}
+
+.art-castle .rise-3 {
+  animation-delay: 0.55s;
+}
+
+.art-castle .rise-4 {
+  animation-delay: 0.8s;
+}
+
+@keyframes rise {
+  0% {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  25% {
+    transform: scaleY(1.05);
+    opacity: 1;
+  }
+  32%,
+  85% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleY(1);
+    opacity: 0;
+  }
+}
+
+/* the welcome: the bell swings, rings spread */
+.art-welcome .yoke {
+  stroke: #6b4a2b;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.art-welcome .bell {
+  transform-box: view-box;
+  transform-origin: 60px 16px;
+  animation: bell-swing 1.2s ease-in-out infinite;
+}
+
+.art-welcome .bell-body {
+  fill: var(--gold);
+  stroke: #9a7a2a;
+  stroke-width: 1.5;
+}
+
+.art-welcome .clapper {
+  fill: #6b675f;
+}
+
+.art-welcome .ring {
+  fill: none;
+  stroke: var(--gold-hi);
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: ring-out 1.2s ease-out infinite;
+}
+
+.art-welcome .ring-1 {
+  animation-delay: 0.6s;
+}
+
+@keyframes bell-swing {
+  0%,
+  100% {
+    transform: rotate(-16deg);
+  }
+  50% {
+    transform: rotate(16deg);
+  }
+}
+
+@keyframes ring-out {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .load-art *,
+  .art-welcome .bell {
+    animation: none !important;
+  }
+}
