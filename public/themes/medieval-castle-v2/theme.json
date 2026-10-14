@@ -1,0 +1,12 @@
+{
+  "format": "wallet-landia-theme/1",
+  "id": "medieval-castle-v2",
+  "name": "Medieval castle v2 (style pilot)",
+  "version": "0.2.1",
+  "extends": "medieval-castle",
+  "art": false,
+  "castleLayout": 2,
+  "author": "wallet-landia; models made in Blender for this theme",
+  "license": "All rights reserved",
+  "description": "The stylised-realism pilot (docs/STYLEGUIDE_V2.md): models in the new style; everything it lacks comes from medieval-castle."
+}

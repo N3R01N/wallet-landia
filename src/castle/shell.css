@@ -1160,6 +1160,39 @@ h1 {
   display: none;
 }
 
+/* ---------- turning the view (castleView.ts): bottom right, above the replay's and build mode's bars ---------- */
+
+.camera-controls {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.camera-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  font-size: 1.2rem;
+  line-height: 1;
+  background: rgba(243, 234, 214, 0.92);
+  color: #2a2118;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  touch-action: manipulation;
+}
+
+.castle-view[data-replay] .camera-controls,
+.castle-view[data-arranging='true'] .camera-controls {
+  bottom: 76px;
+}
+
+/* on a phone the bars wrap onto two rows */
+.shell[data-layout='phone'] .castle-view[data-replay] .camera-controls,
+.shell[data-layout='phone'] .castle-view[data-arranging='true'] .camera-controls {
+  bottom: 124px;
+}
+
 /* ---------- the first load (loadingScreen.ts) ---------- */
 
 .loading-screen {

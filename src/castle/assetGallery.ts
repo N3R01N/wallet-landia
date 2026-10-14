@@ -10,11 +10,14 @@ import { el } from '../util/dom.js';
 import { ASSETS, THEME_DIR, assetPath, tierColor, type AssetSpec } from './assets/manifest.js';
 import { buildStandin } from './assets/standin.js';
 import { Thumbnailer } from './assets/thumbnail.js';
-import { loadCastleTheme, themeFileUrl } from './assets/theme.js';
+import { loadCastleTheme, themeChain, themeFileUrl, themeFromUrl, type CastleTheme } from './assets/theme.js';
 import { filterAssets, groupsOf, summarize, type GalleryFilter } from './assets/filter.js';
 
-const theme = await loadCastleTheme(import.meta.env.BASE_URL);
-const themeUrl = (spec: AssetSpec): string => themeFileUrl(theme, assetPath(spec));
+// `?theme=` shows another theme (a style pilot): each asset from the nearest theme in its chain that has it
+const theme = await loadCastleTheme(import.meta.env.BASE_URL, themeFromUrl(location.search));
+/** Which theme each asset's file comes from (found while checking). */
+const sourceOf = new Map<string, CastleTheme>();
+const themeUrl = (spec: AssetSpec): string => themeFileUrl(sourceOf.get(spec.name) ?? theme, assetPath(spec));
 
 /** A file counts as present when the server answers with something that is not the page (the dev server falls back to index.html). */
 async function fileExists(url: string): Promise<boolean> {
@@ -73,7 +76,8 @@ root.replaceChildren(
   ),
 );
 
-function statusPill(isReady: boolean): HTMLElement {
+function statusPill(isReady: boolean, fresh: boolean): HTMLElement {
+  if (fresh) return el('span', { class: 'pill ready fresh' }, 'new');
   return el('span', { class: `pill ${isReady ? 'ready' : 'standin'}` }, isReady ? 'model' : 'standin');
 }
 
@@ -98,7 +102,8 @@ function tierName(tier: number): string {
 async function paint(card: Card): Promise<void> {
   const { spec, thumb } = card;
   const isReady = ready.has(spec.name);
-  const pill = statusPill(isReady);
+  // a theme that extends another: what it brings itself is "new" (a style pilot's models)
+  const pill = statusPill(isReady, theme.parent !== undefined && sourceOf.get(spec.name) === theme);
   card.node.querySelector('.pill')?.remove();
   card.node.append(pill);
   if (spec.kind === 'model') {
@@ -116,7 +121,7 @@ async function paint(card: Card): Promise<void> {
 
 function openDetail(spec: AssetSpec): void {
   const rows: [string, string][] = [
-    ['File', `${THEME_DIR}/${assetPath(spec)}`],
+    ['File', `${sourceOf.has(spec.name) ? `themes/${sourceOf.get(spec.name)!.id}` : THEME_DIR}/${assetPath(spec)}`],
     ['Status', ready.has(spec.name) ? 'model file present' : 'standin (no file yet)'],
     ['Required', spec.required ? 'yes' : 'no (the game uses a fallback)'],
     ['Size', spec.kind === 'model' ? `${spec.size[0]} × ${spec.size[1]} × ${spec.size[2]} m (w × d × h)` : `${spec.size[0]} × ${spec.size[1]} px`],
@@ -161,8 +166,17 @@ async function main(): Promise<void> {
     cards.set(spec.name, card);
     grid.append(card.node);
   }
-  const checks = await Promise.all(ASSETS.map(async (spec) => ({ spec, ok: await fileExists(themeUrl(spec)) })));
-  for (const { spec, ok } of checks) if (ok) ready.add(spec.name);
+  const checks = await Promise.all(
+    ASSETS.map(async (spec) => {
+      for (const t of themeChain(theme)) if (await fileExists(themeFileUrl(t, assetPath(spec)))) return { spec, from: t };
+      return { spec, from: null };
+    }),
+  );
+  for (const { spec, from } of checks) {
+    if (!from) continue;
+    ready.add(spec.name);
+    sourceOf.set(spec.name, from);
+  }
   refresh();
   for (const card of cards.values()) {
     await paint(card);

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseTheme, themeFileUrl } from '../src/castle/assets/theme.js';
+import { DEFAULT_THEME, artTheme, parseTheme, themeChain, themeFileUrl, themeFromUrl, type CastleTheme } from '../src/castle/assets/theme.js';
 
 const ROOT = '/themes/medieval-castle/';
 
@@ -24,5 +24,33 @@ describe('castle theme manifest', () => {
     const parsed = parseTheme({ format: 'wallet-landia-theme/1', id: 'xy', version: '0.2.0', name: 'X' }, ROOT);
     if (!('theme' in parsed)) throw new Error(parsed.error);
     expect(themeFileUrl(parsed.theme, 'models/castle/keep.t0.glb')).toBe('/themes/medieval-castle/models/castle/keep.t0.glb?v=0.2.0');
+  });
+});
+
+describe('themes that extend others (a style pilot)', () => {
+  it('a manifest may extend another theme and say it has no art of its own', () => {
+    const raw: unknown = JSON.parse(readFileSync(new URL('../public/themes/medieval-castle-v2/theme.json', import.meta.url), 'utf8'));
+    const parsed = parseTheme(raw, '/themes/medieval-castle-v2/') as { theme: CastleTheme; extends?: string };
+    expect(parsed.extends).toBe('medieval-castle');
+    expect(parsed.theme.art).toBe(false);
+    // its models are made for the v2 castle (halls in the walls); a theme that does not say gets its parent's
+    expect(parsed.theme.castleLayout).toBe(2);
+    const plain = parseTheme({ format: 'wallet-landia-theme/1', id: 'ab', version: '1.0.0', castleLayout: 7 }, ROOT) as { theme: CastleTheme };
+    expect(plain.theme.castleLayout).toBeUndefined();
+    expect(parseTheme({ format: 'wallet-landia-theme/1', id: 'ab', version: '1.0.0', extends: 'ab' }, ROOT)).toEqual({ error: expect.stringContaining('extends') });
+  });
+
+  it('models come from the nearest theme that has them; art from the nearest that has art', () => {
+    const base: CastleTheme = { id: 'medieval-castle', name: 'B', version: '1.0.0', root: '/b/', art: true };
+    const pilot: CastleTheme = { id: 'pilot', name: 'P', version: '0.1.0', root: '/p/', art: false, parent: base };
+    expect(themeChain(pilot).map((t) => t.id)).toEqual(['pilot', 'medieval-castle']);
+    expect(artTheme(pilot)).toBe(base);
+    expect(artTheme(base)).toBe(base);
+  });
+
+  it('?theme= names a theme plainly, or the default is used', () => {
+    expect(themeFromUrl('?theme=medieval-castle-v2')).toBe('medieval-castle-v2');
+    expect(themeFromUrl('?theme=../../etc')).toBe(DEFAULT_THEME);
+    expect(themeFromUrl('')).toBe(DEFAULT_THEME);
   });
 });

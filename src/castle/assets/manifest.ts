@@ -116,6 +116,9 @@ const CASTLE: AssetSpec[] = [
       note: `Wing for ${cat} protocols.`,
     }),
   ),
+  // the v2 castle (castle layout 2, docs/batches/01-castle-core.md): one model each, tiers as `tier.N` parts
+  { name: 'castle.keep', kind: 'model', required: false, size: [8, 5.5, 13], clips: ['idle', 'tap'], standin: { shape: 'box', color: '#8a8478' }, note: 'v2 keep against the back wall; tiers as tier.2/4/6 parts.' },
+  { name: 'castle.hall.wallet', kind: 'model', required: false, size: [4, 4, 7], clips: ['idle', 'tap'], attach: ['door'], standin: { shape: 'box', color: '#a8a193' }, note: 'v2: a wallet’s hall built into the curtain wall; its crest on the Tint banners; tiers as tier.2/4/6 parts.' },
   { name: 'castle.storehouse', kind: 'model', required: true, size: [2, 2, 2], standin: { shape: 'box', color: '#b9925a' }, note: 'Crates and sacks. Holds tokens with no protocol.' },
   {
     name: 'castle.banner',
@@ -444,7 +447,7 @@ const LIFE: AssetSpec[] = [
 ];
 
 /** Zerion's ids for the same protocol under another name. */
-const PROTOCOL_ALIASES: Record<string, string> = { seaport: 'opensea', seadrop: 'opensea', 'cow-protocol': 'cow', 'cow-swap': 'cow', sky: 'maker', 'li-fi': 'lifi', 'gnosis-safe': 'safe', 'kyberswap': 'kyber', 'convex-finance': 'convex', 'frax-finance': 'frax' };
+const PROTOCOL_ALIASES: Record<string, string> = { seaport: 'opensea', seadrop: 'opensea', 'cow-protocol': 'cow', 'cow-swap': 'cow', sky: 'maker', 'li-fi': 'lifi', 'gnosis-safe': 'safe', 'kyberswap': 'kyber', 'convex-finance': 'convex', 'frax-finance': 'frax', 'curve-finance': 'curve', 'curve-dex': 'curve', 'compound-finance': 'compound', 'ether.fi': 'etherfi', 'rocketpool': 'rocket-pool', eigencloud: 'eigenlayer' };
 
 /**
  * The protocol family a Zerion dApp id belongs to, for its signature building:

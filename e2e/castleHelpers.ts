@@ -6,7 +6,7 @@ interface Hook {
     courierPoint(): { x: number; y: number } | null;
     buildingIds(): string[];
     plan: { buildings: { protocol: { id: string; name: string } }[] };
-    state(): { bridgeAngle: number; barrierAngle: number; courier: { x: number; z: number } | null; couriers: number; queued: number; zoom: number; ringing: boolean; upcoming: string[] };
+    state(): { bridgeAngle: number; barrierAngle: number; courier: { x: number; z: number } | null; couriers: number; queued: number; zoom: number; yaw: number; pitch: number; ringing: boolean; upcoming: string[] };
   };
 }
 

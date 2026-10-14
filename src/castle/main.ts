@@ -14,7 +14,7 @@ import { Shell } from './shell.js';
 import { TAB_LABEL, type SheetState, type TabId } from './shellState.js';
 import { CastleView } from './scene/castleView.js';
 import { assetPath } from './assets/manifest.js';
-import { loadCastleTheme, themeFileUrl } from './assets/theme.js';
+import { artTheme, loadCastleTheme, themeFileUrl, themeFromUrl } from './assets/theme.js';
 import { newErrands, worldFromGuild, type CastleWorld } from './world/world.js';
 import { lightAt, weatherFor, type Weather } from './world/sky.js';
 import { priceMove } from '../domain/risk.js';
@@ -46,7 +46,8 @@ const ERRAND_SHEET = 'errand:';
 const CHRONICLE_SHEET = 'chronicle';
 
 /** The theme's manifest, read once: its version keeps players' copies of the models fresh. */
-const theme = loadCastleTheme(import.meta.env.BASE_URL);
+// `?theme=` picks another theme (a style pilot extends the default; what it lacks comes from there)
+const theme = loadCastleTheme(import.meta.env.BASE_URL, themeFromUrl(location.search));
 const prefs = loadPrefs();
 // Ethereum only for now (docs/REDESIGN.md §14b): the castle's town is mainnet; other chains come later.
 setRealmChains(['ethereum']);
@@ -54,6 +55,8 @@ setRealmChains(['ethereum']);
 setCrests(prefs.crests);
 /** The theme once its manifest is read (the badge and rank pictures need its version). */
 let themeNow: CastleTheme | null = null;
+/** The theme once loaded: the castle's layout depends on it, so the scene waits for it. */
+let themeLoaded: CastleTheme | null = null;
 
 let world: CastleWorld | null = null;
 let view: CastleView | null = null;
@@ -65,6 +68,18 @@ let weather: Weather = weatherFor(null);
 let priceSettled = false;
 const hourParam = Number(new URLSearchParams(location.search).get('hour'));
 const pinnedHour = Number.isFinite(hourParam) && new URLSearchParams(location.search).has('hour') ? hourParam : undefined;
+/** `?quality=low|high`; on the dev server also a stored pick (the browser tests render low: software WebGL is slow). */
+const qualityParam = ((q) => (q === 'low' || q === 'high' ? q : 'auto'))(
+  new URLSearchParams(location.search).get('quality') ?? (import.meta.env.DEV ? devStored('wallet-landia-v4/dev/quality') : null),
+);
+
+function devStored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
 
 function placeholderScene(label: string): HTMLElement {
   return el('div', { class: 'scene-placeholder' }, el('p', {}, label));
@@ -72,7 +87,7 @@ function placeholderScene(label: string): HTMLElement {
 
 function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
   if (tab === 'castle' || tab === 'town') {
-    if (!world) {
+    if (!world || !themeLoaded) {
       view = null;
       return el('section', { class: 'tab-page', 'data-tab-page': tab }, placeholderScene('Raising the castle…'));
     }
@@ -86,8 +101,11 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       world,
       focus: tab,
       theme,
+      layout: themeLoaded.castleLayout ?? 1,
       weather,
       ...(pinnedHour !== undefined ? { hour: pinnedHour } : {}),
+      // `?quality=low|high` pins the rendering quality; otherwise it adapts to the device
+      quality: qualityParam,
       onSelect: (b) => open({ id: SHEET_PREFIX + b.protocol.id, title: b.protocol.name }),
       onReady: () => loading.report('welcome'),
       onSelectErrand: (e) => open({ id: ERRAND_SHEET + e.key, title: e.label || 'A transaction' }),
@@ -377,8 +395,11 @@ const player = new PlayerController({
 });
 
 void theme.then((t) => {
-  themeNow = t;
-  shell.setTabIcons((tab) => themeFileUrl(t, assetPath({ name: `ui.icon.${tab}`, kind: 'art' })));
+  themeLoaded = t;
+  if (shell.state.tab === 'castle' || shell.state.tab === 'town') shell.refresh();
+  // the 2D art (icons, badges) from the theme that has it
+  themeNow = artTheme(t);
+  shell.setTabIcons((tab) => themeFileUrl(artTheme(t), assetPath({ name: `ui.icon.${tab}`, kind: 'art' })));
   if (shell.state.tab === 'badges') shell.refresh();
 });
 

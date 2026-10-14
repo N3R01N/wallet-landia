@@ -6,18 +6,37 @@
  * take the goods (or hand them over, for what arrives). Several couriers can
  * be out at once; new transactions jump the queue; when the queue is empty the
  * recent ones play again. The bell rings for each block. Drag to pan, pinch or
- * wheel to zoom, tap a building to select it. Renders only while on the page.
+ * wheel to zoom, tap a building to select it; twist two fingers (or right-drag,
+ * or Q/E and R/F, or the buttons in the corner) to turn and tilt the view.
+ * Renders only while on the page.
  */
 
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { assetPath, brandColor, findAsset, tierColor } from '../assets/manifest.js';
 import { ModelLibrary, disposeTree, type Loaded } from '../assets/models.js';
-import { themeFileUrl, type CastleTheme } from '../assets/theme.js';
+import { artTheme, themeFileUrl, type CastleTheme } from '../assets/theme.js';
 import { crestColors } from '../../util/rng.js';
 import { DEFAULT_TIMING, buildCourierScript, courierAt, type CourierScript, type CourierState, type NpcClip } from './courier.js';
-import { WALL_WALK, planCastle, routeAlongWalls, routeTo, type BuildingPlacement, type CastlePlan, type Placement } from './plan.js';
+import { planCastle, routeBetweenWallets, routeTo, type BuildingPlacement, type CastleLayout, type CastlePlan, type Placement } from './plan.js';
 import type { CastleWorld, Errand } from '../world/world.js';
 import { lightAt, type Weather } from '../world/sky.js';
+import { logoPath } from '../world/logos.js';
+import {
+  ORBIT_RADIUS,
+  PITCH_DEFAULT,
+  YAW_DEFAULT,
+  clampPitch,
+  dampAngles,
+  isBehind,
+  nearestYaw,
+  offsetFor,
+  panDelta,
+  standBack,
+  wrapAngle,
+  SCENE_REACH,
+  type CameraAngles,
+} from './cameraRig.js';
 
 export type CastleFocus = 'castle' | 'town';
 
@@ -26,6 +45,8 @@ export interface CastleViewOptions {
   focus: CastleFocus;
   /** The theme the models come from (loadCastleTheme). */
   theme: Promise<CastleTheme> | CastleTheme;
+  /** The castle's layout, as the theme has it (CastleTheme.castleLayout; 1 when absent). */
+  layout?: CastleLayout;
   /** A building was tapped. */
   onSelect?: (building: BuildingPlacement) => void;
   /** A courier was tapped: its errand (the transaction). */
@@ -38,6 +59,11 @@ export interface CastleViewOptions {
   hour?: number;
   /** The market's weather to start with. */
   weather?: Weather;
+  /**
+   * Rendering quality: 'high' (sun shadows, the environment light, the full pixel ratio), 'low' (none of
+   * those), or 'auto' (high, stepping down by itself if this device cannot keep up). Default 'auto'.
+   */
+  quality?: 'auto' | 'high' | 'low';
   /** The player's own arrangement of the town (build mode): protocol id → plot. */
   arranged?: Record<string, number>;
   /** Every model is placed: the scene is ready to look at. */
@@ -54,14 +80,18 @@ const FOCUS_POINT: Record<CastleFocus, [number, number]> = {
 const VIEW_HEIGHT = 26;
 /** At zoom 1 at least this many metres show across, so a narrow phone sees the whole castle. */
 const VIEW_WIDTH_MIN = 30;
-const ZOOM_MIN = 0.6;
+/** Far enough out to see a tall landmark whole. */
+const ZOOM_MIN = 0.35;
 const ZOOM_MAX = 3;
 /** Where the camera may look: the island, the moat and the town, with a margin. */
-const PAN_BOUNDS = { x0: -16, x1: 16, z0: -24, z1: 24 };
-/** The camera's direction from what it looks at (an orthographic camera: distance changes nothing on screen). */
-const CAMERA_OFFSET = new THREE.Vector3(18, 20, 18);
-/** How far back along that direction the camera stands: far enough that a tall phone view's near ground is in front of it. */
+/** How far back the camera usually stands, in orbit radii (cameraRig.ts); it stands further back when a zoomed-out view needs it. */
 const CAMERA_BACK = 4;
+/** Turning the view: radians per pixel of a right-drag, and per press of Q/E, R/F and the buttons. */
+const TURN_PER_PIXEL = 0.008;
+const TILT_PER_PIXEL = 0.006;
+const TURN_STEP = Math.PI / 12;
+const TILT_STEP = Math.PI / 18;
+const TURN_BUTTON = Math.PI / 4;
 /** Seconds the bell swings for a block. */
 const BELL_RING = 1.5;
 /** With no block reported for this long, the bell keeps time by itself (Ethereum's 12 s), so an offline town still rings. */
@@ -102,6 +132,12 @@ const PLOT_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xe7c46b, transparent
 const CHOSEN_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
 /** Clips a placed model plays on its own, looping (the first one it has). */
 const LOOPING_CLIPS = ['idle', 'wave', 'swim'];
+/** The clip a building or a person plays once when tapped (docs/STYLEGUIDE_V2.md §8.2). */
+const TAP_CLIP = 'tap';
+/** A logo plate's ground colour round the logo (docs/STYLEGUIDE_V2.md §8.1), the picture's size, and the margin round the logo. */
+const LOGO_PLATE = '#efe3c8';
+const LOGO_SIZE = 256;
+const LOGO_MARGIN = 0.12;
 /** A wallet tower's top, where its flag stands (docs/ASSET_SPEC.md §3.1: 3 m). */
 const TOWER_TOP = 3;
 /** The refusal seal over the barrier: how high, how big, and its colour when the theme has no picture. */
@@ -110,7 +146,19 @@ const REFUSAL_SIZE = 1.1;
 const REFUSAL_COLOR = 0xb0473a;
 /** The grass round everything: the palette's moss (docs/ASSET_SPEC.md §1.2). */
 const LAND_COLOR = 0x5b7a4a;
-const LAND_SIZE = 160;
+const LAND_SIZE = 600;
+/** 'auto' quality watches this many frames, and steps down when the typical one takes longer than this (s). */
+const SPEED_FRAMES = 45;
+const SLOW_FRAME = 1 / 25;
+/** How strongly the environment reflects (a soft sheen on bevels and roofs). */
+const ENVIRONMENT_INTENSITY = 0.45;
+/** The sun's direction (towards it), fixed in the world, about 55° up; how far out it stands; how far round the view its shadows reach. */
+const SUN_DIRECTION = new THREE.Vector3(0.45, 0.82, 0.35).normalize();
+const SUN_DISTANCE = 120;
+/** The shadow map's own across and up directions (it looks down the sun's rays, upright). */
+const SUN_RIGHT = new THREE.Vector3().crossVectors(SUN_DIRECTION.clone().negate(), new THREE.Vector3(0, 1, 0)).normalize();
+const SUN_UP = new THREE.Vector3().crossVectors(SUN_RIGHT, SUN_DIRECTION.clone().negate()).normalize();
+const SHADOW_REACH = 45;
 /** The path glow: warm lamplight rather than the model's plain white. */
 const GLOW_COLOR = 0xffc861;
 /** The glow plate is 0.01 m high and the road 0.02 m: lift the plate just above the road. */
@@ -122,6 +170,10 @@ class Figure {
   readonly #mixer: THREE.AnimationMixer | null;
   readonly #actions = new Map<string, THREE.AnimationAction>();
   #current: string | null = null;
+  /** A one-shot reaction playing (`react`), whether over the clip playing or instead of it, and the clip asked for meanwhile. */
+  #reaction: THREE.AnimationAction | null = null;
+  #over = false;
+  #wanted: string | null = null;
 
   constructor(object: THREE.Object3D, clips: readonly THREE.AnimationClip[], once: readonly string[] = []) {
     this.object = object;
@@ -138,16 +190,63 @@ class Figure {
       }
       this.#actions.set(clip.name, action);
     }
+    this.#mixer?.addEventListener('finished', (e) => {
+      if (e.action === this.#reaction) this.#endReaction();
+    });
+  }
+
+  /** Whether a reaction is playing. */
+  get reacting(): boolean {
+    return this.#reaction !== null;
+  }
+
+  /**
+   * Plays a one-shot clip (a tap's reaction): over the clip playing (`over`: a
+   * building's tap moves other parts than its idle), or instead of it, going
+   * back to it after. False when the model has no such clip.
+   */
+  react(name: string, over: boolean): boolean {
+    const action = this.#actions.get(name);
+    if (!action) return false;
+    if (this.#reaction) return true;
+    this.#reaction = action;
+    this.#over = over;
+    if (!over) {
+      if (this.#current) this.#actions.get(this.#current)?.fadeOut(FADE);
+      this.#wanted = this.#current;
+      this.#current = null;
+    }
+    action.reset().fadeIn(over ? 0 : FADE).play();
+    return true;
+  }
+
+  #endReaction(): void {
+    const action = this.#reaction!;
+    this.#reaction = null;
+    if (this.#over) {
+      action.stop(); // it ends at rest: its parts stay there
+      return;
+    }
+    const wanted = this.#wanted;
+    this.#wanted = null;
+    if (wanted) this.play(wanted);
+    action.fadeOut(FADE);
   }
 
   /** Forgets the clip playing, so the next `play` starts afresh (a person going back inside, to come out again later). */
   rest(): void {
     this.#mixer?.stopAllAction();
     this.#current = null;
+    this.#reaction = null;
+    this.#wanted = null;
   }
 
   /** Plays a clip, cross-fading from the one before. Unknown clips leave the figure as it is. */
   play(name: string): void {
+    if (this.#reaction && !this.#over) {
+      this.#wanted = name; // after the reaction
+      return;
+    }
     if (name === this.#current) return;
     const next = this.#actions.get(name);
     if (!next) return;
@@ -218,14 +317,26 @@ export class CastleView {
   #ringAt = -Infinity;
   #blockAt = 0;
   readonly #courierScratch: CourierState[] = [];
-  readonly #hemi = new THREE.HemisphereLight(0xffffff, 0x6b6250, 1.7);
-  readonly #sun = new THREE.DirectionalLight(0xfff4e0, 1.6);
+  // a cool sky fill with a warm bounce from the ground, and a warm sun that casts shadows (docs/research/LOOK_AND_FEEL.md §10.3)
+  readonly #hemi = new THREE.HemisphereLight(0xbfd8ff, 0x8a6e4b, 1);
+  readonly #sun = new THREE.DirectionalLight(0xffe2b8, 3);
+  /** The soft environment reflection that keeps standard materials from looking flat. */
+  #environment: THREE.Texture | null = null;
+  /** The rendering quality now, and how the first frames went (for 'auto'). */
+  #quality: 'high' | 'low' = 'high';
+  #frameTimes: number[] = [];
   /** The models' Glow materials (windows, lanterns), brighter at night. */
   readonly #glows = new Set<THREE.MeshStandardMaterial>();
   #lightAt = 0;
   readonly #weatherEl = document.createElement('div');
   /** Painted copies of the models' Tint and Trim materials, one per source material and colour (shared by every piece painted alike). */
   readonly #painted = new Map<string, THREE.Material>();
+  /** Each protocol's logo plate material (its logo on the plate), by logo file; null when its picture could not be read. */
+  readonly #logos = new Map<string, Promise<THREE.Material | null>>();
+  /** Each protocol building's own animation (its idle, its tap), by the building's object. */
+  readonly #reactions = new Map<THREE.Object3D, Figure>();
+  /** Until when (view time) the sun's shadows are drawn every frame: a building bounces. */
+  #shadowsMoveUntil = 0;
   /** The couriers' tap targets. */
   #courierTargets: THREE.Mesh[] = [];
   /** The red seal over the barrier while a failed transaction's courier is turned back. */
@@ -243,6 +354,8 @@ export class CastleView {
   #towerMaterials: THREE.Material[] = [];
   #towerOpacity = 1;
   #bridgeAngle = -Math.PI / 2; // raised
+  /** The drawbridge model's own `lower` clip, when it has one: the bridge is posed along it. */
+  #bridgeClip: { mixer: THREE.AnimationMixer; action: THREE.AnimationAction; duration: number } | null = null;
   #barrierAngle = 0; // down
   #time = 0;
   #ready = false;
@@ -250,16 +363,27 @@ export class CastleView {
   #disposed = false;
   /** Pointers down on the canvas, for drag and pinch. */
   readonly #pointers = new Map<number, { x: number; y: number }>();
-  #gesture: { x: number; y: number; moved: number; pinch: number } | null = null;
+  /**
+   * The gesture under way: how far it has moved (a tap moves less), whether it turns the view (a right-drag),
+   * and for two fingers their distance, angle and midpoint the last time they moved.
+   */
+  #gesture: { moved: number; orbit: boolean; pinch: number; twist: number; midY: number } | null = null;
+  /** The camera's angles now, and where they are heading (they follow smoothly). */
+  readonly #angles: CameraAngles = { yaw: YAW_DEFAULT, pitch: PITCH_DEFAULT };
+  readonly #angleTarget: CameraAngles = { yaw: YAW_DEFAULT, pitch: PITCH_DEFAULT };
+  readonly #panScratch = { x: 0, z: 0 };
+  readonly #controls = document.createElement('div');
 
   constructor(opts: CastleViewOptions) {
     this.#opts = opts;
-    this.#plan = planCastle(opts.world, opts.arranged);
+    this.#plan = planCastle(opts.world, opts.arranged, opts.layout ?? 1);
     // the recent errands first, oldest first
     this.#queue = opts.world.errands.slice(-REPLAY_COUNT);
     this.#library = new ModelLibrary(opts.theme);
     const [fx, fz] = FOCUS_POINT[opts.focus];
-    this.#focus.set(fx, 0, fz);
+    // the castle tab looks at the island's middle, a little towards the gate (layout 2's island is deeper)
+    const island = this.#plan.island;
+    this.#focus.set(fx, 0, opts.focus === 'castle' && this.#plan.layout === 2 ? (island.z0 + island.z1) / 2 + 1.5 : fz);
 
     this.element = document.createElement('div');
     this.element.className = 'castle-view';
@@ -267,24 +391,60 @@ export class CastleView {
     this.#canvas.style.touchAction = 'none';
 
     this.#renderer = new THREE.WebGLRenderer({ canvas: this.#canvas, antialias: true });
-    this.#renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.#quality = opts.quality === 'low' ? 'low' : 'high';
+    this.#renderer.setPixelRatio(this.#quality === 'low' ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     this.#renderer.setClearColor(0xbcd3e0, 1);
+    // Neutral tone mapping keeps the art's saturated colours as painted (ACES washes them out)
+    this.#renderer.toneMapping = THREE.NeutralToneMapping;
+    this.#renderer.toneMappingExposure = 1;
+    this.#renderer.shadowMap.enabled = this.#quality === 'high';
+    this.#renderer.shadowMap.type = THREE.PCFShadowMap;
+    // nothing that casts a shadow moves (people do not cast one): the shadows are drawn again only when the
+    // camera moves (they follow the view) or the town changes, not every frame
+    this.#renderer.shadowMap.autoUpdate = false;
+    const pmrem = new THREE.PMREMGenerator(this.#renderer);
+    this.#environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+    this.#scene.environment = this.#quality === 'high' ? this.#environment : null;
+    this.#scene.environmentIntensity = ENVIRONMENT_INTENSITY;
     this.#scene.add(this.#hemi, this.#layout, this.#arrangeMarks);
-    this.#sun.position.set(10, 20, 6);
-    this.#scene.add(this.#sun);
+    // the sun shines from the same side whichever way the camera turns; its shadows follow the view (#updateCamera)
+    this.#sun.castShadow = true;
+    const small = Math.min(window.innerWidth, window.innerHeight) < 700;
+    this.#sun.shadow.mapSize.set(small ? 1024 : 2048, small ? 1024 : 2048);
+    const sc = this.#sun.shadow.camera;
+    sc.left = -SHADOW_REACH;
+    sc.right = SHADOW_REACH;
+    sc.top = SHADOW_REACH;
+    sc.bottom = -SHADOW_REACH;
+    sc.near = 1;
+    sc.far = SUN_DISTANCE * 2;
+    this.#sun.shadow.bias = -0.0005;
+    this.#sun.shadow.normalBias = 0.02;
+    this.#scene.add(this.#sun, this.#sun.target);
     // the weather: a grey veil and rain over the scene (DOM layers: cheap, and no draw calls)
     this.#weatherEl.className = 'weather';
     this.#weatherEl.append(el('div', 'gloom'), el('div', 'rain'));
     void Promise.resolve(opts.theme).then((t) => {
       const spec = findAsset('fx.rain');
-      if (spec) this.#weatherEl.style.setProperty('--rain-image', `url("${themeFileUrl(t, assetPath(spec))}")`);
+      if (spec) this.#weatherEl.style.setProperty('--rain-image', `url("${themeFileUrl(artTheme(t), assetPath(spec))}")`);
     });
     this.#applyLight();
     // The land the island and the town stand on, out past the woods (a hair below the tiles).
     const land = new THREE.Mesh(new THREE.PlaneGeometry(LAND_SIZE, LAND_SIZE), new THREE.MeshStandardMaterial({ color: LAND_COLOR, roughness: 1 }));
     land.rotation.x = -Math.PI / 2;
     land.position.y = -0.02;
+    land.receiveShadow = true;
     this.#scene.add(land);
+
+    // Buttons to turn the view and set it back, for phones (where twisting two fingers is not obvious).
+    this.#controls.className = 'camera-controls';
+    this.#controls.append(
+      this.#cameraButton('camera-left', '⟲', 'Turn the view left', () => this.turn(-TURN_BUTTON)),
+      this.#cameraButton('camera-reset', '🧭', 'Reset the view angle', () => this.resetAngle()),
+      this.#cameraButton('camera-right', '⟳', 'Turn the view right', () => this.turn(TURN_BUTTON)),
+    );
+    this.element.append(this.#controls);
 
     this.#resize = new ResizeObserver(() => this.#fit());
     this.#resize.observe(this.element);
@@ -307,9 +467,25 @@ export class CastleView {
   screenPoint(protocolId: string): { x: number; y: number } | null {
     const b = this.#plan.buildings.find((p) => p.protocol.id === protocolId);
     if (!b) return null;
-    this.#scratch.set(b.x, 1, b.z).project(this.#camera);
     const rect = this.#canvas.getBoundingClientRect();
-    return { x: rect.left + ((this.#scratch.x + 1) / 2) * rect.width, y: rect.top + ((1 - this.#scratch.y) / 2) * rect.height };
+    const toPage = () => ({ x: rect.left + ((this.#scratch.x + 1) / 2) * rect.width, y: rect.top + ((1 - this.#scratch.y) / 2) * rect.height });
+    // a point on the screen where a tap meets this building first (a bigger one may stand in front of its middle)
+    const root = this.#buildingRoots.find((r) => (r.userData.building as BuildingPlacement).protocol.id === protocolId);
+    if (root) {
+      for (const fy of [0.3, 0.6, 1.2, 2]) {
+        for (const [fx, fz] of [[0, 0], [0.6, 0], [-0.6, 0], [0, 0.6], [0, -0.6]] as const) {
+          this.#scratch.set(b.x + fx * b.half, fy * b.half, b.z + fz * b.half).project(this.#camera);
+          if (Math.abs(this.#scratch.x) > 0.95 || Math.abs(this.#scratch.y) > 0.95) continue;
+          this.#pointer.set(this.#scratch.x, this.#scratch.y);
+          this.#raycaster.setFromCamera(this.#pointer, this.#camera);
+          let o: THREE.Object3D | null = this.#raycaster.intersectObjects(this.#buildingRoots, true)[0]?.object ?? null;
+          while (o && !o.userData.building) o = o.parent;
+          if (o === root) return toPage();
+        }
+      }
+    }
+    this.#scratch.set(b.x, 1, b.z).project(this.#camera);
+    return toPage();
   }
 
   /** Test hook: the page coordinates of the first courier out (null: none out). */
@@ -321,6 +497,21 @@ export class CastleView {
     this.#scratch.project(this.#camera);
     const rect = this.#canvas.getBoundingClientRect();
     return { x: rect.left + ((this.#scratch.x + 1) / 2) * rect.width, y: rect.top + ((1 - this.#scratch.y) / 2) * rect.height };
+  }
+
+  /** Brings a protocol's building to the middle of the view (zoomed to fit it, when `zoom` is given). */
+  focusBuilding(protocolId: string, zoom?: number): boolean {
+    const b = this.#plan.buildings.find((p) => p.protocol.id === protocolId);
+    if (!b) return false;
+    this.focusAt(b.x, b.z, zoom);
+    return true;
+  }
+
+  /** Brings a point on the ground to the middle of the view (and zooms, when `zoom` is given). */
+  focusAt(x: number, z: number, zoom?: number): void {
+    this.#focus.set(x, 0, z);
+    if (zoom !== undefined) this.#zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
+    this.#updateCamera();
   }
 
   /** Test hook: which plot each protocol's building stands on. */
@@ -346,6 +537,9 @@ export class CastleView {
     couriers: number;
     queued: number;
     zoom: number;
+    /** The camera's angles (radians): which way it faces (−π … π) and how far above the horizon it looks down. */
+    yaw: number;
+    pitch: number;
     ringing: boolean;
     /** The errands of the couriers out and the next one queued. */
     upcoming: string[];
@@ -358,9 +552,27 @@ export class CastleView {
       couriers: this.#runs.length,
       queued: this.#queue.length,
       zoom: this.#zoom,
+      yaw: wrapAngle(this.#angles.yaw),
+      pitch: this.#angles.pitch,
       ringing: this.#time - this.#ringAt < BELL_RING,
       upcoming: [...this.#runs.map((r) => r.errand.key), ...this.#queue.slice(0, 1).map((e) => e.key)],
     };
+  }
+
+  /** Turns the view about the point it looks at (radians; positive turns the scene clockwise). The camera follows smoothly. */
+  turn(radians: number): void {
+    this.#angleTarget.yaw += radians;
+  }
+
+  /** Tilts the view (radians; positive looks down more steeply), within the limits. */
+  tilt(radians: number): void {
+    this.#angleTarget.pitch = clampPitch(this.#angleTarget.pitch + radians);
+  }
+
+  /** Back to the usual angle, turning the short way. */
+  resetAngle(): void {
+    this.#angleTarget.yaw = nearestYaw(this.#angles.yaw, YAW_DEFAULT);
+    this.#angleTarget.pitch = PITCH_DEFAULT;
   }
 
   /**
@@ -401,6 +613,7 @@ export class CastleView {
     this.#disposed = true;
     this.#renderer.setAnimationLoop(null);
     this.#resize.disconnect();
+    window.removeEventListener('keydown', this.#onKey);
     for (const f of this.#figures) f.dispose();
     for (const f of this.#ambient) f.dispose();
     for (const r of this.#runs) r.figure.dispose();
@@ -409,6 +622,8 @@ export class CastleView {
     for (const t of this.#courierTargets) t.removeFromParent(); // shared by every view: kept
     this.#arrangeMarks.clear(); // build mode's rings: shared, kept
     disposeTree(this.#scene);
+    this.#environment?.dispose();
+    this.#sun.shadow.map?.dispose();
     this.#refusal?.material.map?.dispose();
     this.#refusal?.material.dispose();
     this.#scene.clear();
@@ -438,12 +653,22 @@ export class CastleView {
     this.#placeLayout();
 
     // The drawbridge swings about its hinge: lowered is flat towards the town, raised stands up.
+    // A model with a `lower` clip (raised → flat, its chains following) is posed by that clip instead.
     const hinge = new THREE.Group();
     hinge.position.set(plan.bridge.x, 0, plan.bridge.z);
-    hinge.add(this.#make(plan.bridge.name));
-    hinge.rotation.x = this.#bridgeAngle;
+    const deck = this.#make(plan.bridge.name);
+    hinge.add(deck);
+    const lower = this.#loaded.get(plan.bridge.name)?.clips.find((c) => c.name === 'lower');
+    if (lower) {
+      const mixer = new THREE.AnimationMixer(deck);
+      const action = mixer.clipAction(lower);
+      action.play();
+      action.paused = true;
+      this.#bridgeClip = { mixer, action, duration: lower.duration };
+    }
     this.#scene.add(hinge);
     this.#bridge = hinge;
+    this.#poseBridge();
 
     // The barrier's arm swings up about its post.
     const barrier = new THREE.Group();
@@ -472,8 +697,10 @@ export class CastleView {
     this.#applyLight();
     if (this.#opts.weather) this.setWeather(this.#opts.weather);
     this.element.append(this.#weatherEl);
+    this.#renderer.shadowMap.needsUpdate = true;
     this.#ready = true;
     this.element.dataset.ready = 'true';
+    this.element.dataset.quality = this.#quality;
     this.#opts.onReady?.();
   }
 
@@ -488,19 +715,38 @@ export class CastleView {
       const chosen = options.find((n) => this.#loaded.get(n)) ?? options[options.length - 1]!;
       const obj = this.#make(chosen);
       // its own looping clip: a mill wheel, a pendulum, an animal at rest, a flag in the wind
-      const loop = this.#loaded.get(chosen)?.clips.find((c) => LOOPING_CLIPS.includes(c.name));
-      if (loop) {
-        const moving = new Figure(obj, [loop]);
-        moving.play(loop.name);
+      // and a building's reaction to a tap
+      const clips = this.#loaded.get(chosen)?.clips ?? [];
+      const loop = clips.find((c) => LOOPING_CLIPS.includes(c.name));
+      const tap = clips.find((c) => c.name === TAP_CLIP);
+      if (loop || tap) {
+        const moving = new Figure(obj, [loop, tap].filter((c): c is THREE.AnimationClip => !!c), [TAP_CLIP]);
+        if (loop) moving.play(loop.name);
         this.#ambient.push(moving);
+        if (tap) {
+          this.#reactions.set(obj, moving);
+          obj.userData.reacts = true;
+        }
       }
+      if ('protocol' in p) {
+        // a protocol's building fills its plot, whatever size the model was made at (a 2 m house or a 12 m landmark)
+        obj.scale.setScalar(fitScale(obj, (p as BuildingPlacement).half));
+      } else if (p.scale !== undefined) obj.scale.setScalar(p.scale);
       obj.position.set(p.x, 0, p.z);
       obj.rotation.y = p.rot ?? 0;
+      // buildings, the castle, the tower and trees cast shadows; everything placed receives them
+      const casts = 'protocol' in p || p.name.startsWith('castle.') || p.name.startsWith('town.tower') || p.name.startsWith('scenery.tree');
+      obj.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) {
+          o.castShadow = casts;
+          o.receiveShadow = true;
+        }
+      });
       this.#layout.add(obj);
       if (p.key === 'flag') {
         // on top of its wallet's tower, in that wallet's crest colour
         obj.position.y = TOWER_TOP;
-        const wallet = this.#opts.world.walletIds[plan.towers.findIndex((t) => t.x === p.x && t.z === p.z)];
+        const wallet = this.#opts.world.walletIds[plan.wallets.findIndex((t) => t.x === p.x && t.z === p.z)];
         if (wallet) paint(obj, 'Tint', crestColors(wallet)[0], this.#painted);
       }
       if (p.key === 'lit') {
@@ -516,11 +762,18 @@ export class CastleView {
         this.#buildingRoots.push(obj);
         const brand = brandColor((p as BuildingPlacement).protocol.id);
         if (brand) paint(obj, 'Tint', brand, this.#painted);
+        void this.#showLogo(obj, (p as BuildingPlacement).protocol.id);
         paint(obj, 'Trim', tierColor(p.tier ?? 0), this.#painted);
       } else if (p.name.startsWith('castle.')) {
-        // a wallet's tower at its own tier, the rest of the castle at the guild's
+        // a wallet's tower or hall at its own tier, the rest of the castle at the guild's
         paint(obj, 'Trim', tierColor(p.tier ?? plan.keep.tier ?? 0), this.#painted);
+        // a hall's banners in its wallet's crest colour, the keep's and the gate's in the guild's (the first wallet's)
+        const w = plan.wallets.indexOf(p as (typeof plan.wallets)[number]);
+        const crest = this.#opts.world.walletIds[Math.max(0, w)];
+        if (plan.layout === 2 && crest) paint(obj, 'Tint', crestColors(crest)[0], this.#painted);
       }
+      // the tier's extra parts (docs/STYLEGUIDE_V2.md §7): `tier.N` shows from tier N
+      showTierParts(obj, p.tier ?? ('protocol' in p ? 0 : (plan.keep.tier ?? 0)));
       const decorTint = p.key === 'decor' ? DECOR_TINT[p.name] : undefined;
       if (decorTint) paint(obj, 'Tint', decorTint === 'crest' ? crestColors(this.#opts.world.walletIds[0] ?? '')[0] : decorTint, this.#painted);
       if (p === plan.tower) {
@@ -559,6 +812,7 @@ export class CastleView {
     for (const f of [...this.#figures, ...this.#ambient]) f.dispose();
     this.#figures.length = 0;
     this.#ambient.length = 0;
+    this.#reactions.clear();
     this.#npcs.clear();
     for (const m of this.#towerMaterials) m.dispose();
     // the models' geometry and materials belong to the library and stay
@@ -572,6 +826,7 @@ export class CastleView {
     this.#plan = planCastle(this.#opts.world, arranged);
     this.#placeLayout();
     this.#applyLight();
+    this.#renderer.shadowMap.needsUpdate = true;
     this.setArranging(this.#arranging, null);
   }
 
@@ -596,13 +851,102 @@ export class CastleView {
     }
   }
 
+  /**
+   * 'auto' quality: over the first frames after the scene is up, if they come
+   * slower than about 25 a second, step down to low (no sun shadows, no
+   * environment light, pixel ratio 1). Once.
+   */
+  #watchSpeed(dt: number): void {
+    if (this.#opts.quality !== undefined && this.#opts.quality !== 'auto') return;
+    if (this.#quality === 'low' || this.#frameTimes.length >= SPEED_FRAMES) return;
+    if (dt > 0) this.#frameTimes.push(dt);
+    if (this.#frameTimes.length < SPEED_FRAMES) return;
+    const sorted = [...this.#frameTimes].sort((a, b) => a - b);
+    const typical = sorted[Math.floor(sorted.length / 2)]!;
+    if (typical > SLOW_FRAME) this.#setQuality('low');
+  }
+
+  #setQuality(q: 'high' | 'low'): void {
+    this.#quality = q;
+    const high = q === 'high';
+    this.#renderer.setPixelRatio(high ? Math.min(window.devicePixelRatio || 1, 2) : 1);
+    this.#renderer.shadowMap.enabled = high;
+    this.#scene.environment = high ? this.#environment : null;
+    // shadows and the environment change the shaders: every material is built again
+    this.#scene.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) m.needsUpdate = true;
+    });
+    this.#fit();
+    this.element.dataset.quality = q;
+  }
+
+  /**
+   * Puts a protocol's logo on its building's logo plates (the `Logo` material,
+   * docs/STYLEGUIDE_V2.md §8.1). Models without plates, and protocols without a
+   * logo, keep what they have.
+   */
+  async #showLogo(root: THREE.Object3D, protocolId: string): Promise<void> {
+    const plates: THREE.Mesh[] = [];
+    root.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh && (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).some((m) => m.name === 'Logo')) plates.push(mesh);
+    });
+    const path = logoPath(protocolId);
+    if (!plates.length || !path) return;
+    const first = plates[0]!.material;
+    const template = (Array.isArray(first) ? first : [first]).find((m) => m.name === 'Logo')!;
+    let made = this.#logos.get(path);
+    if (!made) {
+      made = this.#logoMaterial(template, path);
+      this.#logos.set(path, made);
+    }
+    const material = await made;
+    if (!material || this.#disposed) return;
+    for (const mesh of plates) {
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => (m.name === 'Logo' ? material : m)) : material;
+    }
+  }
+
+  /** A logo plate's material: the model's own, with the logo centred on the plate's colour. */
+  async #logoMaterial(template: THREE.Material, path: string): Promise<THREE.Material | null> {
+    try {
+      const theme = await this.#opts.theme;
+      const img = new Image();
+      img.src = themeFileUrl(artTheme(theme), path);
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = LOGO_SIZE;
+      const g = canvas.getContext('2d')!;
+      g.fillStyle = LOGO_PLATE;
+      g.fillRect(0, 0, LOGO_SIZE, LOGO_SIZE);
+      // the logo whole, as large as fits inside the margin
+      const room = LOGO_SIZE * (1 - 2 * LOGO_MARGIN);
+      const k = room / Math.max(img.naturalWidth, img.naturalHeight);
+      const w = img.naturalWidth * k;
+      const h = img.naturalHeight * k;
+      g.drawImage(img, (LOGO_SIZE - w) / 2, (LOGO_SIZE - h) / 2, w, h);
+      const map = new THREE.CanvasTexture(canvas);
+      map.colorSpace = THREE.SRGBColorSpace;
+      map.flipY = false; // as glTF's own textures: the plate's UVs are upright that way
+      map.anisotropy = 4;
+      const material = template.clone() as THREE.MeshStandardMaterial;
+      material.map = map;
+      material.needsUpdate = true;
+      return material;
+    } catch {
+      return null;
+    }
+  }
+
   /** A sprite's picture from the theme, or null when it has none. */
   async #loadSprite(name: string): Promise<THREE.Texture | null> {
     const spec = findAsset(name);
     if (!spec) return null;
     try {
       const theme = await this.#opts.theme;
-      const map = await new THREE.TextureLoader().loadAsync(themeFileUrl(theme, assetPath(spec)));
+      const map = await new THREE.TextureLoader().loadAsync(themeFileUrl(artTheme(theme), assetPath(spec)));
       map.colorSpace = THREE.SRGBColorSpace;
       return map;
     } catch {
@@ -640,15 +984,14 @@ export class CastleView {
     const building = errand.protocolId ? (this.#plan.buildings.find((b) => b.protocol.id === errand.protocolId) ?? null) : null;
     let script: CourierScript;
     if (errand.direction === 'inside') {
-      // between two wallets' towers, along the wall-walk (a wallet beyond the towers' slots has no tower: no errand)
-      const from = this.#plan.towers[errand.fromTower ?? -1];
-      const to = this.#plan.towers[errand.toTower ?? -1];
-      if (!from || !to) return;
-      script = buildCourierScript(routeAlongWalls(from, to), DEFAULT_TIMING, 'inside', { height: WALL_WALK });
+      // between two wallets' towers or halls (a wallet beyond the slots has none: no errand)
+      const way = routeBetweenWallets(this.#plan, errand.fromTower ?? -1, errand.toTower ?? -1);
+      if (!way) return;
+      script = buildCourierScript(way.route, DEFAULT_TIMING, 'inside', { height: way.height });
     } else {
-      script = buildCourierScript(routeTo(building), DEFAULT_TIMING, errand.direction, { failed: errand.failed });
+      script = buildCourierScript(routeTo(this.#plan.avenue, building), DEFAULT_TIMING, errand.direction, { failed: errand.failed });
     }
-    const figure = new Figure(this.#make('courier.base'), this.#loaded.get('courier.base')?.clips ?? []);
+    const figure = new Figure(this.#make('courier.base'), this.#loaded.get('courier.base')?.clips ?? [], [TAP_CLIP]);
     // its goods, sized by value, in its right hand (on the standin's back)
     const cargo = this.#make(`courier.cargo.t${Math.max(0, Math.min(6, errand.tier))}`);
     const hand = figure.object.getObjectByName('hand');
@@ -691,9 +1034,20 @@ export class CastleView {
     this.#bell = pivot;
   }
 
+  /** Poses the drawbridge at its angle: by its own clip (0 s raised … the end flat), or by turning it about the hinge. */
+  #poseBridge(): void {
+    if (!this.#bridge) return;
+    const raised = Math.max(0, Math.min(1, -this.#bridgeAngle / (Math.PI / 2)));
+    if (this.#bridgeClip) {
+      const { mixer, action, duration } = this.#bridgeClip;
+      action.time = (1 - raised) * duration;
+      mixer.update(0);
+    } else this.#bridge.rotation.x = this.#bridgeAngle;
+  }
+
   #placements(): Placement[] {
     const p = this.#plan;
-    return [...p.water, ...p.ground, ...p.walls, ...p.towers, ...p.wings, p.keep, p.gatehouse, p.tollbooth, p.tower, ...p.road, ...p.lit, ...p.buildings, ...p.scenery, ...p.decor];
+    return [...p.water, ...p.ground, ...p.walls, ...p.wallets, ...p.wings, p.keep, p.gatehouse, ...(p.storehouse ? [p.storehouse] : []), p.tollbooth, p.tower, ...p.road, ...p.lit, ...p.buildings, ...p.scenery, ...p.decor];
   }
 
   #fit(): void {
@@ -712,9 +1066,27 @@ export class CastleView {
     this.#camera.right = half * aspect;
     this.#camera.top = half;
     this.#camera.bottom = -half;
-    this.#camera.position.copy(CAMERA_OFFSET).multiplyScalar(CAMERA_BACK).add(this.#focus);
+    // It stands back along its angles, far enough that everything in view is in front of it, and sees as far past.
+    const back = standBack(half, this.#angles.pitch, ORBIT_RADIUS * CAMERA_BACK);
+    offsetFor(this.#angles.yaw, this.#angles.pitch, back, this.#camera.position);
+    this.#camera.position.add(this.#focus);
+    this.#camera.far = back + SCENE_REACH;
     this.#camera.lookAt(this.#focus);
     this.#camera.updateProjectionMatrix();
+    this.#camera.updateMatrixWorld();
+    // the sun's shadows cover what the camera looks at, moved in whole shadow-map texels so their edges
+    // stay put while the view pans (and are only drawn again when they move)
+    const texel = (2 * SHADOW_REACH) / this.#sun.shadow.mapSize.x;
+    const along = (axis: THREE.Vector3) => Math.round(this.#focus.dot(axis) / texel) * texel;
+    const at = new THREE.Vector3()
+      .addScaledVector(SUN_RIGHT, along(SUN_RIGHT))
+      .addScaledVector(SUN_UP, along(SUN_UP))
+      .addScaledVector(SUN_DIRECTION, this.#focus.dot(SUN_DIRECTION));
+    const moved = !at.equals(this.#sun.target.position);
+    this.#sun.target.position.copy(at);
+    this.#sun.position.copy(SUN_DIRECTION).multiplyScalar(SUN_DISTANCE).add(at);
+    this.#sun.target.updateMatrixWorld();
+    if (moved) this.#renderer.shadowMap.needsUpdate = true;
   }
 
   /** Metres of the scene shown top to bottom now: tall enough for the minimum width, divided by the zoom. */
@@ -728,20 +1100,33 @@ export class CastleView {
     c.addEventListener('pointerdown', (e) => {
       c.setPointerCapture(e.pointerId);
       this.#pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      this.#gesture = { x: e.clientX, y: e.clientY, moved: this.#gesture?.moved ?? 0, pinch: this.#pinchDistance() };
-      if (this.#pointers.size === 1) this.#gesture.moved = 0;
+      if (this.#pointers.size === 1 || !this.#gesture) {
+        // a right-drag, or a drag with Ctrl or Alt held, turns the view instead of panning it
+        this.#gesture = { moved: 0, orbit: this.#pointers.size === 1 && (e.button === 2 || e.ctrlKey || e.altKey), pinch: 0, twist: 0, midY: 0 };
+      } else {
+        this.#gesture.orbit = false;
+      }
+      this.#twoFingers();
     });
     c.addEventListener('pointermove', (e) => {
       const prev = this.#pointers.get(e.pointerId);
-      if (!prev || !this.#gesture) return;
+      const g = this.#gesture;
+      if (!prev || !g) return;
       const dx = e.clientX - prev.x;
       const dy = e.clientY - prev.y;
-      this.#pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      this.#gesture.moved += Math.hypot(dx, dy);
+      prev.x = e.clientX;
+      prev.y = e.clientY;
+      g.moved += Math.hypot(dx, dy);
       if (this.#pointers.size >= 2) {
-        const d = this.#pinchDistance();
-        if (this.#gesture.pinch > 0 && d > 0) this.#setZoom(this.#zoom * (d / this.#gesture.pinch));
-        this.#gesture.pinch = d;
+        // two fingers: spread to zoom, twist to turn, move up or down together to tilt
+        const { pinch, twist, midY } = g;
+        this.#twoFingers();
+        if (pinch > 0 && g.pinch > 0) this.#setZoom(this.#zoom * (g.pinch / pinch));
+        this.turn(wrapAngle(g.twist - twist));
+        this.tilt((g.midY - midY) * TILT_PER_PIXEL);
+      } else if (g.orbit) {
+        this.turn(-dx * TURN_PER_PIXEL);
+        this.tilt(dy * TILT_PER_PIXEL);
       } else {
         this.#pan(dx, dy);
       }
@@ -750,10 +1135,10 @@ export class CastleView {
       const g = this.#gesture;
       this.#pointers.delete(e.pointerId);
       if (this.#pointers.size === 0) {
-        if (g && g.moved < TAP_SLOP) this.#tap(e.clientX, e.clientY);
+        if (g && g.moved < TAP_SLOP && !g.orbit) this.#tap(e.clientX, e.clientY);
         this.#gesture = null;
-      } else if (this.#gesture) {
-        this.#gesture.pinch = this.#pinchDistance();
+      } else {
+        this.#twoFingers();
       }
     };
     c.addEventListener('pointerup', end);
@@ -761,6 +1146,8 @@ export class CastleView {
       this.#pointers.delete(e.pointerId);
       if (this.#pointers.size === 0) this.#gesture = null;
     });
+    // the right button turns the view: no menu
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener(
       'wheel',
       (e) => {
@@ -769,11 +1156,61 @@ export class CastleView {
       },
       { passive: false },
     );
+    window.addEventListener('keydown', this.#onKey);
   }
 
-  #pinchDistance(): number {
-    const [a, b] = [...this.#pointers.values()];
-    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+  /** Q/E turn the view, R/F tilt it (not while typing, nor with Ctrl, Alt or Cmd held, nor when the view is not on show). */
+  readonly #onKey = (e: KeyboardEvent): void => {
+    if (e.ctrlKey || e.altKey || e.metaKey || !this.element.isConnected || this.element.offsetParent === null) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    switch (e.key.toLowerCase()) {
+      case 'q':
+        this.turn(-TURN_STEP);
+        break;
+      case 'e':
+        this.turn(TURN_STEP);
+        break;
+      case 'r':
+        this.tilt(TILT_STEP);
+        break;
+      case 'f':
+        this.tilt(-TILT_STEP);
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+  };
+
+  /** Records the two fingers' distance, angle and midpoint height (all zero with fewer than two down). */
+  #twoFingers(): void {
+    const g = this.#gesture;
+    if (!g) return;
+    let a: { x: number; y: number } | undefined;
+    let b: { x: number; y: number } | undefined;
+    for (const p of this.#pointers.values()) {
+      if (!a) a = p;
+      else if (!b) b = p;
+    }
+    if (!a || !b) {
+      g.pinch = 0;
+      return;
+    }
+    g.pinch = Math.hypot(a.x - b.x, a.y - b.y);
+    g.twist = Math.atan2(b.y - a.y, b.x - a.x);
+    g.midY = (a.y + b.y) / 2;
+  }
+
+  #cameraButton(name: string, label: string, title: string, act: () => void): HTMLButtonElement {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `btn camera-btn ${name}`;
+    b.textContent = label;
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.addEventListener('click', act);
+    return b;
   }
 
   #setZoom(zoom: number): void {
@@ -781,23 +1218,15 @@ export class CastleView {
     this.#updateCamera();
   }
 
-  /** Moves the view so the ground under the pointer follows it. */
+  /** Moves the view so the ground under the pointer follows it (at the camera's angle now). */
   #pan(dx: number, dy: number): void {
     const h = this.element.clientHeight || 1;
-    const metresPerPixel = this.#viewHeight() / h;
-    // The camera looks along −CAMERA_OFFSET: its right on the ground, and its up projected onto the ground
-    // (stretched, since the ground is seen at a slant).
-    const right = this.#scratch.set(CAMERA_OFFSET.z, 0, -CAMERA_OFFSET.x).normalize();
-    const rx = right.x;
-    const rz = right.z;
-    const flat = Math.hypot(CAMERA_OFFSET.x, CAMERA_OFFSET.z);
-    const slant = CAMERA_OFFSET.length() / CAMERA_OFFSET.y;
-    const fx = -CAMERA_OFFSET.x / flat;
-    const fz = -CAMERA_OFFSET.z / flat;
-    this.#focus.x += (-dx * rx + dy * fx * slant) * metresPerPixel;
-    this.#focus.z += (-dx * rz + dy * fz * slant) * metresPerPixel;
-    this.#focus.x = Math.max(PAN_BOUNDS.x0, Math.min(PAN_BOUNDS.x1, this.#focus.x));
-    this.#focus.z = Math.max(PAN_BOUNDS.z0, Math.min(PAN_BOUNDS.z1, this.#focus.z));
+    const d = panDelta(dx, dy, this.#viewHeight() / h, this.#angles, this.#panScratch);
+    // as far as the castle and the town reach (the town grows with its protocols)
+    const t = this.#plan.town;
+    const moat = this.#plan.moat;
+    this.#focus.x = Math.max(Math.min(moat.x0, t.x0) - 4, Math.min(Math.max(moat.x1, t.x1) + 4, this.#focus.x + d.x));
+    this.#focus.z = Math.max(moat.z0 - 8, Math.min(t.z1 + 4, this.#focus.z + d.z));
     this.#updateCamera();
   }
 
@@ -821,13 +1250,23 @@ export class CastleView {
     const courier = this.#raycaster.intersectObjects(this.#courierTargets, false)[0];
     const errand = courier?.object.userData.errand as Errand | undefined;
     if (errand) {
+      this.#runs.find((r) => r.errand === errand)?.figure.react(TAP_CLIP, false);
       this.#opts.onSelectErrand?.(errand);
       return;
     }
-    const hit = this.#raycaster.intersectObjects(this.#buildingRoots, true)[0];
+    // the nearest building or castle piece that reacts to a tap
+    const hit = this.#raycaster.intersectObjects([...this.#buildingRoots, ...[...this.#reactions.keys()].filter((r) => !r.userData.building)], true)[0];
     let o: THREE.Object3D | null = hit?.object ?? null;
-    while (o && !o.userData.building) o = o.parent;
-    if (o) this.#opts.onSelect?.(o.userData.building as BuildingPlacement);
+    while (o && !o.userData.building && !o.userData.reacts) o = o.parent;
+    if (o && !o.userData.building) {
+      if (this.#reactions.get(o)?.react(TAP_CLIP, true)) this.#shadowsMoveUntil = this.#time + 2;
+      return;
+    }
+    if (o) {
+      // it bounces (docs/STYLEGUIDE_V2.md §8.2), its shadow with it
+      if (this.#reactions.get(o)?.react(TAP_CLIP, true)) this.#shadowsMoveUntil = this.#time + 2;
+      this.#opts.onSelect?.(o.userData.building as BuildingPlacement);
+    }
   }
 
   readonly #tick = (now: number): void => {
@@ -839,7 +1278,13 @@ export class CastleView {
     this.#timer.update(now);
     const dt = Math.min(0.1, this.#timer.getDelta());
     this.#time += dt;
-    if (this.#ready) this.#animate(dt);
+    // the camera turns and tilts towards where it was sent
+    if (dampAngles(this.#angles, this.#angleTarget, dt)) this.#updateCamera();
+    if (this.#ready) {
+      this.#animate(dt);
+      this.#watchSpeed(dt);
+      if (this.#time < this.#shadowsMoveUntil) this.#renderer.shadowMap.needsUpdate = true;
+    }
     this.#renderer.render(this.#scene, this.#camera);
   };
 
@@ -908,7 +1353,7 @@ export class CastleView {
     if (this.#refusal) this.#refusal.visible = refused;
     const bridgeTarget = bridgeDown ? 0 : -Math.PI / 2;
     this.#bridgeAngle += (bridgeTarget - this.#bridgeAngle) * Math.min(1, dt * 4);
-    if (this.#bridge) this.#bridge.rotation.x = this.#bridgeAngle;
+    this.#poseBridge();
     const barrierTarget = barrierUp ? Math.PI / 2 : 0;
     this.#barrierAngle += (barrierTarget - this.#barrierAngle) * Math.min(1, dt * 6);
     if (this.#barrier) this.#barrier.rotation.z = this.#barrierAngle;
@@ -940,17 +1385,10 @@ export class CastleView {
     }
   }
 
-  /** Whether a spot on the ground is in the tower's shadow line: behind it, away from the camera. */
+  /** Whether a spot on the ground is in the tower's shadow line: behind it, away from the camera (as it faces now). */
   #behindTower(x: number, z: number): boolean {
     if (!this.#tower) return false;
-    const flat = Math.hypot(CAMERA_OFFSET.x, CAMERA_OFFSET.z);
-    const ax = -CAMERA_OFFSET.x / flat; // from the camera, along the ground
-    const az = -CAMERA_OFFSET.z / flat;
-    const vx = x - this.#tower.position.x;
-    const vz = z - this.#tower.position.z;
-    const along = vx * ax + vz * az;
-    const across = Math.abs(vx * az - vz * ax);
-    return along > 0 && along < TOWER_HIDES.depth && across < TOWER_HIDES.halfWidth;
+    return isBehind(x - this.#tower.position.x, z - this.#tower.position.z, this.#angles.yaw, TOWER_HIDES.depth, TOWER_HIDES.halfWidth);
   }
 }
 
@@ -966,6 +1404,17 @@ function ownMaterials(root: THREE.Object3D): THREE.Material[] {
     out.push(...copies);
   });
   return out;
+}
+
+/**
+ * The scale that makes a model fill a plot of this half width: its own half
+ * width is measured from its shape at rest (overhangs included), so a model
+ * made at any size fits.
+ */
+function fitScale(model: THREE.Object3D, half: number): number {
+  const box = new THREE.Box3().setFromObject(model);
+  const own = Math.max(Math.abs(box.min.x), Math.abs(box.max.x), Math.abs(box.min.z), Math.abs(box.max.z));
+  return own > 0.01 ? Math.min(20, Math.max(0.05, half / own)) : 1;
 }
 
 /**
@@ -990,6 +1439,14 @@ function paint(root: THREE.Object3D, material: 'Tint' | 'Trim', color: string, c
       return own;
     };
     mesh.material = Array.isArray(mesh.material) ? mesh.material.map(swap) : swap(mesh.material);
+  });
+}
+
+/** Shows a model's tier parts up to its tier (`tier.2`, `tier.4`, `tier.6`; the loader strips the dot, userData keeps it). */
+function showTierParts(root: THREE.Object3D, tier: number): void {
+  root.traverse((o) => {
+    const m = /^tier\.(\d)$/.exec((o.userData.name as string | undefined) ?? o.name);
+    if (m) o.visible = tier >= Number(m[1]);
   });
 }
 

@@ -1,7 +1,12 @@
 {
   "themes/medieval-castle": {
-    "version": "0.8.0",
-    "hash": "3db1daa2fd094035",
+    "version": "0.8.1",
+    "hash": "a9d253939fdd518a",
     "where": "public/themes/medieval-castle/theme.json → \"version\""
+  },
+  "themes/medieval-castle-v2": {
+    "version": "0.2.1",
+    "hash": "a6dc492d7bb32889",
+    "where": "public/themes/medieval-castle-v2/theme.json → \"version\""
   }
 }

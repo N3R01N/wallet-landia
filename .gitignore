@@ -12,3 +12,6 @@ dist/
 
 # Raw third-party downloads (zips); only processed assets are committed.
 /assets-src/
+
+# the design agent's review renders (docs/STYLEGUIDE_V2.md §9): for review, not for the repo
+/docs/art-review/

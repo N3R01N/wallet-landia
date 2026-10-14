@@ -1,5 +1,8 @@
 # Castle assets: styleguide and specification (medieval theme)
 
+> **Art direction is now `docs/STYLEGUIDE_V2.md`** (stylised realism, size classes, baked occlusion, palette v2). The names, folders, materials and clips below still hold.
+
+
 Brief for the Blender design agent. The art direction and the full list of asset names, sizes, pivots, clips and tiers. Every name here is a contract: the game asks for it by exact name. Deviations need a note to the developer, not a silent rename.
 
 Source of truth for names: `docs/REDESIGN.md` §4 and this file. Once the prototype exists, the same list is also in `src/castle/assets/manifest.ts`.
@@ -11,7 +14,7 @@ Source of truth for names: `docs/REDESIGN.md` §4 and this file. Once the protot
 ### 1.1 Look
 - **Stylised medieval**, cosy and readable, like a fantasy board game. Chunky shapes, slightly exaggerated proportions, clear silhouettes. A building must be recognisable at 60 px on a phone.
 - **Hand-painted feel, PBR-ready.** Flat colour blocks with light wear (chipped stone, worn wood, soft moss). No photoreal scans, no dirt-heavy grime.
-- **No text, no logos, no brand names in the models.** Brand colour and signs are added at runtime through the `Tint` material and separate sign textures.
+- **No text, no logos, no brand names in the models.** Brand colour and logos are added at runtime: the `Tint` material, and logo plates in the `Logo` material that the game fills with the protocol's logo (`docs/STYLEGUIDE_V2.md` §8.1).
 - **Light is set by the game.** Do not bake lighting or shadows into textures.
 
 ### 1.2 Palette (reference, use these hues)

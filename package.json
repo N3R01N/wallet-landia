@@ -17,7 +17,9 @@
     "e2e:slow": "playwright test --project=slow --pass-with-no-tests",
     "check": "tsc --noEmit && vitest run && playwright test --project=fast --workers=4",
     "check:full": "tsc --noEmit && vitest run && playwright test",
-    "assets:versions": "vite-node scripts/asset-versions-cli.ts"
+    "assets:versions": "vite-node scripts/asset-versions-cli.ts",
+    "tvl": "vite-node scripts/fetch-tvl.ts",
+    "logos": "vite-node scripts/fetch-logos.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",

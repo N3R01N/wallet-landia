@@ -31,8 +31,8 @@ export function lightAt(hour: number): Light {
   const sky = DAY_SKY.map((c, i) => Math.round(mix(c, NIGHT_SKY[i]!)));
   return {
     night,
-    sun: mix(1.6, 0.15),
-    ambient: mix(1.7, 0.55),
+    sun: mix(3, 0.25),
+    ambient: mix(1, 0.35),
     sky: (sky[0]! << 16) | (sky[1]! << 8) | sky[2]!,
     glow: mix(0.4, 2.2),
   };

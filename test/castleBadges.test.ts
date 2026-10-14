@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { castleBadges } from '../src/castle/world/castleBadges.js';
 import type { CastleWorld, WorldProtocol } from '../src/castle/world/world.js';
 
-const proto = (category: WorldProtocol['category']): WorldProtocol => ({ id: category, name: category, category, tier: 1, signature: null, holdings: [], visits: 0 });
+const proto = (category: WorldProtocol['category']): WorldProtocol => ({ id: category, name: category, category, tier: 1, signature: null, holdings: [], visits: 0, tvlUsd: null, size: 1 });
 const world = (over: Partial<CastleWorld> = {}): CastleWorld => ({ wallets: 1, walletIds: ['0xa'], walletTiers: [2], ethUsd: null, tier: 2, protocols: [proto('dex')], errands: [], ...over });
 const byId = (w: CastleWorld, signed = 0) => new Map(castleBadges(w, { signed }).map((b) => [b.id, b]));
 

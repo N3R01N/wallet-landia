@@ -9,6 +9,7 @@ import type { ProtocolCategory } from '../../domain/catalog.js';
 import type { Goods, Guild, Journey, PositionKind, Verb } from '../../domain/model.js';
 import { tierOf } from '../../domain/tiers.js';
 import { ethPriceFrom } from '../../domain/risk.js';
+import { SIZE_REFERENCE_USD, sizeFor, tvlOf } from './size.js';
 import { SIGNATURE_PROTOCOLS, protocolFamily } from '../assets/manifest.js';
 
 /** The castle's building categories (docs/ASSET_SPEC.md §3.5). */
@@ -44,6 +45,10 @@ export interface WorldProtocol {
   holdings: Holding[];
   /** Transactions of the guild's that went there, in the loaded window. */
   visits: number;
+  /** Its value locked on Ethereum (the snapshot in tvl.json), or null when unknown. */
+  tvlUsd: number | null;
+  /** How big its building stands (size.ts: 1 = a 2 × 2 m house). */
+  size: number;
 }
 
 export interface Holding {
@@ -138,6 +143,7 @@ export function worldFromGuild(guild: Guild): CastleWorld {
         .flatMap((h) => h.stashes.filter((st) => st.protocolId === p.id).flatMap((st) => st.entries.map((e) => ({ label: e.name || e.symbol, kind: e.kind, usd: e.usd, wallet: h.address }))))
         .sort((a, b) => Math.abs(b.usd) - Math.abs(a.usd))
         .slice(0, MAX_HOLDINGS);
+      const tvlUsd = tvlOf(p.id);
       return {
         id: p.id,
         name: p.name,
@@ -146,6 +152,9 @@ export function worldFromGuild(guild: Guild): CastleWorld {
         signature: family in SIGNATURE_PROTOCOLS ? family : null,
         holdings,
         visits: p.visits,
+        tvlUsd,
+        // unknown to the snapshot: as big as what the guild keeps there, at least a house
+        size: sizeFor(tvlUsd ?? Math.max(held.get(p.id) ?? 0, SIZE_REFERENCE_USD)),
       };
     });
 

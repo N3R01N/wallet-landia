@@ -8,7 +8,20 @@ import { defineConfig } from '@playwright/test';
 /** Heavy specs (picture captures and the like) run before a commit only: name them *.slow.spec.ts. */
 const SLOW = /\.slow\.spec\.ts$/;
 
-const SEEN_TOUR = { cookies: [], origins: [{ origin: 'http://localhost:5198', localStorage: [{ name: 'wallet-landia-v4/castle/tour-seen', value: '1' }] }] };
+// The tour already seen (it would cover the page), and low rendering quality (software WebGL is too slow for
+// shadows and the environment light; e2e/castle-quality.spec.ts opens the high quality on purpose).
+const SEEN_TOUR = {
+  cookies: [],
+  origins: [
+    {
+      origin: 'http://localhost:5198',
+      localStorage: [
+        { name: 'wallet-landia-v4/castle/tour-seen', value: '1' },
+        { name: 'wallet-landia-v4/dev/quality', value: 'low' },
+      ],
+    },
+  ],
+};
 
 export default defineConfig({
   testDir: 'e2e',

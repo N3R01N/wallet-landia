@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { assetPath, findAsset, tierFallbacks, type AssetSpec } from './manifest.js';
-import { themeFileUrl, type CastleTheme } from './theme.js';
+import { themeChain, themeFileUrl, type CastleTheme } from './theme.js';
 import { buildStandin } from './standin.js';
 
 export interface Loaded {
@@ -47,10 +47,18 @@ export class ModelLibrary {
   #loadOne(name: string): Promise<Loaded | null> {
     const spec = findAsset(name);
     if (!spec || spec.kind !== 'model') return Promise.resolve(null);
-    return this.#theme
-      .then((theme) => this.#loader.loadAsync(themeFileUrl(theme, assetPath(spec))))
-      .then((gltf) => ({ scene: gltf.scene, clips: gltf.animations }))
-      .catch(() => null);
+    // from the theme, or the nearest one it extends that has the file
+    return this.#theme.then(async (theme) => {
+      for (const t of themeChain(theme)) {
+        try {
+          const gltf = await this.#loader.loadAsync(themeFileUrl(t, assetPath(spec)));
+          return { scene: gltf.scene, clips: gltf.animations };
+        } catch {
+          // not in this one: the next
+        }
+      }
+      return null;
+    });
   }
 
   /**
@@ -69,6 +77,11 @@ export class ModelLibrary {
     // SkeletonUtils keeps a skinned person bound to its own copy of the skeleton
     // (a plain clone would share the original's bones).
     const obj = cloneSkinned(loaded.scene);
+    // a lower-detail copy for far away (`<asset>.lod1`, docs/STYLEGUIDE_V2.md §8): not drawn over the full one
+    // (the loader strips the dots from node names, `….lod1` → `…lod1`; the name as made stays in userData)
+    obj.traverse((o) => {
+      if (/\.lod[1-9]\d*$/.test((o.userData.name as string | undefined) ?? o.name)) o.visible = false;
+    });
     obj.name = spec.name;
     return obj;
   }
