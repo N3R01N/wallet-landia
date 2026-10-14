@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ISLAND, MOAT, TOWN, TOWER_AT, planCastle, routeAlongWalls, routeTo } from '../src/castle/scene/plan.js';
+import { BUILDING_SLOTS, ISLAND, MOAT, TOWN, TOWER_AT, assignSlots, moveToSlot, planCastle, routeAlongWalls, routeTo } from '../src/castle/scene/plan.js';
 import type { CastleWorld } from '../src/castle/world/world.js';
 
 const DEMO: Pick<CastleWorld, 'wallets' | 'tier' | 'protocols'> = {
@@ -157,6 +157,42 @@ describe('castle plan', () => {
     for (const p of [...straight, ...round, ...back]) expect(onWalls(p)).toBe(true);
     // every tower slot is on the walls
     for (const t of planCastle({ ...DEMO, wallets: 9 }).towers) expect(() => routeAlongWalls(t, { x: 0, z: -14 })).not.toThrow();
+  });
+
+  it('build mode: arranged protocols get their plots, the rest fill the free ones in order; nonsense is ignored', () => {
+    const ids = ['a', 'b', 'c'];
+    expect([...assignSlots(ids)]).toEqual([['a', 0], ['b', 1], ['c', 2]]);
+    expect([...assignSlots(ids, { c: 0, b: 5 })]).toEqual([['b', 5], ['c', 0], ['a', 1]]);
+    // a taken plot, a plot that does not exist, a fraction: ignored
+    expect([...assignSlots(ids, { a: 3, b: 3, c: 99 })].sort()).toEqual([['a', 3], ['b', 0], ['c', 1]]);
+    expect(assignSlots(ids, { a: 1.5 }).get('a')).toBe(0);
+  });
+
+  it('build mode: moving to a plot swaps with whoever is there, and keeps the whole arrangement', () => {
+    const current = assignSlots(['a', 'b', 'c']);
+    expect(moveToSlot(current, 'a', 2)).toEqual({ a: 2, b: 1, c: 0 });
+    expect(moveToSlot(current, 'a', 7)).toEqual({ a: 7, b: 1, c: 2 }); // an empty plot
+    expect(moveToSlot(current, 'zzz', 1)).toEqual({ a: 0, b: 1, c: 2 }); // unknown: no change
+  });
+
+  it('an arranged town still reaches every door by a clear way, and lists the empty plots', () => {
+    const arranged = Object.fromEntries(FULL.protocols.map((p, i) => [p.id, (i * 7) % BUILDING_SLOTS.length]));
+    const town = planCastle({ ...FULL, protocols: FULL.protocols.slice(0, 7) }, arranged);
+    expect(town.buildings.map((b) => b.slot).sort()).toEqual(Object.values(arranged).slice(0, 7).sort());
+    expect(town.freeSlots).toHaveLength(BUILDING_SLOTS.length - 7);
+    for (const b of town.buildings) {
+      const route = routeTo(b);
+      for (let i = 1; i < route.length; i++) {
+        const a = route[i - 1]!;
+        const c = route[i]!;
+        const n = Math.ceil(Math.hypot(c.x - a.x, c.z - a.z) / 0.25);
+        for (let k = 0; k <= n; k++) {
+          const x = a.x + ((c.x - a.x) * k) / n;
+          const z = a.z + ((c.z - a.z) * k) / n;
+          for (const o of town.buildings) expect(Math.abs(x - o.x) < 0.95 && Math.abs(z - o.z) < 0.95, `${b.protocol.id} crosses ${o.protocol.id}`).toBe(false);
+        }
+      }
+    }
   });
 
   it('an errand for someone outside the town goes to the road’s far end, paying the toll on the way', () => {

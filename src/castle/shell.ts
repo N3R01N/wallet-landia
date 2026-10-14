@@ -105,6 +105,11 @@ export class Shell {
     this.#rankEl.textContent = `${top.level} · ${top.rank}`;
   }
 
+  /** The rank's tooltip: the rank with the title the player wears ('' for none). */
+  setRankTitle(text: string): void {
+    this.#rankEl.title = text;
+  }
+
   /** A short status beside the guild's name (loading, live, an error); empty hides it. */
   setStatus(text: string, kind: 'info' | 'busy' | 'error' = 'info'): void {
     this.#statusEl.textContent = text;

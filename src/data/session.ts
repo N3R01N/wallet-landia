@@ -250,8 +250,8 @@ export class Session {
     if (gen !== this.#generation) return;
     const label =
       set.kind === 'demo'
-        ? 'Demo town (synthetic) — open ⚙ Guild to add your key and wallets'
-        : `${set.wallets.length} captured wallets${loader === null ? ' — add a key in ⚙ Guild to go live' : ' — add your wallets in ⚙ Guild'}`;
+        ? 'Demo castle (synthetic) — add your key and wallets in the Guild tab'
+        : `${set.wallets.length} captured wallets${loader === null ? ' — add a key in the Guild tab to go live' : ' — add your wallets in the Guild tab'}`;
     const names = await this.#names(set.wallets.map((w) => w.address));
     if (gen !== this.#generation) return;
     this.#show({ mode: set.kind, raws: set.wallets, visiting: null, names, label }, 'town');
@@ -282,7 +282,7 @@ export class Session {
     if (gen !== this.#generation) return;
     const first = addrs[0] ?? 'shared';
     const who = label ?? names.get(first) ?? `${first.slice(0, 6)}…${first.slice(-4)}`;
-    this.#show({ mode: loader ? 'live' : 'captured', raws, visiting: first, names, label: `Visiting ${who}'s town` }, 'town');
+    this.#show({ mode: loader ? 'live' : 'captured', raws, visiting: first, names, label: `Visiting ${who}'s castle` }, 'town');
   }
 
   /** Bring the town on show up to date now, at the player's request (~5 requests a wallet). */

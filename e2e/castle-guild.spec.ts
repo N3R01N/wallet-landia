@@ -25,8 +25,8 @@ test('wallets are added and removed, nonsense is refused with a reason, and a ba
   await expect(page.locator('.guild-tab .wallet-row')).toContainText('0x1234…5678');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('wallet-landia-v4/prefs/v1') ?? '{}') as { owned?: string[] });
   expect(saved.owned).toContain(address);
-  await page.locator('.guild-tab .wallet-row .btn').click();
-  await expect(page.locator('.guild-tab .wallet-row')).toHaveCount(0);
+  await page.locator('.guild-tab [data-section="wallets"]').getByRole('button', { name: /^Remove / }).click();
+  await expect(page.locator('.guild-tab [data-section="wallets"] .wallet-row')).toHaveCount(0);
 
   // a key with a stray character is refused, with the reason
   await page.locator('.guild-tab').getByLabel('Zerion API key').fill('zk_dev abc');
@@ -49,4 +49,76 @@ test('the history file and the Ethereum node: a refused node address says why, a
   await expect(tab.locator('[data-section="node"]').locator('.form-msg')).toContainText('Use an https address');
   await tab.locator('.btn', { hasText: 'Default' }).click();
   await expect(tab.locator('[data-section="node"]').locator('.form-msg')).toContainText('free public node');
+});
+
+test('follow a wallet, visit its castle (just that wallet’s towers), and return home', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto('/');
+  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
+  const wallets = await page.evaluate(() => (window as unknown as { castleView: { walletIds(): string[] } }).castleView.walletIds());
+  expect(wallets.length).toBeGreaterThan(1);
+  const other = wallets[1]!;
+
+  await page.locator('.tab', { hasText: 'Guild' }).click();
+  const followed = page.locator('[data-section="followed"]');
+  await followed.getByLabel('Wallet to follow').fill(other);
+  await followed.locator('.btn', { hasText: 'Follow' }).click();
+  await expect(followed.locator('.wallet-row')).toHaveCount(1);
+  await followed.locator('.btn', { hasText: 'Visit' }).click();
+
+  // the castle tab, showing that one wallet; a way home
+  await expect(page.locator('.tab', { hasText: 'Castle' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('.topbar .guild-name')).toContainText('Visiting');
+  await expect(page.locator('.home-btn')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { castleView: { walletIds(): string[] } }).castleView.walletIds().join(',')))
+    .toBe(other);
+
+  await page.locator('.home-btn').click();
+  await expect(page.locator('.home-btn')).toBeHidden();
+  await expect(page.locator('.topbar .guild-name')).not.toContainText('Visiting');
+});
+
+test('share: only public wallets go in the link, and the link opens that castle as a visit', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto('/');
+  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
+  const wallets = await page.evaluate(() => (window as unknown as { castleView: { walletIds(): string[] } }).castleView.walletIds());
+  const mine = wallets[0]!;
+
+  await page.locator('.tab', { hasText: 'Guild' }).click();
+  const share = page.locator('[data-section="share"]');
+  const yours = page.locator('[data-section="wallets"]');
+  await yours.getByLabel('Wallet address or ENS name').fill(mine);
+  await yours.locator('.btn', { hasText: 'Add' }).click();
+  // private by default: nothing to share yet
+  await expect(share).toContainText('Mark at least one');
+  await yours.locator('.privacy').click();
+  const link = await share.getByLabel('Your share link').inputValue();
+  expect(link).toContain(`#visit=${mine}`);
+
+  const friend = await page.context().newPage();
+  await friend.goto(link);
+  await expect(friend.locator('.topbar .guild-name')).toContainText('Visiting');
+  await expect(friend.locator('.home-btn')).toBeVisible();
+  await expect
+    .poll(() => friend.evaluate(() => (window as unknown as { castleView?: { walletIds(): string[] } }).castleView?.walletIds().join(',') ?? ''))
+    .toBe(mine);
+});
+
+test('a wallet’s crest: pick a tincture (kept, shared with the town), or go back to the one it was born with', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.tab', { hasText: 'Guild' }).click();
+  const yours = page.locator('[data-section="wallets"]');
+  const address = '0x' + 'c'.repeat(40);
+  await yours.getByLabel('Wallet address or ENS name').fill(address);
+  await yours.locator('.btn', { hasText: 'Add' }).click();
+  await yours.getByLabel('Crest colour', { exact: true }).click();
+  await yours.getByLabel('Azure', { exact: true }).click();
+  const crests = () => page.evaluate(() => (JSON.parse(localStorage.getItem('wallet-landia-v4/prefs/v1') ?? '{}') as { crests?: Record<string, string[]> }).crests ?? {});
+  expect((await crests())[address]?.[0]).toBe('#2a58b0');
+  await expect(yours.getByLabel('Crest colour', { exact: true })).toHaveAttribute('style', /#2a58b0|42, 88, 176/);
+  await yours.getByLabel('Crest colour', { exact: true }).click();
+  await yours.locator('.btn', { hasText: 'Born' }).click();
+  expect((await crests())[address]).toBeUndefined();
 });

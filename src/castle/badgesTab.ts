@@ -6,8 +6,8 @@
  * pictures are the theme's badge and rank art. Tapping a badge opens its sheet.
  */
 
-import { el, fmtDate, shortAddr } from '../util/dom.js';
-import { ALL_MEDALS, type Medal } from '../domain/feats.js';
+import { el, fmtDate, safeHref, shortAddr } from '../util/dom.js';
+import { ALL_MEDALS, defaultTitle, titleOptions, type Medal, type TeachingQuest } from '../domain/feats.js';
 import { BADGE_TIER_NAMES, type PlayerBadge, type PlayerProfile } from '../domain/player.js';
 import { assetPath } from './assets/manifest.js';
 import { themeFileUrl, type CastleTheme } from './assets/theme.js';
@@ -22,18 +22,69 @@ function art(theme: CastleTheme | null, name: string, alt: string, size: number)
   return el('img', { src: themeFileUrl(theme, assetPath({ name, kind: 'art' })), alt, width: String(size), height: String(size), loading: 'lazy' });
 }
 
-export function badgesTab(profile: PlayerProfile | null, theme: CastleTheme | null, open: (sheet: SheetState) => void, castle: readonly CastleBadge[] = []): HTMLElement {
+/** A teaching quest for one of the player's wallets. */
+export interface WalletQuest {
+  wallet: string;
+  /** The wallet's name (ENS or short address). */
+  walletName: string;
+  quest: TeachingQuest;
+}
+
+/** The player's teaching quests: open ones first, each with what it teaches and where to act; done ones counted. */
+function questsSection(quests: readonly WalletQuest[]): HTMLElement {
+  const open = quests.filter((q) => !q.quest.done);
+  const done = quests.length - open.length;
+  const out = el('section', { class: 'quests', 'aria-label': 'Quests' }, el('h2', {}, `Quests for your wallets · ${open.length} open`));
+  if (open.length === 0) out.append(el('p', { class: 'muted' }, 'Nothing to do: every quest is done. Well kept.'));
+  for (const { walletName, quest } of open) {
+    const href = quest.link ? safeHref(quest.link.href) : null;
+    out.append(
+      el(
+        'article',
+        { class: 'quest', 'data-quest': quest.id },
+        el('h3', {}, `${quest.icon} ${quest.name}`, el('span', { class: 'muted quest-wallet' }, ` · ${walletName}`)),
+        el('p', {}, quest.story),
+        el('p', { class: 'muted' }, quest.lesson),
+        el('p', { class: 'quest-progress' }, quest.progress),
+        href ? el('a', { href, target: '_blank', rel: 'noopener noreferrer', class: 'quest-link' }, `${quest.link!.label} ↗`) : null,
+      ),
+    );
+  }
+  if (done > 0) out.append(el('p', { class: 'muted' }, `${done} done.`));
+  return out;
+}
+
+/** The title the player wears: their pick when a badge still unlocks it, else the default for their badges. */
+export function playerTitle(profile: PlayerProfile | null, picked: string): string {
+  const medals = [...(profile?.badges.keys() ?? [])];
+  return picked && titleOptions('adventurer', medals).includes(picked) ? picked : defaultTitle('adventurer', medals);
+}
+
+export interface TitleChoice {
+  picked: string;
+  onPick(title: string): void;
+}
+
+export function badgesTab(
+  profile: PlayerProfile | null,
+  theme: CastleTheme | null,
+  open: (sheet: SheetState) => void,
+  castle: readonly CastleBadge[] = [],
+  title?: TitleChoice,
+  quests: readonly WalletQuest[] = [],
+): HTMLElement {
   const page = el('section', { class: 'tab-page badges-tab', 'data-tab-page': 'badges' }, el('h1', {}, 'Badges'));
   if (!profile) {
     page.append(el('p', { class: 'muted' }, 'Working out your level from all your wallets’ history…'));
     return page;
   }
-  page.append(playerCard(profile, theme));
+  page.append(playerCard(profile, theme, title));
   if (castle.length) {
     const done = castle.filter((b) => b.progress >= 1).length;
     page.append(el('h2', {}, `Your castle · ${done} of ${castle.length}`));
     page.append(el('div', { class: 'badge-grid' }, ...castle.map((b) => castleCard(b, theme, open))));
   }
+  if (quests.length) page.append(questsSection(quests));
   const earned = ALL_MEDALS.filter((m) => profile.badges.has(m.id));
   const locked = ALL_MEDALS.filter((m) => !profile.badges.has(m.id));
   page.append(el('h2', {}, `Earned · ${earned.length} of ${ALL_MEDALS.length}`));
@@ -45,7 +96,7 @@ export function badgesTab(profile: PlayerProfile | null, theme: CastleTheme | nu
   return page;
 }
 
-function playerCard(p: PlayerProfile, theme: CastleTheme | null): HTMLElement {
+function playerCard(p: PlayerProfile, theme: CastleTheme | null, title?: TitleChoice): HTMLElement {
   const into = p.xp - p.levelXp;
   const span = Math.max(1, p.nextXp - p.levelXp);
   const share = Math.min(1, Math.max(0, into / span));
@@ -67,6 +118,7 @@ function playerCard(p: PlayerProfile, theme: CastleTheme | null): HTMLElement {
       'div',
       { class: 'player-text' },
       el('h2', {}, `Level ${p.level} · ${p.rank}`),
+      title ? titlePicker(p, title) : null,
       bar,
       el('p', { class: 'muted' }, `${Math.max(0, span - into).toLocaleString('en-US')} XP to level ${p.level + 1}`),
       el(
@@ -137,4 +189,18 @@ export function badgeSheet(id: string, profile: PlayerProfile | null, theme: Cas
   );
   out.append(el('ul', { class: 'provenance' }, ...rows));
   return out;
+}
+
+/** The titles the player's badges unlock, to wear one (shown under the level). */
+function titlePicker(p: PlayerProfile, choice: TitleChoice): HTMLElement {
+  const options = titleOptions('adventurer', p.badges.keys());
+  const current = playerTitle(p, choice.picked);
+  const select = el('select', { class: 'title-select', 'aria-label': 'Your title' });
+  for (const t of options) {
+    const o = el('option', { value: t }, t);
+    if (t === current) o.selected = true;
+    select.append(o);
+  }
+  select.addEventListener('change', () => choice.onPick(select.value));
+  return el('label', { class: 'title-row muted' }, 'Title ', select);
 }

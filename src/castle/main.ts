@@ -9,7 +9,7 @@
  */
 
 import { inject } from '@vercel/analytics';
-import { el } from '../util/dom.js';
+import { el, shortAddr } from '../util/dom.js';
 import { Shell } from './shell.js';
 import { TAB_LABEL, type SheetState, type TabId } from './shellState.js';
 import { CastleView } from './scene/castleView.js';
@@ -24,7 +24,14 @@ import { Session, type Mode, type Shown } from '../data/session.js';
 import { setRealmChains } from '../data/zerion/endpoints.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { guildTab, modeText } from './guildTab.js';
-import { BADGE_SHEET, badgeSheet, badgesTab, castleBadgeSheet } from './badgesTab.js';
+import { decodeShare } from './share.js';
+import { attachTimeline } from './timeline.js';
+import { attachArrange, type ArrangeTap } from './arrange.js';
+import { Tour } from './tour.js';
+import { tourSteps } from './tourSteps.js';
+import { BADGE_SHEET, badgeSheet, badgesTab, castleBadgeSheet, playerTitle, type WalletQuest } from './badgesTab.js';
+import { teachingQuests } from '../domain/feats.js';
+import type { Guild } from '../domain/model.js';
 import { castleBadges } from './world/castleBadges.js';
 import { PlayerController } from './player.js';
 import type { CastleTheme } from './assets/theme.js';
@@ -69,7 +76,12 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       return el('section', { class: 'tab-page', 'data-tab-page': tab }, placeholderScene('Raising the castle…'));
     }
     // The castle and the town are one scene; the camera starts on the chosen part.
+    // Your own castle keeps your arrangement (build mode); a visited one is shown as it comes.
+    const own = !shown?.visiting;
+    let arrangeTap: ((tap: ArrangeTap) => void) | null = null;
     view = new CastleView({
+      ...(own ? { arranged: prefs.castleArrangement } : {}),
+      onArrangeTap: (tap) => arrangeTap?.(tap),
       world,
       focus: tab,
       theme,
@@ -86,10 +98,27 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
     const chronicle = el('button', { class: 'btn scene-action chronicle-btn', type: 'button', 'aria-label': 'Chronicle: recent transactions' }, '📜 Chronicle');
     chronicle.addEventListener('click', () => open({ id: CHRONICLE_SHEET, title: 'Chronicle' }));
     view.element.append(chronicle);
+    attachTimeline(view, world.errands);
+    if (own)
+      arrangeTap = attachArrange(view, {
+        get: () => prefs.castleArrangement,
+        set: (a) => {
+          prefs.castleArrangement = a;
+          savePrefs(prefs);
+        },
+      });
     return el('section', { class: 'tab-page scene-tab', 'data-tab-page': tab }, view.element);
   }
   view = null;
-  if (tab === 'badges') return badgesTab(player.profile, themeNow, open, world ? castleBadges(world, player.profile?.stats ?? null) : []);
+  if (tab === 'badges')
+    return badgesTab(player.profile, themeNow, open, world ? castleBadges(world, player.profile?.stats ?? null) : [], {
+      picked: prefs.title,
+      onPick: (t) => {
+        prefs.title = t;
+        savePrefs(prefs);
+        showTopbar();
+      },
+    }, walletQuests());
   if (tab === 'guild') {
     return guildTab({
       prefs,
@@ -119,6 +148,11 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
         savePrefs(prefs);
         setRpcUrl(url);
       },
+      visiting: shown?.visiting ?? null,
+      onVisit: (a) => {
+        void session.visit(a);
+        shell.go('castle');
+      },
     });
   }
   const wrap = el('section', { class: 'tab-page', 'data-tab-page': tab });
@@ -131,7 +165,12 @@ function renderSheet(sheet: SheetState): HTMLElement {
   if (sheet.id === CHRONICLE_SHEET) return chronicleSheet(world?.errands ?? [], (e) => shell.open({ id: ERRAND_SHEET + e.key, title: e.label || 'A transaction' }));
   if (sheet.id.startsWith(ERRAND_SHEET)) {
     const e = world?.errands.find((x) => x.key === sheet.id.slice(ERRAND_SHEET.length));
-    if (e) return errandSheet(e, e.protocolId ? (world?.protocols.find((p) => p.id === e.protocolId)?.name ?? null) : null);
+    if (e)
+      return errandSheet(e, e.protocolId ? (world?.protocols.find((p) => p.id === e.protocolId)?.name ?? null) : null, () => {
+        // its courier goes next; the sheet closes so the scene shows it
+        view?.enqueue([e]);
+        shell.close();
+      });
   }
   if (sheet.id.startsWith(BADGE_SHEET)) {
     const id = sheet.id.slice(BADGE_SHEET.length);
@@ -153,6 +192,14 @@ if (!root) throw new Error('#app is missing from index.html');
 const shell = new Shell({ renderTab, renderSheet, topbar: { guild: 'Your guild', rank: 'Wanderer', level: 'Lv 1' } });
 root.replaceChildren(shell.element);
 
+/** Back to your own castle, while visiting someone else's. */
+const homeBtn = el('button', { class: 'btn home-btn', type: 'button', hidden: '' }, '⌂ Return home');
+homeBtn.addEventListener('click', () => {
+  // leaving a shared castle: the link's hash goes, so a reload is home
+  if (decodeShare(location.hash)) history.replaceState(null, '', location.pathname + location.search);
+  void session.home();
+});
+
 const soundBtn = el('button', { class: 'btn sound-toggle', type: 'button', 'aria-label': 'Sound', 'aria-pressed': 'false' }, '🔇');
 function showSound(): void {
   soundBtn.textContent = sound.on ? '🔊' : '🔇';
@@ -168,6 +215,37 @@ soundBtn.addEventListener('click', () => {
 // on after a reload: it starts with the first tap (browsers allow sound only after one)
 if (prefs.sound) sound.setOn(true);
 showSound();
+// the tour: once on a first visit, and again from the ? button
+const TOUR_SEEN = 'wallet-landia-v4/castle/tour-seen';
+const tourBtn = el('button', { class: 'btn topbar-icon tour-btn', type: 'button', 'aria-label': 'Show the tour', title: 'Show the tour' }, '?');
+function startTour(): void {
+  new Tour(
+    tourSteps({ go: (t) => shell.go(t), find: (sel) => shell.element.querySelector<HTMLElement>(sel), demo: mode === 'demo' || mode === 'captured' }),
+    () => {
+      try {
+        localStorage.setItem(TOUR_SEEN, '1');
+      } catch {
+        // storage unavailable: it may show again next time
+      }
+    },
+  ).start();
+}
+tourBtn.addEventListener('click', startTour);
+let tourOffered = false;
+/** On the first visit, once the castle is up: the tour. */
+function offerTour(): void {
+  if (tourOffered) return;
+  tourOffered = true;
+  let seen = false;
+  try {
+    seen = localStorage.getItem(TOUR_SEEN) === '1';
+  } catch {
+    seen = true; // no storage: do not insist on every visit
+  }
+  if (!seen && !new URLSearchParams(location.search).has('notour')) setTimeout(startTour, 800);
+}
+shell.addTopbarAction(tourBtn);
+shell.addTopbarAction(homeBtn);
 shell.addTopbarAction(soundBtn);
 // the ambience: rain from the market, birds by day, crickets at night
 setInterval(() => {
@@ -177,8 +255,20 @@ setInterval(() => {
 // Test hook (dev server only): what the sound has played.
 if (import.meta.env.DEV) (window as unknown as { castleSound?: Soundscape }).castleSound = sound;
 
-function worldOf(shown: Shown): CastleWorld {
-  return worldFromGuild(buildGuild(shown.raws, prefs.window, { names: shown.names }));
+/** Your own guild (never a visited one): its teaching quests. */
+let homeGuild: Guild | null = null;
+
+function worldOf(town: Shown): CastleWorld {
+  const guild = buildGuild(town.raws, prefs.window, { names: town.names });
+  if (town.visiting === null) homeGuild = guild;
+  return worldFromGuild(guild);
+}
+
+/** Each of your wallets' teaching quests. */
+function walletQuests(): WalletQuest[] {
+  const g = homeGuild;
+  if (!g) return [];
+  return g.heroes.flatMap((h) => teachingQuests(h, g).map((quest) => ({ wallet: h.address, walletName: prefs.ens[h.address] ?? shortAddr(h.address), quest })));
 }
 
 /** Whether the castle and the town would be laid out differently (then the scene is built again). */
@@ -216,8 +306,10 @@ function settlePrice(w: CastleWorld): void {
 }
 
 function showTopbar(): void {
+  homeBtn.hidden = !shown?.visiting;
   const p = player.profile;
   shell.setTopbar({ guild: shown?.label ?? 'Your guild', rank: p?.rank ?? 'Wanderer', level: `Lv ${p?.level ?? 1}` });
+  shell.setRankTitle(p ? `${p.rank}, ${playerTitle(p, prefs.title)}` : '');
 }
 
 const session = new Session(prefs, {
@@ -229,6 +321,7 @@ const session = new Session(prefs, {
     showTopbar();
     redrawForData();
     void player.refresh();
+    if (!town.visiting) offerTour();
   },
   onUpdate: (town) => {
     shown = town;
@@ -273,7 +366,6 @@ void theme.then((t) => {
   if (shell.state.tab === 'badges') shell.refresh();
 });
 
-void session.home();
 
 // Keep the castle's files on the device (public/sw.js): a returning player
 // downloads nothing that has not changed. Production only: in development
@@ -294,3 +386,12 @@ if (import.meta.env.PROD) {
     beforeSend: (event) => ({ ...event, url: event.url.split('?')[0] ?? event.url }),
   });
 }
+
+/** A shared castle's link opens it (read-only); otherwise your own. A link followed later does too. */
+function openFromLink(): void {
+  const shared = decodeShare(location.hash);
+  if (shared) void session.visit(shared.wallets, shared.name || undefined);
+  else void session.home();
+}
+window.addEventListener('hashchange', openFromLink);
+openFromLink();

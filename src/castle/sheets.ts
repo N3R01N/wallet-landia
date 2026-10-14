@@ -6,11 +6,12 @@
  */
 
 import { el, fmtDate, safeHref, shortAddr } from '../util/dom.js';
-import { approxUsd } from '../domain/tiers.js';
+import { approxUsd, exactUsd, formatQty } from '../domain/tiers.js';
+import { verbText } from '../domain/mappers.js';
 import { EXPLORERS, VERB_EXPLAIN } from '../domain/verbs.js';
-import type { PositionKind } from '../domain/model.js';
+import type { Goods, PositionKind } from '../domain/model.js';
 import { TIER_NAMES } from './assets/manifest.js';
-import type { Errand, WorldProtocol } from './world/world.js';
+import type { Errand, ErrandStep, WorldProtocol } from './world/world.js';
 
 /** What each building category stands for, in plain words. */
 const CATEGORY_NOTE: Record<WorldProtocol['category'], string> = {
@@ -70,7 +71,33 @@ const DIRECTION_TEXT: Record<Errand['direction'], string> = {
   inside: 'Between two of your own wallets: carried along the castle walls, it never left the castle.',
 };
 
-export function errandSheet(e: Errand, protocolName: string | null): HTMLElement {
+/** One stop of the Quest Replay: what was done where, goods given and received at exact amounts. */
+function stepRow(step: ErrandStep, n: number): HTMLElement {
+  const goods = (list: Goods[], sign: '−' | '+') =>
+    list.map((g) =>
+      el(
+        'li',
+        { class: sign === '−' ? 'give' : 'get' },
+        `${sign} ${formatQty(g.quantity)} ${g.isNft ? (g.name ?? g.symbol) : g.symbol}`,
+        el('span', { class: 'muted' }, ` ${g.usd === null ? '' : exactUsd(g.usd)}`),
+      ),
+    );
+  const moved = [...goods(step.give, '−'), ...goods(step.get, '+')];
+  return el(
+    'li',
+    { class: 'replay-step' },
+    el('span', { class: 'replay-n', 'aria-hidden': 'true' }, String(n)),
+    el(
+      'div',
+      {},
+      el('strong', {}, verbText(step.verb)),
+      el('span', { class: 'muted' }, ` · ${step.where}`),
+      moved.length ? el('ul', { class: 'replay-goods' }, ...moved) : el('p', { class: 'muted' }, 'Nothing changed hands here.'),
+    ),
+  );
+}
+
+export function errandSheet(e: Errand, protocolName: string | null, onReplay?: () => void): HTMLElement {
   const out = el('div', { class: 'sheet-content' });
   if (e.failed) out.append(el('p', { class: 'failed' }, 'It failed: turned back at the barrier. The toll (the fee) was still paid; nothing else moved.'));
   out.append(el('p', {}, VERB_EXPLAIN[e.verb] ?? 'A transaction.'));
@@ -83,6 +110,18 @@ export function errandSheet(e: Errand, protocolName: string | null): HTMLElement
     ['Wallet', shortAddr(e.wallet)],
   ];
   out.append(el('table', { class: 'facts' }, el('tbody', {}, ...rows.map(([k, v]) => el('tr', {}, el('th', {}, k), el('td', {}, v))))));
+  // the Quest Replay: every stop, in order
+  if (e.steps.length) {
+    out.append(el('h3', {}, e.steps.length === 1 ? 'What happened' : `Step by step · ${e.steps.length} stops`));
+    out.append(el('ol', { class: 'replay' }, ...e.steps.map((st, i) => stepRow(st, i + 1))));
+  }
+  const details = [e.method ? `Method: ${e.method}` : null, e.block !== null ? `Block ${e.block.toLocaleString('en-US')}` : null].filter((x): x is string => x !== null);
+  if (details.length) out.append(el('p', { class: 'muted' }, details.join(' · ')));
+  if (onReplay) {
+    const replay = el('button', { class: 'btn replay-btn', type: 'button' }, '▶ Replay this courier');
+    replay.addEventListener('click', onReplay);
+    out.append(el('p', {}, replay));
+  }
   const base = EXPLORERS[e.chainId];
   const href = base ? safeHref(base + e.hash) : null;
   if (href) out.append(el('p', {}, el('a', { href, target: '_blank', rel: 'noopener noreferrer', class: 'explorer' }, 'See it on the block explorer ↗')));

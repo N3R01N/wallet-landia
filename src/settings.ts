@@ -31,6 +31,10 @@ export interface Prefs {
   medals: Record<string, Record<string, number | null>>;
   /** The title each hero wears, if the player picked one. */
   titles: Record<string, string>;
+  /** The title the player wears (unlocked by a badge); '' for the default one. */
+  title: string;
+  /** Build mode: where the player put each protocol's building (protocol id → plot; checked when used). */
+  castleArrangement: Record<string, number>;
   /** Crest colours the player picked (field, charge), by address. */
   crests: Record<string, [string, string]>;
   /** Fog of war over unvisited buildings (opt in). */
@@ -79,6 +83,8 @@ const DEFAULTS: Prefs = {
   theme: '',
   medals: {},
   titles: {},
+  title: '',
+  castleArrangement: {},
   crests: {},
   fog: false,
   questlogFolded: false,

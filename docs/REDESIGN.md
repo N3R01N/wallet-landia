@@ -488,3 +488,15 @@ The castle page (`castle.html`) now covers the core: wallets, value, protocols, 
 The castle is the app: `index.html` opens it (with the service worker and Vercel Web Analytics), `assets.html` is the asset gallery. Deleted: the old views (2D, the 3D town and its grammar, rooms, the sandboxes), heroes, the old simulation and town layout, the Looks panel, packs and the old themes (`highland`, `medieval`, `modern`, `scifi`), the HDRI skies, the asset import scripts and their packages, and their tests and docs (`PACKS.md`, `VISUAL_CONTRACT.md`, `RESEARCH_REALISM.md`; `PLAN.md` and `WORLD_BIBLE.md` are marked historical). The sounds, the player's level and the DOM helper moved to the castle's side. The history file no longer carries town designs. The castle loads Ethereum only. The service worker is `wl-4`, so devices drop the old themes' stored files. `assets-src/` (785 MB of git-ignored source downloads) is left for the developer to remove.
 
 **Next (the kept features, §14b):** visiting followed wallets' castles, following, sharing a link; teaching quests, the first-visit tour, the full Quest Replay, the replay timeline; crest customisation, build mode, a player title. The old implementations are in commit `bc06046`.
+
+### 14d. Kept features ported (2026-10-14)
+
+- **Following and visiting** (Guild tab → Wallets you follow): visit a followed wallet's castle read-only; "⌂ Return home" in the top bar. Your level, badges and weather never come from a visited castle.
+- **Sharing** (Guild tab → Share your castle): each of your wallets is private until marked public; the link (`#visit=…&name=…`, `src/castle/share.ts`, checked as untrusted input) opens your castle for a friend as a visit.
+- **Crests** (Guild tab, a swatch per wallet): the heraldic tinctures, or the colour it was born with; the tower's flag follows. Shared with the old setting (`prefs.crests`).
+- **Title** (Badges tab, under your level): the titles your badges unlock; `prefs.title`.
+- **Teaching quests** (Badges tab): each wallet's open quests with what they teach and where to act; reworded for the castle.
+- **Quest Replay** (a transaction's sheet): every stop with goods given and received at exact amounts, the method and block; "▶ Replay this courier" sends it next.
+- **Replay timeline** (⏱ Replay over the scene): the history window as time passing (an hour, a day or a week a second), pause, drag to any day; couriers set out as their transactions happened; Live goes back. `src/castle/world/replay.ts`, `src/castle/timeline.ts`.
+- **First-visit tour** (? in the top bar): seven cards from the castle to the Guild tab's key; shown once. The browser tests start with it seen.
+- **Build mode** (🔨 Arrange over the scene, your own castle only): tap a building, then another (swap) or an empty plot (move); Reset, Done. The town is re-laid in place from the loaded models. `prefs.castleArrangement`; `assignSlots`/`moveToSlot` in `plan.ts`.

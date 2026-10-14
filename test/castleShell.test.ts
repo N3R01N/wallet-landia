@@ -37,3 +37,18 @@ describe('castle shell state', () => {
     expect(isTab('realms')).toBe(false);
   });
 });
+
+describe('the castle’s stylesheets', () => {
+  // a missing brace swallows every rule after it without an error (it happened once: the build-mode bar lost its styles)
+  it.each(['src/castle/shell.css', 'src/castle/assets.css'])('%s has balanced braces', async (file) => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    let depth = 0;
+    for (const ch of css) {
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+      expect(depth).toBeGreaterThanOrEqual(0);
+    }
+    expect(depth).toBe(0);
+  });
+});

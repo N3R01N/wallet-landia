@@ -695,7 +695,8 @@ h1 {
   color: inherit;
 }
 
-.topbar .sound-toggle {
+.topbar .sound-toggle,
+.topbar .topbar-icon {
   min-width: 44px;
   min-height: 36px;
   padding: 0 8px;
@@ -815,4 +816,346 @@ h1 {
   .weather .rain {
     animation: none;
   }
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn.on {
+  background: var(--gold);
+  color: #2a2118;
+}
+
+.topbar .home-btn {
+  min-height: 36px;
+  border: 1px solid var(--gold);
+  background: var(--gold);
+  color: #2a2118;
+  white-space: nowrap;
+}
+
+/* ---------- crests ---------- */
+
+.crest-pick {
+  position: relative;
+}
+
+.crest-swatch {
+  width: 36px;
+  height: 36px;
+  border: 2px solid var(--gold);
+  border-radius: 6px 6px 50% 50%;
+  cursor: pointer;
+}
+
+.crest-choices {
+  position: absolute;
+  right: 0;
+  top: 42px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(4, 32px);
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background: var(--parchment);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.crest-choices .btn {
+  grid-column: span 4;
+}
+
+.crest-choice {
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 6px 6px 50% 50%;
+  cursor: pointer;
+}
+
+.crest-choice.on {
+  outline: 2px solid var(--gold-hi);
+  outline-offset: 1px;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+}
+
+.title-select {
+  min-height: 36px;
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  background: var(--parchment);
+  color: var(--ink);
+  font: inherit;
+  padding: 0 6px;
+}
+
+/* ---------- teaching quests ---------- */
+
+.quest {
+  margin: 10px 0;
+  padding: 12px var(--gutter);
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background: var(--parchment-2);
+}
+
+.quest h3 {
+  margin: 0 0 6px;
+  font-size: 0.98rem;
+}
+
+.quest p {
+  margin: 4px 0;
+  font-size: 0.88rem;
+}
+
+.quest-wallet {
+  font-weight: 400;
+  font-size: 0.8rem;
+}
+
+.quest-progress {
+  font-weight: 600;
+}
+
+.quest-link {
+  color: inherit;
+  font-size: 0.88rem;
+}
+
+/* ---------- the Quest Replay ---------- */
+
+.replay {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.replay-step {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 8px;
+  font-size: 0.88rem;
+}
+
+.replay-n {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: #2a2118;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.replay-goods {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+}
+
+.replay-goods .give {
+  color: #b0473a;
+}
+
+.replay-goods .get {
+  color: var(--moss);
+}
+
+/* ---------- the replay timeline ---------- */
+
+.replay-open {
+  left: auto;
+  right: 10px;
+}
+
+.timeline {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: rgba(243, 234, 214, 0.94);
+  color: #2a2118;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.timeline-slider {
+  flex: 1 1 160px;
+  min-width: 0;
+  accent-color: var(--gold);
+}
+
+.timeline-when {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timeline-speed {
+  min-height: 36px;
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  background: #f3ead6;
+  color: #2a2118;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.timeline .btn {
+  min-height: 36px;
+  background: #f3ead6;
+  color: #2a2118;
+}
+/* --- the first-visit tour --------------------------------------------------- */
+
+.tour-shade {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(20, 12, 6, 0.55);
+}
+
+/* the target shows through a hole: a ring, and a huge shadow dimming the rest */
+.tour-spot {
+  position: fixed;
+  z-index: 50;
+  border: 3px solid var(--gold);
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(20, 12, 6, 0.55);
+  pointer-events: none;
+  transition: left 0.25s, top 0.25s, width 0.25s, height 0.25s;
+}
+
+.tour-card {
+  position: fixed;
+  z-index: 51;
+  width: min(360px, calc(100vw - 24px));
+  padding: 14px 16px 12px;
+  background: var(--parchment);
+  border: 3px solid #6b4a2b;
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px #4a3220, 6px 8px 0 rgba(0, 0, 0, 0.3);
+  font-size: 13.5px;
+  line-height: 1.45;
+  transition: left 0.25s, top 0.25s;
+}
+
+.tour-card h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.tour-card p {
+  margin: 0 0 8px;
+}
+
+.tour-card a {
+  color: #6b4a2b;
+  font-weight: bold;
+}
+
+.tour-count {
+  float: right;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.tour-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.tour-actions .spacer {
+  flex: 1;
+}
+
+.tour-skip {
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+
+.btn.primary {
+  background: var(--gold);
+  color: var(--ink);
+  font-weight: bold;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot,
+  .tour-card {
+    transition: none;
+  }
+}
+
+/* ---------- build mode ---------- */
+
+.arrange-open {
+  top: 58px;
+}
+
+.arrange-bar {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: rgba(243, 234, 214, 0.95);
+  color: #2a2118;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.arrange-hint {
+  flex: 1 1 180px;
+  font-size: 0.85rem;
+}
+
+.arrange-bar .btn {
+  min-height: 36px;
+  background: #f3ead6;
+  color: #2a2118;
+}
+
+.arrange-bar .arrange-done {
+  background: var(--gold);
+  font-weight: 700;
+}
+
+/* while arranging, the replay's bar (also at the bottom) steps aside */
+.castle-view[data-arranging='true'] .timeline,
+.castle-view[data-arranging='true'] .replay-open {
+  display: none;
 }

@@ -6,7 +6,7 @@
  */
 
 import type { ProtocolCategory } from '../../domain/catalog.js';
-import type { Guild, Journey, PositionKind, Verb } from '../../domain/model.js';
+import type { Goods, Guild, Journey, PositionKind, Verb } from '../../domain/model.js';
 import { tierOf } from '../../domain/tiers.js';
 import { ethPriceFrom } from '../../domain/risk.js';
 import { SIGNATURE_PROTOCOLS, protocolFamily } from '../assets/manifest.js';
@@ -85,10 +85,23 @@ export interface Errand {
   feeUsd: number | null;
   /** The wallet it belongs to. */
   wallet: string;
+  /** Each stop, for the Quest Replay: what was done where, goods given and received. */
+  steps: ErrandStep[];
+  /** The contract method, when known ("Multicall"). */
+  method: string | null;
+  block: number | null;
   /** The value tier of what it carries. */
   tier: number;
   time: number;
   label: string;
+}
+
+export interface ErrandStep {
+  verb: Verb;
+  /** Where: a protocol's name, one of the guild's wallets, or someone outside. */
+  where: string;
+  give: Goods[];
+  get: Goods[];
 }
 
 export interface CastleWorld {
@@ -144,7 +157,7 @@ export function worldFromGuild(guild: Guild): CastleWorld {
   const errands: Errand[] = [];
   for (const j of guild.journeys) {
     if (seen.has(j.key)) continue;
-    const e = errandOf(j, shown, towerOf);
+    const e = errandOf(j, shown, towerOf, (id) => guild.protocols.get(id)?.name ?? id);
     if (e) {
       seen.add(j.key);
       errands.push(e);
@@ -167,7 +180,12 @@ export function worldFromGuild(guild: Guild): CastleWorld {
  * transaction, or a send between the guild's own wallets whose towers are not
  * on the walls. `towerOf`: each guild wallet's tower.
  */
-export function errandOf(j: Journey, shownProtocols: ReadonlySet<string>, towerOf: ReadonlyMap<string, number> = new Map()): Errand | null {
+export function errandOf(
+  j: Journey,
+  shownProtocols: ReadonlySet<string>,
+  towerOf: ReadonlyMap<string, number> = new Map(),
+  protocolName: (id: string) => string = (id) => id,
+): Errand | null {
   const failed = j.status === 'failed';
   if (failed && !j.initiated) return null; // only a wallet's own failure is its errand
   const base = {
@@ -182,6 +200,16 @@ export function errandOf(j: Journey, shownProtocols: ReadonlySet<string>, towerO
     valueUsd: j.valueUsd,
     feeUsd: j.initiated ? j.feeUsd : null,
     wallet: j.hero,
+    method: j.method,
+    block: j.block,
+    steps: j.steps.map(
+      (st): ErrandStep => ({
+        verb: st.verb,
+        where: st.target.kind === 'building' ? protocolName(st.target.protocolId) : st.target.kind === 'home' ? `wallet ${st.target.address.slice(0, 6)}…${st.target.address.slice(-4)}` : 'someone outside the town',
+        give: st.give,
+        get: st.get,
+      }),
+    ),
   };
   if (j.counterpartyHero !== null) {
     if (failed) return null;

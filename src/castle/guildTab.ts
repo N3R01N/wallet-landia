@@ -10,6 +10,8 @@ import { toAddress } from '../data/ens.js';
 import { loadApiKey, saveApiKey, savePrefs, type Prefs } from '../settings.js';
 import type { Mode } from '../data/session.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
+import { encodeShare } from './share.js';
+import { bornCrest, crestColors, setCrests, TINCTURES } from '../util/rng.js';
 import { ALLOWED_RPC_HOSTS, DEFAULT_RPC, validRpcUrl } from '../data/rpc.js';
 
 export interface GuildTabContext {
@@ -29,6 +31,10 @@ export interface GuildTabContext {
   onImportHistory(data: ArrayBuffer): Promise<string>;
   /** Use another Ethereum node ('' for the free public one). */
   onRpc(url: string): void;
+  /** The followed wallet whose castle is on show (null: your own). */
+  visiting: string | null;
+  /** Show a followed wallet's castle. */
+  onVisit(address: string): void;
 }
 
 const MODE_TEXT: Record<Mode, string> = {
@@ -53,6 +59,8 @@ export function guildTab(ctx: GuildTabContext): HTMLElement {
     el('p', { class: 'muted source' }, modeText(ctx.mode)),
     keySection(ctx),
     walletsSection(ctx, p),
+    shareSection(p),
+    followedSection(ctx, p),
     historySection(ctx),
     nodeSection(ctx, p),
     ctx.budget ? el('p', { class: 'muted budget' }, `Zerion requests left today: ${ctx.budget.remaining}`) : null,
@@ -101,6 +109,18 @@ function keySection(ctx: GuildTabContext): HTMLElement {
 function walletsSection(ctx: GuildTabContext, p: Prefs): HTMLElement {
   const rows = p.owned.map((a) => {
     const name = p.ens[a];
+    // shown when sharing your castle, or kept to yourself (the default)
+    const pub = p.publicWallets.includes(a);
+    const privacy = el(
+      'button',
+      { class: `btn small privacy${pub ? ' on' : ''}`, type: 'button', 'aria-pressed': String(pub), title: pub ? 'Public: in your share link. Tap to make it private.' : 'Private: never shared. Tap to make it public.' },
+      pub ? '🔓 Public' : '🔒 Private',
+    );
+    privacy.addEventListener('click', () => {
+      p.publicWallets = pub ? p.publicWallets.filter((x) => x !== a) : [...p.publicWallets, a];
+      savePrefs(p);
+      ctx.refresh();
+    });
     const remove = el('button', { class: 'btn small', type: 'button', 'aria-label': `Remove ${name ?? shortAddr(a)}` }, '✕');
     remove.addEventListener('click', () => {
       p.owned = p.owned.filter((x) => x !== a);
@@ -113,7 +133,7 @@ function walletsSection(ctx: GuildTabContext, p: Prefs): HTMLElement {
       'li',
       { class: 'wallet-row' },
       el('div', {}, el('strong', {}, name ?? shortAddr(a)), name ? el('div', { class: 'muted mono' }, shortAddr(a)) : null),
-      remove,
+      el('div', { class: 'row-actions' }, crestButton(a, p, ctx), privacy, remove),
     );
   });
 
@@ -233,4 +253,124 @@ function nodeSection(ctx: GuildTabContext, p: Prefs): HTMLElement {
     el('div', { class: 'form-row' }, input, use, reset),
     msg,
   );
+}
+
+function followedSection(ctx: GuildTabContext, p: Prefs): HTMLElement {
+  const rows = p.followed.map((a) => {
+    const name = p.ens[a];
+    const here = ctx.visiting === a;
+    const visit = el('button', { class: `btn small${here ? ' on' : ''}`, type: 'button' }, here ? 'Here' : 'Visit');
+    visit.addEventListener('click', () => ctx.onVisit(a));
+    const remove = el('button', { class: 'btn small', type: 'button', 'aria-label': `Stop following ${name ?? shortAddr(a)}` }, '✕');
+    remove.addEventListener('click', () => {
+      p.followed = p.followed.filter((x) => x !== a);
+      savePrefs(p);
+      ctx.refresh();
+    });
+    return el(
+      'li',
+      { class: 'wallet-row' },
+      el('div', {}, el('strong', {}, name ?? shortAddr(a)), name ? el('div', { class: 'muted mono' }, shortAddr(a)) : null),
+      el('div', { class: 'row-actions' }, visit, remove),
+    );
+  });
+  const input = el('input', { type: 'text', placeholder: '0x… or name.eth', spellcheck: 'false', autocomplete: 'off', 'aria-label': 'Wallet to follow' });
+  const add = el('button', { class: 'btn', type: 'button' }, 'Follow');
+  const msg = el('div', { class: 'form-msg', role: 'status' });
+  const go = async () => {
+    msg.textContent = '';
+    add.disabled = true;
+    try {
+      const a = await toAddress(input.value);
+      if (p.owned.includes(a)) throw new Error('That wallet is one of yours: it is already a tower of your castle.');
+      if (!p.followed.includes(a)) p.followed.push(a);
+      savePrefs(p);
+      input.value = '';
+      ctx.refresh();
+    } catch (error) {
+      msg.textContent = error instanceof Error ? error.message : String(error);
+    } finally {
+      add.disabled = false;
+    }
+  };
+  add.addEventListener('click', () => void go());
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') void go();
+  });
+  return el(
+    'div',
+    { class: 'guild-section', 'data-section': 'followed' },
+    el('h2', {}, 'Wallets you follow'),
+    el('p', { class: 'muted' }, 'Other people’s wallets: visit their castle to see it as they would, without touching anything.'),
+    rows.length ? el('ul', { class: 'wallet-list' }, ...rows) : el('p', { class: 'muted empty' }, 'Nobody followed yet.'),
+    el('div', { class: 'form-row' }, input, add),
+    msg,
+  );
+}
+
+function shareSection(p: Prefs): HTMLElement {
+  const wallets = p.owned.filter((a) => p.publicWallets.includes(a));
+  const out = el(
+    'div',
+    { class: 'guild-section', 'data-section': 'share' },
+    el('h2', {}, 'Share your castle'),
+    el('p', { class: 'muted' }, 'A link that opens your castle for a friend, read-only. Only the wallets you marked public go in it (the link holds their addresses).'),
+  );
+  if (wallets.length === 0) {
+    out.append(el('p', { class: 'muted empty' }, 'Mark at least one of your wallets public (above) to share.'));
+    return out;
+  }
+  const first = wallets[0]!;
+  const link = `${location.origin}${location.pathname}${encodeShare({ wallets, name: p.ens[first] ?? '' })}`;
+  const field = el('input', { type: 'text', readonly: '', 'aria-label': 'Your share link', class: 'mono' });
+  field.value = link;
+  const msg = el('div', { class: 'form-msg ok', role: 'status' });
+  const copy = el('button', { class: 'btn', type: 'button' }, 'Copy link');
+  copy.addEventListener('click', () => {
+    field.select();
+    void navigator.clipboard
+      ?.writeText(link)
+      .then(() => {
+        msg.textContent = 'Copied.';
+      })
+      .catch(() => {
+        msg.textContent = 'Select the link and copy it.';
+      });
+  });
+  out.append(el('div', { class: 'form-row' }, field, copy), msg);
+  return out;
+}
+
+/**
+ * A wallet's crest: a swatch of its colour; tapping it offers the heraldic
+ * tinctures (and the colour it was born with). The choice colours its tower's
+ * flag, and is kept with the player's preferences (shared with the town).
+ */
+function crestButton(address: string, p: Prefs, ctx: GuildTabContext): HTMLElement {
+  const [main] = crestColors(address);
+  const wrap = el('div', { class: 'crest-pick' });
+  const swatch = el('button', { class: 'crest-swatch', type: 'button', 'aria-label': 'Crest colour', 'aria-expanded': 'false', style: `background:${main}` });
+  const choices = el('div', { class: 'crest-choices', role: 'group', 'aria-label': 'Pick a crest colour', hidden: '' });
+  const born = bornCrest(address);
+  const pick = (color: string | null) => {
+    if (color === null) delete p.crests[address];
+    else p.crests[address] = [color, born[1]];
+    setCrests(p.crests);
+    savePrefs(p);
+    ctx.refresh();
+  };
+  for (const t of TINCTURES) {
+    const b = el('button', { class: `crest-choice${t.color === main ? ' on' : ''}`, type: 'button', title: t.name, 'aria-label': t.name, style: `background:${t.color}` });
+    b.addEventListener('click', () => pick(t.color));
+    choices.append(b);
+  }
+  const reset = el('button', { class: 'btn small', type: 'button', title: 'The colour this wallet was born with' }, 'Born');
+  reset.addEventListener('click', () => pick(null));
+  choices.append(reset);
+  swatch.addEventListener('click', () => {
+    choices.hidden = !choices.hidden;
+    swatch.setAttribute('aria-expanded', String(!choices.hidden));
+  });
+  wrap.append(swatch, choices);
+  return wrap;
 }

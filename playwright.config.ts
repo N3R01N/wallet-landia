@@ -8,6 +8,8 @@ import { defineConfig } from '@playwright/test';
 /** Heavy specs (picture captures and the like) run before a commit only: name them *.slow.spec.ts. */
 const SLOW = /\.slow\.spec\.ts$/;
 
+const SEEN_TOUR = { cookies: [], origins: [{ origin: 'http://localhost:5198', localStorage: [{ name: 'wallet-landia-v4/castle/tour-seen', value: '1' }] }] };
+
 export default defineConfig({
   testDir: 'e2e',
   timeout: 90_000,
@@ -20,9 +22,10 @@ export default defineConfig({
     launchOptions: { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
   },
   // `fast` runs after every change (`npm run check`); `slow` before a commit (`npm run e2e:slow`).
+  // Every test starts with the first-visit tour already seen (it would cover the page); the tour's own test clears it.
   projects: [
-    { name: 'fast', testIgnore: SLOW },
-    { name: 'slow', testMatch: SLOW },
+    { name: 'fast', testIgnore: SLOW, use: { storageState: SEEN_TOUR } },
+    { name: 'slow', testMatch: SLOW, use: { storageState: SEEN_TOUR } },
   ],
   webServer: {
     command: 'npx vite --port 5198 --strictPort',

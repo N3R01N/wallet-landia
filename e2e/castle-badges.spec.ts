@@ -33,3 +33,29 @@ test('the player card, every medal (earned ones first), and a badge’s sheet', 
 
   expect(errors).toEqual([]);
 });
+
+test('the player wears a title their badges unlock, and the pick is kept', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto('/');
+  await page.locator('.tab', { hasText: 'Badges' }).click();
+  const select = page.locator('.badges-tab').getByLabel('Your title');
+  await expect(select).toBeVisible({ timeout: 30_000 });
+  const options = await select.locator('option').allTextContents();
+  expect(options.length).toBeGreaterThan(1);
+  const current = await select.inputValue();
+  const other = options.find((o) => o !== current) ?? options[0]!;
+  await select.selectOption(other);
+  expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('wallet-landia-v4/prefs/v1') ?? '{}') as { title?: string }).title)).toBe(other);
+  await page.reload();
+  await page.locator('.tab', { hasText: 'Badges' }).click();
+  await expect(page.locator('.badges-tab').getByLabel('Your title')).toHaveValue(other, { timeout: 30_000 });
+});
+
+test('teaching quests for your wallets: open ones with what they teach, links only to https', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto('/');
+  await page.locator('.tab', { hasText: 'Badges' }).click();
+  const quests = page.locator('.badges-tab .quests');
+  await expect(quests.locator('h2')).toContainText(/Quests for your wallets · \d+ open/, { timeout: 30_000 });
+  for (const href of await quests.locator('a.quest-link').evaluateAll((as) => as.map((a) => a.getAttribute('href') ?? ''))) expect(href).toMatch(/^https:\/\//);
+});

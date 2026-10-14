@@ -357,7 +357,7 @@ export function teachingQuests(hero: Hero, guild: Guild): TeachingQuest[] {
       id: 'keys',
       name: 'Recover your master keys',
       icon: '🗝️',
-      story: 'Keys to your chests are scattered around town. A careful hero takes back the ones no longer needed.',
+      story: 'Keys to your chests are scattered around town. A careful lord takes back the ones no longer needed.',
       lesson: 'Each approval lets a contract move one of your tokens, often without limit, until you revoke it.',
       done: open.size === 0,
       progress:
@@ -378,7 +378,7 @@ export function teachingQuests(hero: Hero, guild: Guild): TeachingQuest[] {
       story: 'The monks of the Temple bless gold that is left in their care, and it grows a little each day.',
       lesson: 'Staking ETH (directly, or through a liquid staking token like stETH) earns rewards for helping secure Ethereum.',
       done: blessed,
-      progress: blessed ? 'Some of this hero’s gold is blessed.' : `${Math.round(eth).toLocaleString('en-US')} USD of ETH sits idle in the purse.`,
+      progress: blessed ? 'Some of this wallet’s gold is blessed.' : `${Math.round(eth).toLocaleString('en-US')} USD of ETH sits idle in this wallet.`,
     });
   }
 
@@ -429,7 +429,7 @@ export function teachingQuests(hero: Hero, guild: Guild): TeachingQuest[] {
       id: 'midden',
       name: 'Leave the cursed junk alone',
       icon: '🗑',
-      story: `${hero.spamCount} pieces of cursed junk lie in the midden. They were thrown over the fence, not earned.`,
+      story: `${hero.spamCount} pieces of cursed junk lie in the midden. They were thrown over the castle wall, not earned.`,
       lesson: 'Spam tokens arrive unasked, often named like a website. Never visit it or try to sell them: that is the trap.',
       done: true,
       progress: 'Hidden from the treasury. Nothing to do but ignore them.',

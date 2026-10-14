@@ -27,6 +27,8 @@ export interface Placement {
 
 export interface BuildingPlacement extends Placement {
   protocol: WorldProtocol;
+  /** Its plot in the town (BUILDING_SLOTS). */
+  slot: number;
   /** Where a visitor stands: the model's `door` point, 2 m out from the centre on the front. */
   door: { x: number; z: number };
   /** Where the building's person comes out to: between the front wall and the door point. */
@@ -57,6 +59,8 @@ export interface CastlePlan {
   /** Glow overlays, one per road tile. */
   lit: Placement[];
   buildings: BuildingPlacement[];
+  /** Plots with no building (where one can be moved in build mode). */
+  freeSlots: { slot: number; x: number; z: number }[];
   /** The courier's way out to the first building (routeTo for any other). */
   courierRoute: Waypoint[];
   /** Woods, rocks and hills round the island and the town. */
@@ -75,7 +79,7 @@ export const TOWN = { x0: -10, x1: 10, z0: 0, z1: 22 } as const;
 export const TOWER_AT = { x: 0, z: 12 } as const;
 
 /** Slots for buildings, in the order they fill: beside the road, nearest the gate first. */
-const BUILDING_SLOTS: { x: number; z: number; face: number }[] = [
+export const BUILDING_SLOTS: { x: number; z: number; face: number }[] = [
   { x: -4, z: 7, face: Math.PI / 2 },
   { x: 4, z: 7, face: -Math.PI / 2 },
   { x: -4, z: 11, face: Math.PI / 2 },
@@ -124,7 +128,50 @@ const TOWER_SLOTS = [
   { x: 8, z: -4 },
 ];
 
-export function planCastle(world: Pick<CastleWorld, 'wallets' | 'tier' | 'protocols'> & Partial<Pick<CastleWorld, 'walletTiers'>>): CastlePlan {
+/**
+ * Each protocol's plot: the ones the player arranged (build mode) where they
+ * asked, if the plot is real and still free; the rest fill the free plots in
+ * order, nearest the gate first. Protocols beyond the plots get none.
+ */
+export function assignSlots(protocolIds: readonly string[], wanted: Readonly<Record<string, number>> = {}): Map<string, number> {
+  const out = new Map<string, number>();
+  const taken = new Set<number>();
+  const ids = protocolIds.slice(0, BUILDING_SLOTS.length);
+  for (const id of ids) {
+    const w = wanted[id];
+    if (typeof w === 'number' && Number.isInteger(w) && w >= 0 && w < BUILDING_SLOTS.length && !taken.has(w)) {
+      out.set(id, w);
+      taken.add(w);
+    }
+  }
+  let next = 0;
+  for (const id of ids) {
+    if (out.has(id)) continue;
+    while (taken.has(next)) next++;
+    out.set(id, next);
+    taken.add(next);
+  }
+  return out;
+}
+
+/**
+ * Build mode's moves: the protocol goes to the plot; whoever was there takes
+ * its old plot. Returns the whole arrangement (every protocol pinned), to keep.
+ */
+export function moveToSlot(current: ReadonlyMap<string, number>, protocolId: string, slot: number): Record<string, number> {
+  const out = Object.fromEntries(current);
+  const from = current.get(protocolId);
+  if (from === undefined || slot < 0 || slot >= BUILDING_SLOTS.length) return out;
+  const other = [...current].find(([, s]) => s === slot)?.[0];
+  out[protocolId] = slot;
+  if (other !== undefined && other !== protocolId) out[other] = from;
+  return out;
+}
+
+export function planCastle(
+  world: Pick<CastleWorld, 'wallets' | 'tier' | 'protocols'> & Partial<Pick<CastleWorld, 'walletTiers'>>,
+  arranged: Readonly<Record<string, number>> = {},
+): CastlePlan {
   const tier = clampTier(world.tier);
   const cells = (x0: number, x1: number, z0: number, z1: number, inside: (x: number, z: number) => boolean) => {
     const out: { x: number; z: number }[] = [];
@@ -177,8 +224,13 @@ export function planCastle(world: Pick<CastleWorld, 'wallets' | 'tier' | 'protoc
   // The main road: from the bridge's landing to the tower.
   for (let z = TOWN.z0 + 0.5; z <= TOWER_AT.z - 1.5; z += 1) road.push({ name: 'path.tile.straight', x: 0, z, key: 'road' });
 
-  const buildings: BuildingPlacement[] = world.protocols.slice(0, BUILDING_SLOTS.length).map((protocol, i) => {
-    const slot = BUILDING_SLOTS[i]!;
+  const slotOf = assignSlots(
+    world.protocols.map((p) => p.id),
+    arranged,
+  );
+  const buildings: BuildingPlacement[] = world.protocols.slice(0, BUILDING_SLOTS.length).map((protocol) => {
+    const index = slotOf.get(protocol.id)!;
+    const slot = BUILDING_SLOTS[index]!;
     const cat = protocol.category in WING_FOR ? protocol.category : 'other';
     const out = { x: Math.sin(slot.face), z: Math.cos(slot.face) }; // the building's front (+Z) in the world
     const category = `building.category.${cat}.t${clampTier(protocol.tier)}`;
@@ -191,6 +243,7 @@ export function planCastle(world: Pick<CastleWorld, 'wallets' | 'tier' | 'protoc
       rot: slot.face,
       tier: clampTier(protocol.tier),
       protocol,
+      slot: index,
       door: { x: round(slot.x + out.x * DOOR_OUT), z: round(slot.z + out.z * DOOR_OUT) },
       npc: { x: round(slot.x + out.x * NPC_OUT), z: round(slot.z + out.z * NPC_OUT) },
     };
@@ -237,6 +290,7 @@ export function planCastle(world: Pick<CastleWorld, 'wallets' | 'tier' | 'protoc
     road,
     lit,
     buildings,
+    freeSlots: BUILDING_SLOTS.map((p, slot) => ({ slot, x: p.x, z: p.z })).filter((p) => !buildings.some((b) => b.slot === p.slot)),
     courierRoute,
     scenery: planScenery(),
     decor: planDecor(towers),

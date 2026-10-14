@@ -38,6 +38,10 @@ export interface CastleViewOptions {
   hour?: number;
   /** The market's weather to start with. */
   weather?: Weather;
+  /** The player's own arrangement of the town (build mode): protocol id → plot. */
+  arranged?: Record<string, number>;
+  /** In build mode, a tap on a building (its protocol) or on an empty plot. */
+  onArrangeTap?: (tap: { protocolId: string } | { slot: number }) => void;
 }
 
 const FOCUS_POINT: Record<CastleFocus, [number, number]> = {
@@ -67,6 +71,8 @@ const COURIER_GAP = 2.5;
 /** With nothing new to play, the recent errands play again after this pause; this many of them. */
 const REPLAY_PAUSE = 3;
 const REPLAY_COUNT = 12;
+/** At most this many couriers waiting while the replay timeline feeds them. */
+const MAX_QUEUED = 6;
 /** The bell's yoke when the tower model has no `hinge` (the delivered tower has it at 9.1 m). */
 const BELL_HEIGHT = 9.1;
 /** The spec leaves the barrier's height to the game (docs/ASSET_SPEC.md §3.3). */
@@ -88,6 +94,10 @@ const DECOR_TINT: Record<string, string> = {
   'animal.dog': 'crest',
   'animal.horse': 'crest',
 };
+/** Build mode's rings: on an empty plot, and under the building chosen to move. Shared by every view (tiny, never freed). */
+const RING_GEOMETRY = new THREE.RingGeometry(0.85, 1.05, 32).rotateX(-Math.PI / 2);
+const PLOT_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xe7c46b, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+const CHOSEN_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
 /** Clips a placed model plays on its own, looping (the first one it has). */
 const LOOPING_CLIPS = ['idle', 'wave', 'swim'];
 /** A wallet tower's top, where its flag stands (docs/ASSET_SPEC.md §3.1: 3 m). */
@@ -179,7 +189,7 @@ export class CastleView {
   readonly #camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 400);
   readonly #focus = new THREE.Vector3();
   readonly #opts: CastleViewOptions;
-  readonly #plan: CastlePlan;
+  #plan: CastlePlan;
   readonly #timer = new THREE.Timer();
   readonly #raycaster = new THREE.Raycaster();
   readonly #pointer = new THREE.Vector2();
@@ -201,6 +211,7 @@ export class CastleView {
   readonly #npcs = new Map<string, Figure>();
   #lastSpawn = -Infinity;
   #replayAt = 0;
+  #autoReplay = true;
   /** When the bell last started ringing, and when a real block last came. */
   #ringAt = -Infinity;
   #blockAt = 0;
@@ -217,6 +228,11 @@ export class CastleView {
   #courierTargets: THREE.Mesh[] = [];
   /** The red seal over the barrier while a failed transaction's courier is turned back. */
   #refusal: THREE.Sprite | null = null;
+  /** Everything the town's arrangement places (rebuilt in place by `rearrange`). */
+  readonly #layout = new THREE.Group();
+  /** Build mode: the rings on empty plots and under the chosen building. */
+  readonly #arrangeMarks = new THREE.Group();
+  #arranging = false;
   /** Buildings with a looping clip of their own (Curve's water wheel, Pendle's pendulum). */
   readonly #ambient: Figure[] = [];
   #litTiles: THREE.Object3D[] = [];
@@ -236,7 +252,7 @@ export class CastleView {
 
   constructor(opts: CastleViewOptions) {
     this.#opts = opts;
-    this.#plan = planCastle(opts.world);
+    this.#plan = planCastle(opts.world, opts.arranged);
     // the recent errands first, oldest first
     this.#queue = opts.world.errands.slice(-REPLAY_COUNT);
     this.#library = new ModelLibrary(opts.theme);
@@ -251,7 +267,7 @@ export class CastleView {
     this.#renderer = new THREE.WebGLRenderer({ canvas: this.#canvas, antialias: true });
     this.#renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.#renderer.setClearColor(0xbcd3e0, 1);
-    this.#scene.add(this.#hemi);
+    this.#scene.add(this.#hemi, this.#layout, this.#arrangeMarks);
     this.#sun.position.set(10, 20, 6);
     this.#scene.add(this.#sun);
     // the weather: a grey veil and rain over the scene (DOM layers: cheap, and no draw calls)
@@ -305,13 +321,33 @@ export class CastleView {
     return { x: rect.left + ((this.#scratch.x + 1) / 2) * rect.width, y: rect.top + ((1 - this.#scratch.y) / 2) * rect.height };
   }
 
+  /** Test hook: which plot each protocol's building stands on. */
+  slots(): Record<string, number> {
+    return Object.fromEntries(this.#plan.buildings.map((b) => [b.protocol.id, b.slot]));
+  }
+
+  /** Test hook: the wallets on show, in their towers' order. */
+  walletIds(): string[] {
+    return [...this.#opts.world.walletIds];
+  }
+
   /** Test hook: the protocols with a building, nearest the gate first. */
   buildingIds(): string[] {
     return this.#plan.buildings.map((b) => b.protocol.id);
   }
 
   /** Test hook: what the errands look like now. */
-  state(): { bridgeAngle: number; barrierAngle: number; courier: { x: number; z: number } | null; couriers: number; queued: number; zoom: number; ringing: boolean } {
+  state(): {
+    bridgeAngle: number;
+    barrierAngle: number;
+    courier: { x: number; z: number } | null;
+    couriers: number;
+    queued: number;
+    zoom: number;
+    ringing: boolean;
+    /** The errands of the couriers out and the next one queued. */
+    upcoming: string[];
+  } {
     const c = this.#runs[0]?.figure.object.position;
     return {
       bridgeAngle: this.#bridgeAngle,
@@ -321,12 +357,34 @@ export class CastleView {
       queued: this.#queue.length,
       zoom: this.#zoom,
       ringing: this.#time - this.#ringAt < BELL_RING,
+      upcoming: [...this.#runs.map((r) => r.errand.key), ...this.#queue.slice(0, 1).map((e) => e.key)],
     };
   }
 
-  /** New transactions: their couriers go next, ahead of the replay. */
-  enqueue(errands: readonly Errand[]): void {
-    this.#queue.unshift(...errands);
+  /**
+   * Couriers for these errands. By default they go next, ahead of the rest (new
+   * transactions); `inOrder` puts them at the back, in order (the replay
+   * timeline), keeping at most MAX_QUEUED waiting (the oldest waiting are
+   * dropped: a fast replay must not build an endless backlog).
+   */
+  enqueue(errands: readonly Errand[], inOrder = false): void {
+    if (!inOrder) {
+      this.#queue.unshift(...errands);
+      return;
+    }
+    this.#queue.push(...errands);
+    if (this.#queue.length > MAX_QUEUED) this.#queue.splice(0, this.#queue.length - MAX_QUEUED);
+  }
+
+  /** Forget the couriers waiting to set out (those out finish their errands). */
+  clearQueue(): void {
+    this.#queue = [];
+  }
+
+  /** Whether the recent errands play again when nothing else is waiting (off while the replay timeline drives). */
+  setAutoReplay(on: boolean): void {
+    this.#autoReplay = on;
+    this.#replayAt = 0;
   }
 
   /** A block was mined: the bell rings. */
@@ -347,6 +405,7 @@ export class CastleView {
     // Everything shown came from this view's own library (models, standins, the tower's own materials):
     // nothing is shared beyond the view, so all of it goes.
     for (const t of this.#courierTargets) t.removeFromParent(); // shared by every view: kept
+    this.#arrangeMarks.clear(); // build mode's rings: shared, kept
     disposeTree(this.#scene);
     this.#refusal?.material.map?.dispose();
     this.#refusal?.material.dispose();
@@ -374,54 +433,7 @@ export class CastleView {
     await Promise.all([...names].map(async (n) => this.#loaded.set(n, await lib.load(n))));
     if (this.#disposed) return;
 
-    for (const p of placements) {
-      // the first of the name and its fallbacks that has a model; the last one's standin otherwise
-      const options = [p.name, ...(p.fallbacks ?? [])];
-      if (p.optional && !options.some((n) => this.#loaded.get(n))) continue; // decoration waits for its model
-      const chosen = options.find((n) => this.#loaded.get(n)) ?? options[options.length - 1]!;
-      const obj = this.#make(chosen);
-      // its own looping clip: a mill wheel, a pendulum, an animal at rest, a flag in the wind
-      const loop = this.#loaded.get(chosen)?.clips.find((c) => LOOPING_CLIPS.includes(c.name));
-      if (loop) {
-        const moving = new Figure(obj, [loop]);
-        moving.play(loop.name);
-        this.#ambient.push(moving);
-      }
-      obj.position.set(p.x, 0, p.z);
-      obj.rotation.y = p.rot ?? 0;
-      this.#scene.add(obj);
-      if (p.key === 'flag') {
-        // on top of its wallet's tower, in that wallet's crest colour
-        obj.position.y = TOWER_TOP;
-        const wallet = this.#opts.world.walletIds[plan.towers.findIndex((t) => t.x === p.x && t.z === p.z)];
-        if (wallet) paint(obj, 'Tint', crestColors(wallet)[0], this.#painted);
-      }
-      if (p.key === 'lit') {
-        obj.position.y = GLOW_LIFT; // over the road's surface, not under it
-        obj.visible = false;
-        this.#litTiles.push(obj);
-        tintGlow(obj);
-      }
-      // The tier shows in the Trim (docs/ASSET_SPEC.md §1.3): a building's from what the guild keeps
-      // there, the castle's own pieces from the guild's worth.
-      if ('protocol' in p) {
-        obj.userData.building = p;
-        this.#buildingRoots.push(obj);
-        const brand = brandColor((p as BuildingPlacement).protocol.id);
-        if (brand) paint(obj, 'Tint', brand, this.#painted);
-        paint(obj, 'Trim', tierColor(p.tier ?? 0), this.#painted);
-      } else if (p.name.startsWith('castle.')) {
-        // a wallet's tower at its own tier, the rest of the castle at the guild's
-        paint(obj, 'Trim', tierColor(p.tier ?? plan.keep.tier ?? 0), this.#painted);
-      }
-      const decorTint = p.key === 'decor' ? DECOR_TINT[p.name] : undefined;
-      if (decorTint) paint(obj, 'Tint', decorTint === 'crest' ? crestColors(this.#opts.world.walletIds[0] ?? '')[0] : decorTint, this.#painted);
-      if (p === plan.tower) {
-        this.#hangBell(obj, this.#make('town.tower.bell'));
-        this.#tower = obj;
-        this.#towerMaterials = ownMaterials(obj);
-      }
-    }
+    this.#placeLayout();
 
     // The drawbridge swings about its hinge: lowered is flat towards the town, raised stands up.
     const hinge = new THREE.Group();
@@ -455,6 +467,66 @@ export class CastleView {
       seal.material.needsUpdate = true;
     });
 
+    this.#applyLight();
+    if (this.#opts.weather) this.setWeather(this.#opts.weather);
+    this.element.append(this.#weatherEl);
+    this.#ready = true;
+    this.element.dataset.ready = 'true';
+  }
+
+  /** Places the town as the plan has it: buildings, paths, the castle's pieces, decorations, the bell, each building's person. */
+  #placeLayout(): void {
+    const plan = this.#plan;
+    const placements = this.#placements();
+    for (const p of placements) {
+      // the first of the name and its fallbacks that has a model; the last one's standin otherwise
+      const options = [p.name, ...(p.fallbacks ?? [])];
+      if (p.optional && !options.some((n) => this.#loaded.get(n))) continue; // decoration waits for its model
+      const chosen = options.find((n) => this.#loaded.get(n)) ?? options[options.length - 1]!;
+      const obj = this.#make(chosen);
+      // its own looping clip: a mill wheel, a pendulum, an animal at rest, a flag in the wind
+      const loop = this.#loaded.get(chosen)?.clips.find((c) => LOOPING_CLIPS.includes(c.name));
+      if (loop) {
+        const moving = new Figure(obj, [loop]);
+        moving.play(loop.name);
+        this.#ambient.push(moving);
+      }
+      obj.position.set(p.x, 0, p.z);
+      obj.rotation.y = p.rot ?? 0;
+      this.#layout.add(obj);
+      if (p.key === 'flag') {
+        // on top of its wallet's tower, in that wallet's crest colour
+        obj.position.y = TOWER_TOP;
+        const wallet = this.#opts.world.walletIds[plan.towers.findIndex((t) => t.x === p.x && t.z === p.z)];
+        if (wallet) paint(obj, 'Tint', crestColors(wallet)[0], this.#painted);
+      }
+      if (p.key === 'lit') {
+        obj.position.y = GLOW_LIFT; // over the road's surface, not under it
+        obj.visible = false;
+        this.#litTiles.push(obj);
+        tintGlow(obj);
+      }
+      // The tier shows in the Trim (docs/ASSET_SPEC.md §1.3): a building's from what the guild keeps
+      // there, the castle's own pieces from the guild's worth.
+      if ('protocol' in p) {
+        obj.userData.building = p;
+        this.#buildingRoots.push(obj);
+        const brand = brandColor((p as BuildingPlacement).protocol.id);
+        if (brand) paint(obj, 'Tint', brand, this.#painted);
+        paint(obj, 'Trim', tierColor(p.tier ?? 0), this.#painted);
+      } else if (p.name.startsWith('castle.')) {
+        // a wallet's tower at its own tier, the rest of the castle at the guild's
+        paint(obj, 'Trim', tierColor(p.tier ?? plan.keep.tier ?? 0), this.#painted);
+      }
+      const decorTint = p.key === 'decor' ? DECOR_TINT[p.name] : undefined;
+      if (decorTint) paint(obj, 'Tint', decorTint === 'crest' ? crestColors(this.#opts.world.walletIds[0] ?? '')[0] : decorTint, this.#painted);
+      if (p === plan.tower) {
+        this.#hangBell(obj, this.#make('town.tower.bell'));
+        this.#tower = obj;
+        this.#towerMaterials = ownMaterials(obj);
+      }
+    }
+
     // Each building's person waits inside, to come out when a courier calls.
     for (const b of plan.buildings) {
       const name = this.#loaded.get(`person.npc.${b.protocol.category}`) ? `person.npc.${b.protocol.category}` : 'person.npc.base';
@@ -462,21 +534,63 @@ export class CastleView {
       npc.object.position.set(b.npc.x, 0, b.npc.z);
       npc.object.rotation.y = b.rot ?? 0; // faces out of its door, towards the visitor
       npc.object.visible = false;
-      this.#scene.add(npc.object);
+      this.#layout.add(npc.object);
       this.#figures.push(npc);
       this.#npcs.set(b.protocol.id, npc);
     }
     // the Glow parts of everything placed (shared materials: one entry each)
-    this.#scene.traverse((o) => {
+    this.#layout.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
       for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) if (m.name === 'Glow' && 'emissiveIntensity' in m) this.#glows.add(m as THREE.MeshStandardMaterial);
     });
+  }
+
+  /**
+   * Build mode: the town again with the player's arrangement, in place (the
+   * models are already loaded). Couriers out are called home; the queue stays.
+   */
+  rearrange(arranged: Record<string, number>): void {
+    if (!this.#ready) return;
+    for (const run of [...this.#runs]) this.#finish(run);
+    for (const f of [...this.#figures, ...this.#ambient]) f.dispose();
+    this.#figures.length = 0;
+    this.#ambient.length = 0;
+    this.#npcs.clear();
+    for (const m of this.#towerMaterials) m.dispose();
+    // the models' geometry and materials belong to the library and stay
+    this.#layout.clear();
+    this.#litTiles = [];
+    this.#buildingRoots.length = 0;
+    this.#tower = null;
+    this.#towerMaterials = [];
+    this.#towerOpacity = 1;
+    this.#bell = null;
+    this.#plan = planCastle(this.#opts.world, arranged);
+    this.#placeLayout();
     this.#applyLight();
-    if (this.#opts.weather) this.setWeather(this.#opts.weather);
-    this.element.append(this.#weatherEl);
-    this.#ready = true;
-    this.element.dataset.ready = 'true';
+    this.setArranging(this.#arranging, null);
+  }
+
+  /** Build mode on or off; `selected` is the building chosen to move (a ring under it), rings mark the empty plots. */
+  setArranging(on: boolean, selected: string | null): void {
+    this.#arranging = on;
+    this.#arrangeMarks.clear();
+    this.element.dataset.arranging = String(on);
+    if (!on) return;
+    for (const f of this.#plan.freeSlots) {
+      const ring = new THREE.Mesh(RING_GEOMETRY, PLOT_MATERIAL);
+      ring.position.set(f.x, 0.04, f.z);
+      ring.userData.slot = f.slot;
+      this.#arrangeMarks.add(ring);
+    }
+    const chosen = this.#plan.buildings.find((b) => b.protocol.id === selected);
+    if (chosen) {
+      const ring = new THREE.Mesh(RING_GEOMETRY, CHOSEN_MATERIAL);
+      ring.position.set(chosen.x, 0.05, chosen.z);
+      ring.scale.setScalar(1.25);
+      this.#arrangeMarks.add(ring);
+    }
   }
 
   /** A sprite's picture from the theme, or null when it has none. */
@@ -570,7 +684,7 @@ export class CastleView {
     if (hinge) hinge.getWorldPosition(pivot.position);
     else pivot.position.set(tower.position.x, BELL_HEIGHT, tower.position.z);
     pivot.add(bellModel);
-    this.#scene.add(pivot);
+    this.#layout.add(pivot);
     this.#bell = pivot;
   }
 
@@ -688,6 +802,18 @@ export class CastleView {
     const rect = this.#canvas.getBoundingClientRect();
     this.#pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.#raycaster.setFromCamera(this.#pointer, this.#camera);
+    // build mode: an empty plot, or a building to move (no sheets)
+    if (this.#arranging) {
+      const plot = this.#raycaster.intersectObjects(this.#arrangeMarks.children, false).find((h) => h.object.userData.slot !== undefined);
+      if (plot) {
+        this.#opts.onArrangeTap?.({ slot: plot.object.userData.slot as number });
+        return;
+      }
+      let b: THREE.Object3D | null = this.#raycaster.intersectObjects(this.#buildingRoots, true)[0]?.object ?? null;
+      while (b && !b.userData.building) b = b.parent;
+      if (b) this.#opts.onArrangeTap?.({ protocolId: (b.userData.building as BuildingPlacement).protocol.id });
+      return;
+    }
     // couriers first: they walk in front of the buildings
     const courier = this.#raycaster.intersectObjects(this.#courierTargets, false)[0];
     const errand = courier?.object.userData.errand as Errand | undefined;
@@ -722,7 +848,7 @@ export class CastleView {
       this.#applyLight();
     }
     // Couriers: the next errand sets out when there is room; with nothing waiting, the recent ones play again.
-    if (this.#queue.length === 0 && this.#runs.length === 0) {
+    if (this.#autoReplay && this.#queue.length === 0 && this.#runs.length === 0) {
       if (this.#replayAt === 0) this.#replayAt = now + REPLAY_PAUSE;
       else if (now >= this.#replayAt) {
         this.#queue = this.#opts.world.errands.slice(-REPLAY_COUNT);
