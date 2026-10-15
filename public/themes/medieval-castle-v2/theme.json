@@ -2,7 +2,7 @@
   "format": "wallet-landia-theme/1",
   "id": "medieval-castle-v2",
   "name": "Medieval castle v2 (style pilot)",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "extends": "medieval-castle",
   "art": true,
   "castleLayout": 2,

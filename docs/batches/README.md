@@ -16,14 +16,14 @@ Rules: `docs/STYLEGUIDE_V2.md`, especially §10 (lessons).
 | 4a | Category buildings, class S (7) | [04](04-category-buildings.md) | design agent "categories" | checked; waiting for the user's look |
 | 4b | Category buildings, class M (7) | [04](04-category-buildings.md) | design agent "categories" | checked; waiting for the user's look |
 | 5 | Category buildings, classes XS and L (14) | [04](04-category-buildings.md) | blender-3e | XS and L checked; waiting for the user's look |
-| 6 | Category buildings, class XL (7) | [04](04-category-buildings.md) | blender-3e | in progress |
+| 6 | Category buildings, class XL (7) | [04](04-category-buildings.md) | blender-3e | checked; waiting for the user's look |
 | 7a | Landmarks XL: Lido, Spark, EigenLayer, then Maker, Ethena, Morpho | [07a](07a-landmarks-xl.md) | design agent "landmarks" | all six checked; waiting for the user's look |
 | 7b | Landmarks L: Uniswap, Compound, Curve, Rocket Pool, Fluid, Pendle, Convex | [07b](07b-landmarks-l.md) | design agent "landmarks-l" | checked; waiting for the user's look |
 | 7c | Landmarks M and S: Frax, Yearn, Euler, Balancer, Blur, Across, Zora, Gondi | [07c](07c-landmarks-m-s.md) | blender-e2 | checked; waiting for the user's look |
 | 7d | Landmarks XS: 1inch, OpenSea, ENS, SushiSwap, CoW, Stargate, Safe, ParaSwap, Kyber, LI.FI | [07d](07d-landmarks-xs.md) | blender-e2 | checked; waiting for the user's look |
 | 11 | Townsfolk: the base helper and one per category | [11](11-townsfolk.md) | blender-f3 | checked; waiting for the user's look |
 | 12 | Cargo (t0–t6), animals, props, trees, rocks, hill | [12](12-life-and-props.md) | blender-f3 | checked; waiting for the user's look |
-| 13 | 2D art: icons, badges, ranks, app icons, effects | [13](13-2d-art.md) | blender-e2 | approved by the user; the v2 theme uses it (art: true); fix round: light tab icons, a bigger app-icon keep, clearer dust |
+| 13 | 2D art: icons, badges, ranks, app icons, effects | [13](13-2d-art.md) | blender-e2 | ✅ approved, committed |
 
 The landmark classes come from each protocol's value on Ethereum (`src/castle/world/tvl.json`), so a protocol may change class when the snapshot is renewed. Batch 3 (castle wings) was dropped: castle layout 2 has none.
 
@@ -45,3 +45,5 @@ The landmarks go to blender-e2 and the keep to blender-3e.
 `preview=lending:5e6` borrows a real protocol's logo (`lending:5e6:aave` names which one), so preview category buildings show real logos.
 
 **Fix rounds done (2026-10-15):** Spark's lantern, Rocket Pool's open side, Maker's plates; the market stall's apples (a basket), real paintings on nft, shop doors opening outwards, banner and awning clearances (check_cloth).
+
+**Seeing everything at once:** `/showroom.html?theme=medieval-castle-v2` shows every model in one 3D scene (click to play `tap`, the tier picker shows tier parts) and all the 2D art.
