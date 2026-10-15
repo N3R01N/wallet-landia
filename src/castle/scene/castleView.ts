@@ -15,7 +15,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { SIZE_CLASSES, assetPath, brandColor, findAsset, sizeClassOf, tierColor } from '../assets/manifest.js';
 import { ModelLibrary, disposeTree, type Loaded } from '../assets/models.js';
-import { artTheme, themeFileUrl, type CastleTheme } from '../assets/theme.js';
+import { artTheme, loadThemeImage, themeFileUrl, type CastleTheme } from '../assets/theme.js';
 import { crestColors } from '../../util/rng.js';
 import { DEFAULT_TIMING, buildCourierScript, courierAt, type CourierScript, type CourierState, type NpcClip } from './courier.js';
 import { planCastle, routeBetweenWallets, routeTo, type BuildingPlacement, type CastleLayout, type CastlePlan, type Placement } from './plan.js';
@@ -923,9 +923,7 @@ export class CastleView {
   async #logoMaterial(template: THREE.Material, path: string): Promise<THREE.Material | null> {
     try {
       const theme = await this.#opts.theme;
-      const img = new Image();
-      img.src = themeFileUrl(artTheme(theme), path);
-      await img.decode();
+      const img = await loadThemeImage(theme, path);
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = LOGO_SIZE;
       const g = canvas.getContext('2d')!;

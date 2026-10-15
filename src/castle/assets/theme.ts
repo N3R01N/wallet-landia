@@ -65,6 +65,24 @@ export function themeFromUrl(search: string): string {
   return id && ID.test(id) ? id : DEFAULT_THEME;
 }
 
+/**
+ * A picture from the nearest theme in the chain that has it (the protocol
+ * logos live in the first theme's `logos/`, whichever theme has the art).
+ */
+export async function loadThemeImage(theme: CastleTheme, path: string): Promise<HTMLImageElement> {
+  for (const t of themeChain(theme)) {
+    const img = new Image();
+    img.src = themeFileUrl(t, path);
+    try {
+      await img.decode();
+      return img;
+    } catch {
+      // not in this one: the next
+    }
+  }
+  throw new Error(`no theme has ${path}`);
+}
+
 /** The URL of a file in the theme, with its version. */
 export function themeFileUrl(theme: CastleTheme, path: string): string {
   return `${theme.root}${path}?v=${encodeURIComponent(theme.version)}`;
