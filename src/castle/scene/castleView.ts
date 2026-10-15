@@ -363,6 +363,8 @@ export class CastleView {
   #bridgeAngle = -Math.PI / 2; // raised
   /** The drawbridge model's own `lower` clip, when it has one: the bridge is posed along it. */
   #bridgeClip: { mixer: THREE.AnimationMixer; action: THREE.AnimationAction; duration: number } | null = null;
+  /** The barrier model's own `lift` clip, when it has one: the arm is posed along it. */
+  #barrierClip: { mixer: THREE.AnimationMixer; action: THREE.AnimationAction; duration: number } | null = null;
   #barrierAngle = 0; // down
   #time = 0;
   #ready = false;
@@ -674,6 +676,9 @@ export class CastleView {
     if (lower) {
       const mixer = new THREE.AnimationMixer(deck);
       const action = mixer.clipAction(lower);
+      // held at a time we set (never looping back to the start at the clip's end)
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
       action.play();
       action.paused = true;
       this.#bridgeClip = { mixer, action, duration: lower.duration };
@@ -683,11 +688,25 @@ export class CastleView {
     this.#poseBridge();
 
     // The barrier's arm swings up about its post.
+    // A model with a `lift` clip (down → up) is posed along it instead; its own rest pose may be either.
     const barrier = new THREE.Group();
     barrier.position.set(plan.barrier.x, BARRIER_HEIGHT, plan.barrier.z);
-    barrier.add(this.#make(plan.barrier.name));
+    const arm = this.#make(plan.barrier.name);
+    barrier.add(arm);
+    const lift = this.#loaded.get(plan.barrier.name)?.clips.find((c) => c.name === 'lift');
+    if (lift) {
+      const mixer = new THREE.AnimationMixer(arm);
+      const action = mixer.clipAction(lift);
+      // held at a time we set (never looping back to the start at the clip's end)
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+      action.play();
+      action.paused = true;
+      this.#barrierClip = { mixer, action, duration: lift.duration };
+    }
     this.#scene.add(barrier);
     this.#barrier = barrier;
+    this.#poseBarrier();
 
     // The refusal: the theme's red seal over the road at the barrier (a red marker without it).
     const seal = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffffff, transparent: true, depthWrite: false }));
@@ -1063,9 +1082,19 @@ export class CastleView {
     const raised = Math.max(0, Math.min(1, -this.#bridgeAngle / (Math.PI / 2)));
     if (this.#bridgeClip) {
       const { mixer, action, duration } = this.#bridgeClip;
-      action.time = (1 - raised) * duration;
+      action.time = Math.min(duration - 1e-4, (1 - raised) * duration);
       mixer.update(0);
     } else this.#bridge.rotation.x = this.#bridgeAngle;
+  }
+
+  /** Poses the barrier at its angle: by its own clip (0 s down … the end up), or by turning it about its post. */
+  #poseBarrier(): void {
+    if (!this.#barrier) return;
+    if (this.#barrierClip) {
+      const { mixer, action, duration } = this.#barrierClip;
+      action.time = Math.min(duration - 1e-4, Math.max(0, Math.min(1, this.#barrierAngle / (Math.PI / 2))) * duration);
+      mixer.update(0);
+    } else this.#barrier.rotation.z = this.#barrierAngle;
   }
 
   #placements(): Placement[] {
@@ -1417,7 +1446,7 @@ export class CastleView {
     this.#poseBridge();
     const barrierTarget = barrierUp ? Math.PI / 2 : 0;
     this.#barrierAngle += (barrierTarget - this.#barrierAngle) * Math.min(1, dt * 6);
-    if (this.#barrier) this.#barrier.rotation.z = this.#barrierAngle;
+    this.#poseBarrier();
 
     // The bell rings for each block (keeping Ethereum's time by itself while no block is reported);
     // the paths flash with it, and otherwise glow under the couriers.

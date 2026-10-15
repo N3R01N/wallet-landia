@@ -327,6 +327,13 @@ describe('castle plan, layout 2', () => {
     expect(routeBetweenWallets(one, 0, 3)).toBeNull();
   });
 
+  it('no water tile reaches onto the island, and the ground tiles cover it to the edge', () => {
+    const onIsland = (t: { x: number; z: number }) => t.x - 1 < ISLAND_V2.x1 && t.x + 1 > ISLAND_V2.x0 && t.z - 1 < ISLAND_V2.z1 && t.z + 1 > ISLAND_V2.z0;
+    for (const w of six.water) expect(onIsland(w), `water at ${w.x},${w.z} overlaps the island`).toBe(false);
+    const ground = six.ground.filter(onIsland);
+    expect(ground.length * 4).toBe((ISLAND_V2.x1 - ISLAND_V2.x0) * (ISLAND_V2.z1 - ISLAND_V2.z0));
+  });
+
   it('the moat is wider; its plants and ducks float on it; scenery keeps off it', () => {
     expect(six.moat).toEqual(MOAT_V2);
     const water = (x: number, z: number) => inside(MOAT_V2, x, z) && !(x > ISLAND_V2.x0 && x < ISLAND_V2.x1 && z > ISLAND_V2.z0 && z < ISLAND_V2.z1);

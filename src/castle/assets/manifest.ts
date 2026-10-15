@@ -487,7 +487,7 @@ const LIFE: AssetSpec[] = [
 ];
 
 /** Zerion's ids for the same protocol under another name. */
-const PROTOCOL_ALIASES: Record<string, string> = { seaport: 'opensea', seadrop: 'opensea', 'cow-protocol': 'cow', 'cow-swap': 'cow', sky: 'maker', 'li-fi': 'lifi', 'gnosis-safe': 'safe', 'kyberswap': 'kyber', 'convex-finance': 'convex', 'frax-finance': 'frax', 'curve-finance': 'curve', 'curve-dex': 'curve', 'compound-finance': 'compound', 'ether.fi': 'etherfi', 'rocketpool': 'rocket-pool', eigencloud: 'eigenlayer' };
+const PROTOCOL_ALIASES: Record<string, string> = { seaport: 'opensea', seadrop: 'opensea', 'cow-protocol': 'cow', 'cow-swap': 'cow', sky: 'maker', 'li-fi': 'lifi', 'gnosis-safe': 'safe', 'kyberswap': 'kyber', 'convex-finance': 'convex', 'frax-finance': 'frax', 'curve-finance': 'curve', 'curve-dex': 'curve', 'compound-finance': 'compound', 'ether.fi': 'etherfi', 'rocketpool': 'rocket-pool', eigencloud: 'eigenlayer', tokemak: 'autofinance' };
 
 /**
  * The protocol family a Zerion dApp id belongs to, for its signature building:

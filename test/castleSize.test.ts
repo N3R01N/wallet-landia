@@ -42,3 +42,13 @@ describe('preview towns', () => {
     expect(previewWorld(base, 'nonsense')).toBe(base);
   });
 });
+
+describe('protocol logos', () => {
+  it('small protocols a wallet may hold have a logo too (Tokemak under its new name, Mooniswap, Botto)', async () => {
+    const { logoPath } = await import('../src/castle/world/logos.js');
+    expect(logoPath('tokemak')).toBe('logos/autofinance.webp');
+    expect(logoPath('mooniswap')).toMatch(/^logos\/mooniswap\./);
+    expect(logoPath('botto')).toMatch(/^logos\/botto\./);
+    expect(logoPath('aave-v3')).toMatch(/^logos\/aave\./);
+  });
+});

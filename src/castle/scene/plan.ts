@@ -121,9 +121,12 @@ export interface Rect {
 /** Outer moat rectangle and the island inside it (layout 1). */
 export const MOAT = { x0: -10, x1: 10, z0: -16, z1: 0 } as const;
 export const ISLAND = { x0: -8, x1: 8, z0: -14, z1: -2 } as const;
-/** Layout 2's: room for six halls along the walls and a courtyard (a 1 m grid, docs/batches/01-castle-core.md). */
-export const MOAT_V2 = { x0: -12, x1: 12, z0: -23, z1: 0 } as const;
-export const ISLAND_V2 = { x0: -10, x1: 10, z0: -21, z1: -2 } as const;
+/**
+ * Layout 2's: room for six halls along the walls and a courtyard (a 1 m grid, docs/batches/01-castle-core.md).
+ * Both even metres deep and wide, so the 2 m water and ground tiles meet exactly at the island's edge.
+ */
+export const MOAT_V2 = { x0: -12, x1: 12, z0: -24, z1: 0 } as const;
+export const ISLAND_V2 = { x0: -10, x1: 10, z0: -22, z1: -2 } as const;
 
 /**
  * Layout 2's pieces (metres along the wall): corner towers 2 × 2; the gatehouse
