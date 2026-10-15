@@ -47,3 +47,11 @@ The landmarks go to blender-e2 and the keep to blender-3e.
 **Fix rounds done (2026-10-15):** Spark's lantern, Rocket Pool's open side, Maker's plates; the market stall's apples (a basket), real paintings on nft, shop doors opening outwards, banner and awning clearances (check_cloth).
 
 **Seeing everything at once:** `/showroom.html?theme=medieval-castle-v2` shows every model in one 3D scene (click to play `tap`, the tier picker shows tier parts) and all the 2D art.
+
+**State (2026-10-15):** every batch is done and committed.
+- v2 is the default theme.
+- XL buildings switch to their far copy when zoomed out.
+- `npm run build` compresses the models (meshopt).
+
+Open: a performance check on a real phone, and the push.
+
