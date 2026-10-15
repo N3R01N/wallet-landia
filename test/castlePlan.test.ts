@@ -344,3 +344,18 @@ describe('castle plan, layout 2', () => {
   });
 });
 
+
+describe('paving under the buildings', () => {
+  it('every building stands on cobbles, its whole plot covered, no cell twice', () => {
+    const plan = planCastle({ wallets: 1, tier: 0, protocols: [24e9, 6e9, 3e8, 1e6].map((usd, i) => ({ id: `p${i}`, name: `p${i}`, category: 'dex', tier: 0, signature: null, holdings: [], visits: 0, tvlUsd: usd, size: sizeFor(usd) })) }, {}, 2);
+    const keys = new Set(plan.ground.map((g) => `${g.x},${g.z}`));
+    expect(keys.size).toBe(plan.ground.length);
+    for (const b of plan.buildings)
+      for (let x = b.x - b.half + 0.5; x < b.x + b.half; x += 1)
+        for (let z = b.z - b.half + 0.5; z < b.z + b.half; z += 1) {
+          const cx = Math.floor(x / 2) * 2 + 1;
+          const cz = Math.floor(z / 2) * 2 + 1;
+          expect(keys.has(`${cx},${cz}`), `${b.protocol.id}: no cobbles at ${x},${z}`).toBe(true);
+        }
+  });
+});

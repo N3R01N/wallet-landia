@@ -43,16 +43,28 @@ export interface Weather {
   rain: number;
   /** 0 … 1: how grey the day is. */
   gloom: number;
+  /** 0 … 1: how much of the sky is cloud (their shadows drift over the land). */
+  clouds: number;
+  /** 0 … 1: a bright, warm sun (a rising market). */
+  shine: number;
 }
 
-/** The market's mood as weather: a crash pours, a fall drizzles; a flat or rising market is clear. */
+/**
+ * The market's mood as weather, so it shows whichever way it went: a big rise
+ * is a bright, nearly cloudless day; a rise sunny; flat (or no earlier visit to
+ * compare) a few clouds; a fall overcast with drizzle; a crash a storm.
+ */
 export function weatherFor(mood: PriceMood | null): Weather {
   switch (mood) {
-    case 'crash':
-      return { rain: 1, gloom: 0.6 };
+    case 'boom':
+      return { rain: 0, gloom: 0, clouds: 0.1, shine: 1 };
+    case 'up':
+      return { rain: 0, gloom: 0, clouds: 0.25, shine: 0.6 };
     case 'down':
-      return { rain: 0.45, gloom: 0.3 };
+      return { rain: 0.45, gloom: 0.3, clouds: 0.75, shine: 0 };
+    case 'crash':
+      return { rain: 1, gloom: 0.6, clouds: 1, shine: 0 };
     default:
-      return { rain: 0, gloom: 0 };
+      return { rain: 0, gloom: 0, clouds: 0.45, shine: 0.2 };
   }
 }

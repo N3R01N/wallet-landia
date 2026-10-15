@@ -12,6 +12,8 @@
  */
 
 import * as THREE from 'three';
+import { Figure } from './figure.js';
+import { Life } from './life.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { SIZE_CLASSES, assetPath, brandColor, findAsset, sizeClassOf, tierColor } from '../assets/manifest.js';
 import { ModelLibrary, disposeTree, type Loaded } from '../assets/models.js';
@@ -117,13 +119,25 @@ const BELL_HEIGHT = 9.1;
 const BARRIER_HEIGHT = 1;
 /** A tap moves less than this many pixels; more is a drag. */
 const TAP_SLOP = 6;
+/** How far past the castle and the town the view may pan (m, at zoom 1 and below). */
+const WORLD_ROAM = 40;
+/** Clouds: their models (the theme's, else soft lobes), how high and how fast they drift (m/s). */
+const CLOUD_MODELS = ['scenery.cloud.1', 'scenery.cloud.2', 'scenery.cloud.3'];
+const CLOUD_HEIGHT = 30;
+const SHINE_COLOR = new THREE.Color(0xffd08a);
+const GLOOM_COLOR = new THREE.Color(0xc8d0dc);
+const CLOUD_WIND = 1.6;
+const CLOUD_LOBE = new THREE.IcosahedronGeometry(1, 2);
+const CLOUD_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, emissive: 0x9fb4c8, emissiveIntensity: 0.25 });
+const CLOUD_STORM_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x8a909c, roughness: 1 });
+/** Models placed by the hundred and never moved: drawn instanced. */
+const INSTANCED = new Set(['town.ground', 'moat.water', 'path.tile.straight']);
 /** The ring under what the mouse is over: gold, a little wider than the thing's footprint. */
 const HOVER_RING = new THREE.RingGeometry(0.92, 1, 64).rotateX(-Math.PI / 2);
 const HOVER_COLOR = 0xffd45a;
 /** Following a courier (a replay): the zoom it eases to, and how quickly the view catches up (per second). */
 const FOLLOW_ZOOM = 2.2;
 const FOLLOW_RATE = 3;
-const FADE = 0.25;
 /** The Chronicle tower turns this see-through while someone is behind it. */
 const TOWER_FADED = 0.3;
 /** How far behind the tower (on the ground, away from the camera) it can hide someone, and how wide its shadow is. */
@@ -179,107 +193,6 @@ const GLOW_COLOR = 0xffc861;
 /** The glow plate is 0.01 m high and the road 0.02 m: lift the plate just above the road. */
 const GLOW_LIFT = 0.015;
 
-/** One animated figure: its object and, when its model has clips, a mixer that cross-fades between them. */
-class Figure {
-  readonly object: THREE.Object3D;
-  readonly #mixer: THREE.AnimationMixer | null;
-  readonly #actions = new Map<string, THREE.AnimationAction>();
-  #current: string | null = null;
-  /** A one-shot reaction playing (`react`), whether over the clip playing or instead of it, and the clip asked for meanwhile. */
-  #reaction: THREE.AnimationAction | null = null;
-  #over = false;
-  #wanted: string | null = null;
-
-  constructor(object: THREE.Object3D, clips: readonly THREE.AnimationClip[], once: readonly string[] = []) {
-    this.object = object;
-    // skinned figures: their bounds do not follow the animation
-    object.traverse((o) => {
-      if ((o as THREE.SkinnedMesh).isSkinnedMesh) o.frustumCulled = false;
-    });
-    this.#mixer = clips.length ? new THREE.AnimationMixer(object) : null;
-    for (const clip of clips) {
-      const action = this.#mixer!.clipAction(clip);
-      if (once.includes(clip.name)) {
-        action.setLoop(THREE.LoopOnce, 1);
-        action.clampWhenFinished = true;
-      }
-      this.#actions.set(clip.name, action);
-    }
-    this.#mixer?.addEventListener('finished', (e) => {
-      if (e.action === this.#reaction) this.#endReaction();
-    });
-  }
-
-  /** Whether a reaction is playing. */
-  get reacting(): boolean {
-    return this.#reaction !== null;
-  }
-
-  /**
-   * Plays a one-shot clip (a tap's reaction): over the clip playing (`over`: a
-   * building's tap moves other parts than its idle), or instead of it, going
-   * back to it after. False when the model has no such clip.
-   */
-  react(name: string, over: boolean): boolean {
-    const action = this.#actions.get(name);
-    if (!action) return false;
-    if (this.#reaction) return true;
-    this.#reaction = action;
-    this.#over = over;
-    if (!over) {
-      if (this.#current) this.#actions.get(this.#current)?.fadeOut(FADE);
-      this.#wanted = this.#current;
-      this.#current = null;
-    }
-    action.reset().fadeIn(over ? 0 : FADE).play();
-    return true;
-  }
-
-  #endReaction(): void {
-    const action = this.#reaction!;
-    this.#reaction = null;
-    if (this.#over) {
-      action.stop(); // it ends at rest: its parts stay there
-      return;
-    }
-    const wanted = this.#wanted;
-    this.#wanted = null;
-    if (wanted) this.play(wanted);
-    action.fadeOut(FADE);
-  }
-
-  /** Forgets the clip playing, so the next `play` starts afresh (a person going back inside, to come out again later). */
-  rest(): void {
-    this.#mixer?.stopAllAction();
-    this.#current = null;
-    this.#reaction = null;
-    this.#wanted = null;
-  }
-
-  /** Plays a clip, cross-fading from the one before. Unknown clips leave the figure as it is. */
-  play(name: string): void {
-    if (this.#reaction && !this.#over) {
-      this.#wanted = name; // after the reaction
-      return;
-    }
-    if (name === this.#current) return;
-    const next = this.#actions.get(name);
-    if (!next) return;
-    const prev = this.#current ? this.#actions.get(this.#current) : undefined;
-    next.reset().fadeIn(FADE).play();
-    prev?.fadeOut(FADE);
-    this.#current = name;
-  }
-
-  update(dt: number): void {
-    this.#mixer?.update(dt);
-  }
-
-  dispose(): void {
-    this.#mixer?.stopAllAction();
-    this.#mixer?.uncacheRoot(this.object);
-  }
-}
 
 /** A courier out on an errand. */
 interface Run {
@@ -324,6 +237,12 @@ export class CastleView {
   /** A replayed errand whose courier the camera follows (by key), and its courier once out. */
   #followKey: string | null = null;
   #followRun: Run | null = null;
+  /** The weather, and its clouds (their shadows; a few seen at the edges), the area they drift round. */
+  #weather: Weather = { rain: 0, gloom: 0, clouds: 0.45, shine: 0.2 };
+  readonly #clouds: { obj: THREE.Object3D; speed: number; edge?: boolean }[] = [];
+  #cloudArea = { x0: -60, x1: 60, z0: -60, z1: 60 };
+  /** Birds, grazers, fish, strollers, the toll keeper (life.ts). */
+  #life: Life | null = null;
   /** Whether the far copies are drawn now (null: not decided yet). */
   #farNow: boolean | null = null;
   readonly #resize: ResizeObserver;
@@ -655,11 +574,13 @@ export class CastleView {
     for (const f of this.#figures) f.dispose();
     for (const f of this.#ambient) f.dispose();
     for (const r of this.#runs) r.figure.dispose();
+    this.#life?.dispose();
     // Everything shown came from this view's own library (models, standins, the tower's own materials):
     // nothing is shared beyond the view, so all of it goes.
     for (const t of this.#courierTargets) t.removeFromParent(); // shared by every view: kept
     this.#arrangeMarks.clear(); // build mode's rings: shared, kept
     this.#hoverRing.removeFromParent(); // its geometry is shared: kept
+    for (const c of this.#clouds) c.obj.removeFromParent(); // their lobes and materials are shared: kept
     this.#hoverRing.material.dispose();
     disposeTree(this.#scene);
     this.#environment?.dispose();
@@ -686,11 +607,17 @@ export class CastleView {
       ...[0, 1, 2, 3, 4, 5, 6].map((t) => `courier.cargo.t${t}`),
       'person.npc.base',
       ...[...categories].map((c) => `person.npc.${c}`),
+      ...CLOUD_MODELS,
+      'scenery.cloud.rain',
+      ...Life.MODELS,
+      // townsfolk who stroll the avenue
+      ...['base', 'lending', 'dex', 'staking', 'nft', 'governance', 'bridge', 'other'].map((c) => `person.npc.${c}`),
     ]);
     await Promise.all([...names].map(async (n) => this.#loaded.set(n, await lib.load(n))));
     if (this.#disposed) return;
 
     this.#placeLayout();
+    this.#makeLife();
 
     // The drawbridge swings about its hinge: lowered is flat towards the town, raised stands up.
     // A model with a `lower` clip (raised → flat, its chains following) is posed by that clip instead.
@@ -752,7 +679,8 @@ export class CastleView {
     });
 
     this.#applyLight();
-    if (this.#opts.weather) this.setWeather(this.#opts.weather);
+    this.setWeather(this.#opts.weather ?? this.#weather);
+    this.#makeClouds();
     this.element.append(this.#weatherEl);
     this.#renderer.shadowMap.needsUpdate = true;
     this.#ready = true;
@@ -765,7 +693,12 @@ export class CastleView {
   #placeLayout(): void {
     const plan = this.#plan;
     const placements = this.#placements();
+    // the many plain tiles (cobbles, water, the avenue): one instanced draw per mesh of each, not one per tile
+    const tiles = placements.filter((p) => INSTANCED.has(p.name) && p.key !== 'lit' && !this.#loaded.get(p.name)?.clips.length);
+    this.#placeInstanced(tiles);
+    const tileSet = new Set(tiles);
     for (const p of placements) {
+      if (tileSet.has(p)) continue;
       // the first of the name and its fallbacks that has a model; the last one's standin otherwise
       const options = [p.name, ...(p.fallbacks ?? [])];
       if (p.optional && !options.some((n) => this.#loaded.get(n))) continue; // decoration waits for its model
@@ -909,6 +842,7 @@ export class CastleView {
     this.#bell = null;
     this.#plan = planCastle(this.#opts.world, arranged);
     this.#placeLayout();
+    this.#makeLife();
     this.#applyLight();
     this.#renderer.shadowMap.needsUpdate = true;
     this.setArranging(this.#arranging, null);
@@ -1040,8 +974,11 @@ export class CastleView {
   #applyLight(): void {
     const now = new Date();
     const l = lightAt(this.#opts.hour ?? now.getHours() + now.getMinutes() / 60);
-    this.#sun.intensity = l.sun;
-    this.#hemi.intensity = l.ambient;
+    // the weather: grey days dim and cool the sun, a rising market warms it
+    const w = this.#weather;
+    this.#sun.intensity = l.sun * (1 - 0.45 * w.gloom) * (1 + 0.15 * w.shine);
+    this.#sun.color.setHex(0xffe2b8).lerp(SHINE_COLOR, w.shine * 0.5).lerp(GLOOM_COLOR, w.gloom);
+    this.#hemi.intensity = l.ambient * (1 - 0.2 * w.gloom);
     this.#renderer.setClearColor(l.sky, 1);
     for (const m of this.#glows) m.emissiveIntensity = l.glow;
     this.element.dataset.night = l.night.toFixed(2);
@@ -1049,12 +986,117 @@ export class CastleView {
 
   /** The market's weather: rain and a grey veil (0 … 1 each). */
   setWeather(w: Weather): void {
+    this.#weather = w;
     this.#weatherEl.style.setProperty('--rain', w.rain.toFixed(2));
     this.#weatherEl.style.setProperty('--gloom', w.gloom.toFixed(2));
     this.element.dataset.rain = w.rain.toFixed(2);
+    this.element.dataset.clouds = w.clouds.toFixed(2);
+    this.#applyLight();
+    if (this.#ready) this.#makeClouds();
+  }
+
+  /**
+   * The clouds for the weather: they float over the woods at the world's edges
+   * (never over the town: they would hide it), more, and storm-dark, as the
+   * market falls.
+   */
+  #makeClouds(): void {
+    for (const c of this.#clouds) c.obj.removeFromParent();
+    this.#clouds.length = 0;
+    const w = this.#weather;
+    const t = this.#plan.town;
+    const m = this.#plan.moat;
+    const area = { x0: Math.min(m.x0, t.x0) - 30, x1: Math.max(m.x1, t.x1) + 30, z0: m.z0 - 30, z1: t.z1 + 30 };
+    this.#cloudArea = area;
+    const storm = w.rain >= 0.9;
+    const pick = (i: number) => {
+      const name = storm && this.#loaded.get('scenery.cloud.rain') ? 'scenery.cloud.rain' : CLOUD_MODELS[i % CLOUD_MODELS.length]!;
+      return this.#loaded.get(name) ? this.#make(name) : this.#cloudPuff(i, storm);
+    };
+    const rand = (i: number) => ((Math.sin(i * 91.3 + 7.1) * 43758.5453) % 1 + 1) % 1;
+    // out beyond the town and the castle, over the woods (never over the town: they would hide it)
+    const seen = Math.round(3 + w.clouds * 9);
+    for (let i = 0; i < seen; i++) {
+      const obj = pick(i + 40);
+      obj.scale.setScalar(0.9 + rand(i + 40) * 0.8);
+      const left = rand(i + 41) < 0.5;
+      const x = left ? area.x0 + rand(i + 42) * 14 : area.x1 - rand(i + 42) * 14;
+      obj.position.set(x, CLOUD_HEIGHT * (0.55 + rand(i + 44) * 0.3), area.z0 + rand(i + 43) * (area.z1 - area.z0));
+      this.#scene.add(obj);
+      this.#clouds.push({ obj, speed: CLOUD_WIND * 0.6, edge: true });
+    }
+  }
+
+  /** A cloud of soft lobes, until the theme has cloud models: white above, a cooler grey below. */
+  #cloudPuff(seed: number, storm: boolean): THREE.Object3D {
+    const g = new THREE.Group();
+    const lobes = 5 + (seed % 3);
+    for (let i = 0; i < lobes; i++) {
+      const mesh = new THREE.Mesh(CLOUD_LOBE, storm ? CLOUD_STORM_MATERIAL : CLOUD_MATERIAL);
+      const a = (i / lobes) * Math.PI * 2;
+      const r = 1.6 + ((seed * 7 + i * 3) % 5) * 0.25;
+      mesh.position.set(Math.cos(a) * r * 1.4, (i % 2) * 0.6, Math.sin(a) * r * 0.6);
+      mesh.scale.set(1.6 + (i % 3) * 0.35, 1.1 + (i % 2) * 0.3, 1.4);
+      g.add(mesh);
+    }
+    const top = new THREE.Mesh(CLOUD_LOBE, storm ? CLOUD_STORM_MATERIAL : CLOUD_MATERIAL);
+    top.scale.set(2.2, 1.7, 1.8);
+    top.position.y = 0.9;
+    g.add(top);
+    return g;
+  }
+
+  /** Drifts the clouds with the wind, round the world. */
+  #driftClouds(dt: number): void {
+    if (!this.#clouds.length) return;
+    const a = this.#cloudArea;
+    for (const c of this.#clouds) {
+      c.obj.position.x += c.speed * dt;
+      if (c.obj.position.x > a.x1 + 20) c.obj.position.x = a.x0 - 20;
+    }
   }
 
   /** A new object for an asset: its model, or its standin. */
+  #makeLife(): void {
+    this.#life?.dispose();
+    this.#life = new Life(
+      {
+        has: (n) => !!this.#loaded.get(n),
+        make: (n) => this.#make(n),
+        clips: (n) => this.#loaded.get(n)?.clips ?? [],
+        add: (o) => this.#layout.add(o),
+      },
+      this.#plan,
+    );
+  }
+
+  /** Places many copies of plain models as instanced meshes (one per mesh of a model): they never move. */
+  #placeInstanced(tiles: readonly Placement[]): void {
+    const byName = new Map<string, Placement[]>();
+    for (const t of tiles) byName.set(t.name, [...(byName.get(t.name) ?? []), t]);
+    const at = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+    const one = new THREE.Vector3(1, 1, 1);
+    for (const [name, list] of byName) {
+      const model = this.#make(name);
+      model.updateMatrixWorld(true);
+      model.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const inst = new THREE.InstancedMesh(mesh.geometry, mesh.material, list.length);
+        list.forEach((t, i) => {
+          at.compose(new THREE.Vector3(t.x, 0, t.z), q.setFromAxisAngle(up, t.rot ?? 0), t.scale !== undefined ? new THREE.Vector3(t.scale, t.scale, t.scale) : one);
+          inst.setMatrixAt(i, at.multiply(mesh.matrixWorld));
+        });
+        inst.instanceMatrix.needsUpdate = true;
+        inst.computeBoundingSphere();
+        inst.receiveShadow = true;
+        this.#layout.add(inst);
+      });
+    }
+  }
+
   #make(name: string): THREE.Object3D {
     const spec = findAsset(name);
     if (!spec) throw new Error(`no asset named ${name}`);
@@ -1396,8 +1438,10 @@ export class CastleView {
     // as far as the castle and the town reach (the town grows with its protocols)
     const t = this.#plan.town;
     const moat = this.#plan.moat;
-    this.#focus.x = Math.max(Math.min(moat.x0, t.x0) - 4, Math.min(Math.max(moat.x1, t.x1) + 4, this.#focus.x + d.x));
-    this.#focus.z = Math.max(moat.z0 - 8, Math.min(t.z1 + 4, this.#focus.z + d.z));
+    // out into the world round them too (the farms, the river, the hills): more when zoomed out
+    const roam = WORLD_ROAM / Math.max(1, this.#zoom);
+    this.#focus.x = Math.max(Math.min(moat.x0, t.x0) - roam, Math.min(Math.max(moat.x1, t.x1) + roam, this.#focus.x + d.x));
+    this.#focus.z = Math.max(moat.z0 - 8 - roam, Math.min(t.z1 + roam, this.#focus.z + d.z));
     this.#updateCamera();
   }
 
@@ -1425,6 +1469,17 @@ export class CastleView {
       this.#opts.onTapped?.('courier');
       this.#opts.onSelectErrand?.(errand);
       return;
+    }
+    // a grazer, a stroller or the toll keeper
+    const lifeHit = this.#life ? this.#raycaster.intersectObjects(this.#life.tappable, true)[0] : undefined;
+    if (lifeHit) {
+      let l: THREE.Object3D | null = lifeHit.object;
+      while (l && !this.#life!.figureOf(l)) l = l.parent;
+      if (l) {
+        this.#life!.figureOf(l)!.react(TAP_CLIP, false);
+        this.#opts.onTapped?.('person');
+        return;
+      }
     }
     const o = this.#pick();
     if (!o) return;
@@ -1541,6 +1596,7 @@ export class CastleView {
     if (this.#ready) {
       this.#updateHover();
       this.#updateFollow(dt);
+      this.#driftClouds(dt);
       this.#animate(dt);
       this.#watchSpeed(dt);
       if (this.#time < this.#shadowsMoveUntil) this.#renderer.shadowMap.needsUpdate = true;
@@ -1550,6 +1606,7 @@ export class CastleView {
 
   #animate(dt: number): void {
     const now = this.#time;
+    this.#life?.update(dt);
     // the light follows the clock (once a minute is plenty)
     if (now - this.#lightAt > 60) {
       this.#lightAt = now;
@@ -1581,6 +1638,7 @@ export class CastleView {
       if (s.clip === 'toll' && !run.tolled) {
         run.tolled = true;
         this.#opts.onToll?.(run.errand);
+        this.#life?.toll(false);
       }
       states.push(s);
       run.figure.object.position.set(s.x, run.script.height, s.z);
@@ -1588,6 +1646,7 @@ export class CastleView {
       if (s.refused && !run.refusedTold) {
         run.refusedTold = true;
         this.#opts.onRefused?.(run.errand);
+        this.#life?.toll(true);
       }
       run.figure.object.rotation.y = s.heading;
       run.figure.play(s.clip);

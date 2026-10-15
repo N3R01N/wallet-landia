@@ -6,6 +6,8 @@
  */
 
 import { el, shortAddr } from '../util/dom.js';
+import type { LedgerStatus } from '../data/ledger.js';
+import { TAP_SOUNDS } from '../audio/soundscape.js';
 import { toAddress } from '../data/ens.js';
 import { loadApiKey, saveApiKey, savePrefs, type Prefs } from '../settings.js';
 import type { Mode } from '../data/session.js';
@@ -35,6 +37,67 @@ export interface GuildTabContext {
   visiting: string | null;
   /** Show a followed wallet's castle. */
   onVisit(address: string): void;
+  /** Pick the click sound (TAP_SOUNDS) and hear it. */
+  onTapSound(index: number): void;
+  /** How far back each wallet's history is gathered, and whether the walk back rests now (null: not running). */
+  history: { statuses: LedgerStatus[]; paused: string | null } | null;
+}
+
+/** At a glance, how a wallet's walk back stands: its row's colour and badge. */
+export type HistoryKind = 'done' | 'walking' | 'waiting' | 'problem' | 'partial';
+
+const HISTORY_BADGE: Record<HistoryKind, string> = {
+  done: 'complete',
+  walking: 'reaching back',
+  waiting: 'waiting',
+  problem: 'needs attention',
+  partial: 'partial',
+};
+
+const RESTING: Record<string, string> = {
+  hidden: 'resting while the tab is hidden',
+  budget: 'resting: the rest of today’s requests are kept for the castle',
+  error: 'resting after an error; trying again soon',
+  auth: 'stopped: Zerion did not accept the key',
+  done: 'up to date',
+  stopped: 'not running',
+};
+
+/** `paused` as the walk back reports it (null: running now). Pure, so the kinds can be tested. */
+export function historyKind(s: Pick<LedgerStatus, 'complete' | 'capped'>, paused: string | null): HistoryKind {
+  if (s.complete) return 'done';
+  if (s.capped) return 'partial';
+  if (paused === null) return 'walking';
+  if (paused === 'error' || paused === 'auth') return 'problem';
+  return 'waiting';
+}
+
+/**
+ * How far back each wallet's history reaches: its own element, replaced in
+ * place while history arrives (the rest of the tab, and what is being typed,
+ * stays as it is).
+ */
+export function historyRows(ctx: Pick<GuildTabContext, 'history' | 'prefs'>): HTMLElement {
+  const h = ctx.history;
+  const paused = h === null ? 'stopped' : h.paused;
+  if (!h || h.statuses.length === 0)
+    return el('div', { class: 'history-rows' }, el('p', { class: 'muted' }, h === null ? 'The walk back through your history starts with your key and your own wallets.' : 'Starting…'));
+  return el(
+    'div',
+    { class: 'history-rows' },
+    ...h.statuses.map((s) => {
+      const reach = s.oldest !== null ? ` · back to ${new Date(s.oldest).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : '';
+      const state = s.complete ? '✓ all of it, from the very first' : s.capped ? 'partial: a very busy wallet, kept to the newest 50,000' : paused === null ? 'reaching back…' : (RESTING[paused] ?? 'resting');
+      const kind = historyKind(s, paused);
+      return el(
+        'div',
+        { class: `history-row ${kind}`, 'data-address': s.address, 'data-state': kind },
+        el('span', { class: 'history-head' }, el('strong', {}, walletDisplayName(ctx.prefs, s.address)), el('span', { class: 'history-badge' }, HISTORY_BADGE[kind])),
+        el('span', {}, `${s.count.toLocaleString('en-US')} transactions${s.spam > 0 ? ` (${s.spam.toLocaleString('en-US')} spam)` : ''}${reach}`),
+        el('span', { class: 'muted small' }, `${state} · ${s.backfillRequests} request${s.backfillRequests === 1 ? '' : 's'} so far`),
+      );
+    }),
+  );
 }
 
 const MODE_TEXT: Record<Mode, string> = {
@@ -59,6 +122,7 @@ export function guildTab(ctx: GuildTabContext): HTMLElement {
     el('p', { class: 'muted source' }, modeText(ctx.mode)),
     keySection(ctx),
     walletsSection(ctx, p),
+    soundSection(ctx, p),
     shareSection(p),
     followedSection(ctx, p),
     historySection(ctx),
@@ -106,9 +170,68 @@ function keySection(ctx: GuildTabContext): HTMLElement {
   );
 }
 
+/** A wallet's name: the one the player gave it, else its ENS name, else "Wallet 2" by its place. */
+export function walletDisplayName(p: Pick<Prefs, 'names' | 'ens' | 'owned'>, address: string): string {
+  const given = p.names[address]?.trim();
+  if (given) return given;
+  const ens = p.ens[address]?.trim();
+  if (ens) return ens;
+  const i = p.owned.indexOf(address);
+  return i >= 0 ? `Wallet ${i + 1}` : shortAddr(address);
+}
+
+/** The name, with a ✎ to rename it in place (Enter or leaving the field keeps it; empty goes back to the default). */
+function nameEditor(address: string, p: Prefs, ctx: GuildTabContext): HTMLElement {
+  const label = el('strong', { class: 'wallet-name' }, walletDisplayName(p, address));
+  const edit = el('button', { class: 'btn small rename', type: 'button', 'aria-label': `Rename ${walletDisplayName(p, address)}`, title: 'Rename' }, '✎');
+  const wrap = el('span', { class: 'name-edit' }, label, edit);
+  edit.addEventListener('click', () => {
+    const input = el('input', { type: 'text', value: p.names[address] ?? '', placeholder: walletDisplayName({ ...p, names: {} }, address), maxlength: '40', 'aria-label': 'Wallet name' });
+    const done = () => {
+      const v = input.value.trim();
+      if (v) p.names[address] = v;
+      else delete p.names[address];
+      savePrefs(p);
+      ctx.refresh();
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') done();
+      if (e.key === 'Escape') ctx.refresh();
+    });
+    input.addEventListener('blur', done);
+    wrap.replaceChildren(input);
+    input.focus();
+    input.select();
+  });
+  return wrap;
+}
+
+/** The click sound: five to pick from, each heard when picked. */
+function soundSection(ctx: GuildTabContext, p: Prefs): HTMLElement {
+  const choices = el('div', { class: 'sound-choices', role: 'radiogroup', 'aria-label': 'Click sound' });
+  TAP_SOUNDS.forEach((name, i) => {
+    const on = p.tapSound === i;
+    const b = el('button', { class: `btn small sound-choice${on ? ' on' : ''}`, type: 'button', role: 'radio', 'aria-checked': String(on) }, `${on ? '● ' : '○ '}${name}`);
+    b.addEventListener('click', () => {
+      p.tapSound = i;
+      savePrefs(p);
+      ctx.onTapSound(i);
+      ctx.refresh();
+    });
+    choices.append(b);
+  });
+  return el(
+    'div',
+    { class: 'guild-section', 'data-section': 'sound' },
+    el('h2', {}, 'Click sound'),
+    el('p', { class: 'muted' }, 'What you hear when you tap a building, a person or a courier. Tap one to hear it (it turns sound on).'),
+    choices,
+  );
+}
+
 function walletsSection(ctx: GuildTabContext, p: Prefs): HTMLElement {
   const rows = p.owned.map((a) => {
-    const name = p.ens[a];
+    const name = walletDisplayName(p, a);
     // shown when sharing your castle, or kept to yourself (the default)
     const pub = p.publicWallets.includes(a);
     const privacy = el(
@@ -121,7 +244,7 @@ function walletsSection(ctx: GuildTabContext, p: Prefs): HTMLElement {
       savePrefs(p);
       ctx.refresh();
     });
-    const remove = el('button', { class: 'btn small', type: 'button', 'aria-label': `Remove ${name ?? shortAddr(a)}` }, '✕');
+    const remove = el('button', { class: 'btn small', type: 'button', 'aria-label': `Remove ${name}` }, '✕');
     remove.addEventListener('click', () => {
       p.owned = p.owned.filter((x) => x !== a);
       p.publicWallets = p.publicWallets.filter((x) => x !== a);
@@ -132,7 +255,7 @@ function walletsSection(ctx: GuildTabContext, p: Prefs): HTMLElement {
     return el(
       'li',
       { class: 'wallet-row' },
-      el('div', {}, el('strong', {}, name ?? shortAddr(a)), name ? el('div', { class: 'muted mono' }, shortAddr(a)) : null),
+      el('div', {}, nameEditor(a, p, ctx), el('div', { class: 'muted mono' }, shortAddr(a))),
       el('div', { class: 'row-actions' }, crestButton(a, p, ctx), privacy, remove),
     );
   });
@@ -220,6 +343,7 @@ function historySection(ctx: GuildTabContext): HTMLElement {
     { class: 'guild-section', 'data-section': 'history' },
     el('h2', {}, 'Your history'),
     el('p', { class: 'muted' }, 'Your wallets’ whole history is gathered slowly in the background and kept in this browser. Save it to a file to bring it to another browser without asking Zerion again.'),
+    historyRows(ctx),
     el('div', { class: 'form-row' }, save, load, file),
     msg,
   );

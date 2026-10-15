@@ -25,7 +25,8 @@ import { buildGuild } from '../domain/mappers.js';
 import { Session, type Mode, type Shown } from '../data/session.js';
 import { setRealmChains } from '../data/zerion/endpoints.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
-import { guildTab, modeText } from './guildTab.js';
+import { guildTab, historyRows, modeText, walletDisplayName } from './guildTab.js';
+import type { LedgerStatus } from '../data/ledger.js';
 import { decodeShare } from './share.js';
 import { attachTimeline } from './timeline.js';
 import { attachArrange, type ArrangeTap } from './arrange.js';
@@ -70,6 +71,10 @@ let budget: BudgetSnapshot | null = null;
 let shown: Shown | null = null;
 /** The market's weather: ETH now against the last visit more than an hour ago (null until known). */
 let weather: Weather = weatherFor(null);
+// `?market=boom|up|flat|down|crash` shows that weather (for looking at it), whatever ETH did
+const marketParam = new URLSearchParams(location.search).get('market');
+const pinnedMood = (['boom', 'up', 'flat', 'down', 'crash'] as const).find((m) => m === marketParam) ?? null;
+if (pinnedMood) weather = weatherFor(pinnedMood);
 let priceSettled = false;
 const hourParam = Number(new URLSearchParams(location.search).get('hour'));
 const pinnedHour = Number.isFinite(hourParam) && new URLSearchParams(location.search).has('hour') ? hourParam : undefined;
@@ -155,6 +160,18 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       prefs,
       mode,
       budget,
+      history: historyWalk,
+      onTapSound: (i) => {
+        sound.tapStyle = i;
+        if (!sound.on) {
+          sound.setOn(true);
+          prefs.sound = true;
+          savePrefs(prefs);
+          showSound();
+        }
+        // a moment for the audio to wake on the first tap
+        setTimeout(() => sound.tap('building', i), sound.state === 'running' ? 0 : 150);
+      },
       onWalletsChanged: () => void session.home(),
       onKeyChanged: () => {
         session.keyChanged();
@@ -246,6 +263,7 @@ function renderSheet(sheet: SheetState): HTMLElement {
 /** Sound: off until the player turns it on (the same setting as the town). */
 const sound = new Soundscape();
 sound.setVolume(prefs.volume);
+sound.tapStyle = prefs.tapSound;
 
 /** The first load: the wallets, the castle's models, a welcome (loadingScreen.ts). */
 const loading = new LoadingScreen();
@@ -339,7 +357,8 @@ let guildNow: Guild | null = null;
 function walletName(i: number): string {
   const h = guildNow?.heroes[i];
   if (!h) return 'A wallet';
-  return prefs.ens[h.address] ?? (h.name && !h.name.startsWith('0x') ? h.name : shortAddr(h.address));
+  if (shown?.visiting) return prefs.ens[h.address] || (h.name && !h.name.startsWith('0x') ? h.name : shortAddr(h.address));
+  return walletDisplayName(prefs, h.address);
 }
 
 /** A protocol's logo picture (from the theme that has the logos), for its sheet's title. */
@@ -400,7 +419,7 @@ function settlePrice(w: CastleWorld): void {
   savePrefs(prefs);
   const move = eth.prev ? priceMove(w.ethUsd, eth.prev) : null;
   conditions.price(w.ethUsd, move);
-  weather = weatherFor(move ? move.mood : null);
+  weather = weatherFor(pinnedMood ?? (move ? move.mood : null));
   view?.setWeather(weather);
 }
 
@@ -411,7 +430,20 @@ function showTopbar(): void {
   shell.setRankTitle(p ? `${p.rank}, ${playerTitle(p, prefs.title)}` : '');
 }
 
+/** How far back each wallet's history is gathered (the Guild tab shows it; null: the walk back is not running). */
+let historyWalk: { statuses: LedgerStatus[]; paused: string | null } | null = null;
+let historyDrawn = 0;
+
 const session = new Session(prefs, {
+  onHistory: (statuses, paused) => {
+    historyWalk = paused === 'stopped' && statuses.length === 0 ? null : { statuses, paused: paused ?? null };
+    // the Guild tab's rows in place, at most every 2 s (typing elsewhere on the tab is left alone)
+    const now = Date.now();
+    if (now - historyDrawn < 2000) return;
+    historyDrawn = now;
+    const rows = shell.element.querySelector('.guild-tab .history-rows');
+    if (rows) rows.replaceWith(historyRows({ history: historyWalk, prefs }));
+  },
   onTown: (town) => {
     shown = town;
     // the wallets are in: next the castle's models (or, on a tab with no scene, straight to the welcome)

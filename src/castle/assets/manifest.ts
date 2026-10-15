@@ -355,6 +355,21 @@ const SCENERY: AssetSpec[] = [
     (n): AssetSpec => ({ name: `scenery.rock.${n}`, kind: 'model', required: false, size: [1, 1, 0.6], standin: { shape: 'box', color: '#8a8a80' }, note: 'Rock.' }),
   ),
   { name: 'scenery.hill', kind: 'model', required: false, size: [20, 20, 4], standin: { shape: 'cone', color: '#6b8a4a' }, note: 'Backdrop hill.' },
+  // batch 14 (docs/batches/14-world-and-sky.md): the world around the town, and the clouds
+  ...(['1', '2', '3'] as const).map((n): AssetSpec => ({ name: `scenery.mountain.${n}`, kind: 'model', required: false, size: [55, 55, 28], standin: { shape: 'cone', color: '#7d8a8f' }, note: 'Backdrop mountain.' })),
+  { name: 'scenery.forest.patch', kind: 'model', required: false, size: [12, 12, 7], clips: ['idle'], standin: { shape: 'cone', color: '#4a6a3a' }, note: 'A clump of forest as one mesh.' },
+  { name: 'scenery.field.wheat', kind: 'model', required: false, size: [10, 8, 0.8], clips: ['idle'], standin: { shape: 'box', color: '#d9b45a' }, note: 'Wheat field.' },
+  { name: 'scenery.field.crops', kind: 'model', required: false, size: [10, 8, 0.6], standin: { shape: 'box', color: '#7a8a4a' }, note: 'Vegetable field.' },
+  { name: 'scenery.farmhouse', kind: 'model', required: false, size: [6, 5, 6], clips: ['idle'], standin: { shape: 'box', color: '#b9925a' }, note: 'Farmstead.' },
+  { name: 'scenery.windmill', kind: 'model', required: false, size: [5, 5, 11], clips: ['idle'], standin: { shape: 'cylinder', color: '#d8cdb8' }, note: 'Windmill; its sails turn.' },
+  { name: 'scenery.river.straight', kind: 'model', required: false, size: [6, 6, 0.3], clips: ['idle'], standin: { shape: 'plane', color: '#3c8fb5' }, note: 'River tile.' },
+  { name: 'scenery.river.bend', kind: 'model', required: false, size: [6, 6, 0.3], clips: ['idle'], standin: { shape: 'plane', color: '#3c8fb5' }, note: 'River bend tile.' },
+  { name: 'scenery.bridge.stone', kind: 'model', required: false, size: [4, 8, 3], standin: { shape: 'box', color: '#a8a193' }, note: 'Stone bridge over the river.' },
+  { name: 'scenery.ruin', kind: 'model', required: false, size: [6, 6, 8], standin: { shape: 'cylinder', color: '#8a8478' }, note: 'Old ruined watchtower.' },
+  { name: 'scenery.camp', kind: 'model', required: false, size: [5, 5, 3], clips: ['idle'], standin: { shape: 'cone', color: '#b9925a' }, note: 'Travellers’ camp.' },
+  { name: 'scenery.meadow', kind: 'model', required: false, size: [8, 8, 0.4], clips: ['idle'], standin: { shape: 'plane', color: '#8fb35a' }, note: 'Wild flowers.' },
+  { name: 'scenery.lake', kind: 'model', required: false, size: [16, 12, 0.3], clips: ['idle'], standin: { shape: 'plane', color: '#3c8fb5' }, note: 'Small lake.' },
+  ...(['1', '2', '3', 'rain'] as const).map((n): AssetSpec => ({ name: `scenery.cloud.${n}`, kind: 'model', required: false, size: [12, 6, 4], standin: { shape: 'sphere', color: '#ffffff' }, note: 'Cloud floating over the scene.' })),
 ];
 
 /** Signature buildings by protocol family (docs/ASSET_SPEC.md §3.10): one model each, no tiers. */
@@ -471,6 +486,15 @@ const LIFE: AssetSpec[] = [
   { name: 'animal.dog', kind: 'model', required: false, size: [0.35, 0.8, 0.6], clips: ['idle', 'walk'], standin: { shape: 'capsule', color: '#8a6a4a' }, note: 'Dog.' },
   { name: 'animal.duck', kind: 'model', required: false, size: [0.3, 0.45, 0.3], clips: ['idle', 'swim'], standin: { shape: 'sphere', color: '#c9b48a' }, note: 'Duck on the moat; waterline at y = 0.' },
   { name: 'animal.horse', kind: 'model', required: false, size: [0.6, 2.2, 1.7], clips: ['idle', 'walk'], standin: { shape: 'capsule', color: '#6b4a2b' }, note: 'Horse in the paddock.' },
+  // batch 15 (docs/batches/15-life.md)
+  { name: 'person.tollkeeper', kind: 'model', required: false, size: [0.6, 0.4, 1.75], clips: ['idle', 'toll', 'tap', 'refuse'], standin: { shape: 'capsule', color: '#8a6a4a', offset: [0, 0.85, 0] }, note: 'The toll keeper at the booth.' },
+  { name: 'animal.bird', kind: 'model', required: false, size: [0.35, 0.3, 0.15], clips: ['fly', 'glide', 'idle'], standin: { shape: 'sphere', color: '#f5f2ea' }, note: 'A bird; flocks over the town.' },
+  { name: 'animal.crow', kind: 'model', required: false, size: [0.4, 0.3, 0.15], clips: ['fly', 'glide', 'idle'], standin: { shape: 'sphere', color: '#3d3a40' }, note: 'A crow.' },
+  { name: 'animal.sheep', kind: 'model', required: false, size: [0.5, 1, 0.8], clips: ['idle', 'walk', 'tap'], standin: { shape: 'sphere', color: '#f5f2ea' }, note: 'Sheep.' },
+  { name: 'animal.cow', kind: 'model', required: false, size: [0.7, 1.9, 1.4], clips: ['idle', 'walk', 'tap'], standin: { shape: 'capsule', color: '#8a6a4a' }, note: 'Cow.' },
+  { name: 'animal.deer', kind: 'model', required: false, size: [0.4, 1.4, 1.5], clips: ['idle', 'walk', 'run'], standin: { shape: 'capsule', color: '#a07a4c' }, note: 'Deer at the forest edge.' },
+  { name: 'animal.fish', kind: 'model', required: false, size: [0.1, 0.4, 0.15], clips: ['jump'], standin: { shape: 'sphere', color: '#e8843a' }, note: 'A fish jumping in the moat.' },
+  { name: 'animal.butterfly', kind: 'model', required: false, size: [0.12, 0.1, 0.05], clips: ['fly'], standin: { shape: 'sphere', color: '#e8843a' }, note: 'A butterfly.' },
   { name: 'castle.flag', kind: 'model', required: false, size: [0.6, 0.02, 1.6], clips: ['wave'], standin: { shape: 'cylinder', color: '#8a3b32' }, note: 'Flag on top of a wallet tower, in the wallet’s crest colour (Tint).' },
   { name: 'moat.lily', kind: 'model', required: false, size: [0.5, 0.5, 0.05], standin: { shape: 'plane', color: '#5b7a4a' }, note: 'Lily pads with a flower.' },
   { name: 'moat.reeds', kind: 'model', required: false, size: [0.6, 0.4, 0.9], standin: { shape: 'cone', color: '#5b7a4a' }, note: 'Reeds at the moat’s edge.' },

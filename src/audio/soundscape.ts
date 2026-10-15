@@ -10,6 +10,9 @@
 
 type Ctx = AudioContext;
 
+/** The click sounds a player can pick (the Guild tab), in their order. */
+export const TAP_SOUNDS = ['Marimba', 'Chime', 'Wood block', 'Coins', 'Harp'] as const;
+
 export class Soundscape {
   #ctx: Ctx | null = null;
   #master: GainNode | null = null;
@@ -211,23 +214,63 @@ export class Soundscape {
     this.played.coins = (this.played.coins ?? 0) + 1;
   }
 
+  /** Which click sound taps play (TAP_SOUNDS). */
+  tapStyle = 0;
+
   /**
-   * A tap on something in the scene: a soft wooden knock and a warm two-note
-   * pluck (a marimba's), rising for a building, a single note for a person, a
-   * quick tick for a courier. Silent while sound is off.
+   * A tap on something in the scene, in the chosen style (TAP_SOUNDS): a
+   * building gets the full sound, a person a lighter one, a courier a tick.
+   * Silent while sound is off.
    */
-  tap(what: 'building' | 'person' | 'courier' = 'building'): void {
+  tap(what: 'building' | 'person' | 'courier' = 'building', style = this.tapStyle): void {
     if (!this.#on || !this.#ctx || !this.#master) return;
     const t = this.#ctx.currentTime;
-    // the knock: a short low thump of filtered noise
-    this.#noiseBurst(t, 'lowpass', what === 'courier' ? 1400 : 700, what === 'building' ? 0.22 : 0.12, 0.07);
-    // the pluck: a sine with its octave, quickly fading (a struck wooden bar)
-    const notes = what === 'building' ? [523.25, 783.99] : what === 'person' ? [659.25] : [987.77];
-    notes.forEach((f, i) => {
-      this.#tone(t + 0.012 + i * 0.07, f, 0.09, 0.45, 'sine');
-      this.#tone(t + 0.012 + i * 0.07, f * 2, 0.025, 0.18, 'sine');
-      this.#tone(t + 0.012 + i * 0.07, f * 4.02, 0.008, 0.06, 'triangle');
-    });
+    const light = what !== 'building';
+    const lift = what === 'courier' ? 1.5 : what === 'person' ? 1.26 : 1;
+    switch (style) {
+      case 1: {
+        // chime: two bright bell notes, a fifth apart
+        const notes = light ? [1046.5 * lift] : [1046.5, 1568];
+        notes.forEach((f, i) => {
+          this.#tone(t + i * 0.08, f, 0.06, 0.9, 'sine');
+          this.#tone(t + i * 0.08, f * 2.76, 0.012, 0.35, 'sine');
+        });
+        break;
+      }
+      case 2: {
+        // wood block: two hollow knocks
+        this.#noiseBurst(t, 'bandpass', 900 * lift, 0.35, 0.05);
+        this.#tone(t, 820 * lift, 0.08, 0.08, 'triangle');
+        if (!light) {
+          this.#noiseBurst(t + 0.09, 'bandpass', 1300, 0.3, 0.045);
+          this.#tone(t + 0.09, 1150, 0.07, 0.07, 'triangle');
+        }
+        break;
+      }
+      case 3:
+        // coins: a few bright pings
+        this.#coins(t, 'paid', light ? 0 : 1);
+        break;
+      case 4: {
+        // harp: a quick rising arpeggio
+        const notes = light ? [659.25 * lift, 987.77 * lift] : [523.25, 659.25, 783.99, 1046.5];
+        notes.forEach((f, i) => {
+          this.#tone(t + i * 0.045, f, 0.05, 0.6, 'triangle');
+          this.#tone(t + i * 0.045, f * 2, 0.012, 0.3, 'sine');
+        });
+        break;
+      }
+      default: {
+        // marimba: a soft knock and a warm two-note pluck (a struck wooden bar)
+        this.#noiseBurst(t, 'lowpass', what === 'courier' ? 1400 : 700, light ? 0.12 : 0.22, 0.07);
+        const notes = what === 'building' ? [523.25, 783.99] : what === 'person' ? [659.25] : [987.77];
+        notes.forEach((f, i) => {
+          this.#tone(t + 0.012 + i * 0.07, f, 0.09, 0.45, 'sine');
+          this.#tone(t + 0.012 + i * 0.07, f * 2, 0.025, 0.18, 'sine');
+          this.#tone(t + 0.012 + i * 0.07, f * 4.02, 0.008, 0.06, 'triangle');
+        });
+      }
+    }
     this.played.tap = (this.played.tap ?? 0) + 1;
   }
 

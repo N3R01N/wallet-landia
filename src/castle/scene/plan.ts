@@ -330,11 +330,28 @@ export function planCastle(
   // The lit overlay sits over every road and path tile; the view shows it while a courier is near.
   for (const t of road) lit.push({ name: 'path.tile.lit', x: t.x, z: t.z, rot: t.rot ?? 0, key: 'lit' });
 
+  // cobbles: the island, the avenue's band, the plaza, and every plot from the avenue to its far side
+  // (a big building stands on paving, not on the grass), each 2 m cell once
+  const even = (v: number, up: boolean) => (up ? Math.ceil(v / 2) : Math.floor(v / 2)) * 2;
+  const plotCells = buildings.flatMap((b) => {
+    const reach = b.half + 0.5;
+    const outer = Math.abs(b.x) + reach;
+    return cells(b.x < 0 ? -even(outer, true) : 4, b.x < 0 ? -4 : even(outer, true), even(b.z - reach, false), even(b.z + reach, true), () => false);
+  });
+  const seenCell = new Set<string>();
   const ground = [
     ...cells(island.x0, island.x1, island.z0, island.z1, () => false),
     ...cells(-4, 4, 0, Math.ceil(avenue.end / 2) * 2, () => false),
     ...cells(-10, 10, Math.floor(avenue.plazaStart / 2) * 2, Math.ceil(avenue.plazaEnd / 2) * 2, (x) => Math.abs(x) < 4),
-  ].map((c) => ({ name: 'town.ground', ...c }));
+    ...plotCells,
+  ]
+    .filter((c) => {
+      const k = `${c.x},${c.z}`;
+      if (seenCell.has(k)) return false;
+      seenCell.add(k);
+      return true;
+    })
+    .map((c) => ({ name: 'town.ground', ...c }));
 
   const courierRoute = routeTo(avenue, buildings[0] ?? null);
 
@@ -635,6 +652,46 @@ function planScenery(town: { x0: number; x1: number; z1: number }, MOAT: Rect): 
     i++;
     out.push({ name: jitter(i) < 0.5 ? 'scenery.tree.pine' : 'scenery.tree.oak', x: round(x + jitter(i + 2)), z: round(MOAT.z0 - 2.5 - jitter(i + 4) * 2), rot: round(jitter(i + 6) * 6) });
   }
+  out.push(...planWorld(town, MOAT, jitter));
+  return out;
+}
+
+/**
+ * The world beyond the woods (docs/batches/14-world-and-sky.md), shown as its
+ * models arrive (optional: no standins): mountains behind the castle; to the
+ * west farmland (fields, a farmstead, a windmill) and a travellers' camp; to the
+ * east a river running down to a lake, a stone bridge where the road leaves
+ * town; forest patches and meadows between; a ruin on the castle's flank.
+ */
+function planWorld(town: { x0: number; x1: number; z1: number }, MOAT: Rect, jitter: (i: number) => number): Placement[] {
+  const o = (name: string, x: number, z: number, rot = 0): Placement => ({ name, x: round(x), z: round(z), rot: round(rot), optional: true });
+  const out: Placement[] = [];
+  const west = Math.min(MOAT.x0, town.x0) - 9;
+  const east = Math.max(MOAT.x1, town.x1) + 9;
+  const north = MOAT.z0 - 8;
+  const south = town.z1;
+  // mountains: a ridge behind the castle and its shoulders
+  [-95, -50, -5, 40, 85].forEach((x, k) => out.push(o(`scenery.mountain.${(k % 3) + 1}`, x + jitter(300 + k) * 12, north - 55 - jitter(310 + k) * 25, jitter(320 + k) * 6)));
+  out.push(o('scenery.mountain.2', west - 60, north + 10, 1.2), o('scenery.mountain.3', east + 60, north + 5, 2.4));
+  // the castle's flanks: a ruin on the east, forest on the west
+  out.push(o('scenery.ruin', east + 6, north + 2, 0.6));
+  out.push(o('scenery.forest.patch', west - 4, north + 4, 0.3), o('scenery.forest.patch', west - 16, north - 6, 1.9));
+  // west: farmland down the town's side, the windmill on a rise, the camp at the forest's edge
+  for (let z = 4, k = 0; z < south - 6; z += 14, k++) {
+    out.push(o(k % 2 ? 'scenery.field.crops' : 'scenery.field.wheat', west - 8, z + 4, k % 2 ? 0 : Math.PI / 2));
+    if (k % 2 === 0) out.push(o('scenery.meadow', west - 20, z + 7, jitter(330 + k) * 6));
+  }
+  out.push(o('scenery.farmhouse', west - 21, 12, Math.PI / 2), o('scenery.windmill', west - 22, 28, 0.4));
+  out.push(o('scenery.camp', west - 8, south + 6, 0.8));
+  out.push(o('scenery.forest.patch', west - 34, 0, 0.9), o('scenery.forest.patch', west - 34, south * 0.5, 2.1), o('scenery.forest.patch', west - 30, south - 2, 1.4));
+  // east: the river from the hills down past the town into a lake, a bridge where the road leaves town
+  const river = east + 14;
+  for (let z = north - 12; z < south + 6; z += 6) out.push(o('scenery.river.straight', river, z + 3, 0));
+  out.push(o('scenery.lake', river + 2, south + 16, 0));
+  out.push(o('scenery.bridge.stone', river, Math.round((south * 0.5) / 6) * 6 + 3, Math.PI / 2));
+  out.push(o('scenery.forest.patch', river + 16, 6, 0.4), o('scenery.forest.patch', river + 18, south * 0.6, 2.6), o('scenery.meadow', river + 9, south - 8, 1.1));
+  // beyond the town's far end
+  out.push(o('scenery.forest.patch', -14, south + 18, 1.0), o('scenery.forest.patch', 14, south + 20, 2.2), o('scenery.meadow', 0, south + 12, 0));
   return out;
 }
 

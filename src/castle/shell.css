@@ -1607,3 +1607,94 @@ h1 {
   padding: 0 6px;
   gap: 3px;
 }
+
+.name-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.name-edit .rename {
+  min-height: 28px;
+  padding: 0 8px;
+  opacity: 0.7;
+}
+
+.name-edit input {
+  font: inherit;
+  padding: 4px 6px;
+  min-width: 10em;
+}
+
+/* ---------- lifetime history (Guild tab) ---------- */
+
+.history-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-left: 3px solid #c9b48a;
+  background: rgba(255, 255, 255, 0.35);
+}
+.history-row.done {
+  border-left-color: #5fcf6a;
+}
+.history-row.walking {
+  border-left-color: var(--gold);
+}
+.history-row.waiting {
+  border-left-color: #6fa8dc;
+}
+.history-row.problem {
+  border-left-color: #e0503c;
+}
+.history-row.partial {
+  border-left-color: #9a9a9a;
+}
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.history-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: #e8dcc0;
+  white-space: nowrap;
+}
+.history-row.done .history-badge {
+  background: #5fcf6a;
+  color: #10230f;
+}
+.history-row.walking .history-badge {
+  background: var(--gold);
+  animation: history-pulse 1.4s ease-in-out infinite;
+}
+.history-row.problem .history-badge {
+  background: #e0503c;
+  color: #fff;
+}
+@keyframes history-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .history-row.walking .history-badge {
+    animation: none;
+  }
+}
+
+.sound-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sound-choice.on {
+  background: var(--gold);
+  color: #2b2433;
+}

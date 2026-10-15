@@ -22,7 +22,11 @@ describe('castle sky', () => {
     expect(weatherFor('crash').rain).toBe(1);
     expect(weatherFor('down').rain).toBeGreaterThan(0);
     expect(weatherFor('down').rain).toBeLessThan(1);
-    expect(weatherFor('up')).toEqual({ rain: 0, gloom: 0 });
-    expect(weatherFor(null)).toEqual({ rain: 0, gloom: 0 });
+    expect(weatherFor('up')).toMatchObject({ rain: 0, gloom: 0 });
+    // every mood shows: a rise is sunnier and clearer than flat, a fall cloudier
+    expect(weatherFor('boom').clouds).toBeLessThan(weatherFor('up').clouds);
+    expect(weatherFor('up').clouds).toBeLessThan(weatherFor(null).clouds);
+    expect(weatherFor(null).clouds).toBeLessThan(weatherFor('down').clouds);
+    expect(weatherFor('boom').shine).toBeGreaterThan(weatherFor(null).shine);
   });
 });

@@ -52,6 +52,8 @@ export interface Prefs {
   /** Sound (off until the player turns it on) and its volume 0..1. */
   sound: boolean;
   volume: number;
+  /** Which of the click sounds plays when something in the scene is tapped (TAP_SOUNDS in soundscape.ts). */
+  tapSound: number;
   /** The player's own Ethereum node ('' = the free public one). */
   rpcUrl: string;
   /** The chains of the realm: Ethereum and the provinces loaded with it (Phase 6). */
@@ -94,6 +96,7 @@ const DEFAULTS: Prefs = {
   eth: {},
   sound: false,
   volume: 0.6,
+  tapSound: 0,
   rpcUrl: '',
   chains: [...DEFAULT_CHAINS],
   realm: 'ethereum',
