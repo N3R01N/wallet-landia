@@ -23,7 +23,7 @@ Rules: `docs/STYLEGUIDE_V2.md`, especially §10 (lessons).
 | 7d | Landmarks XS: 1inch, OpenSea, ENS, SushiSwap, CoW, Stargate, Safe, ParaSwap, Kyber, LI.FI | [07d](07d-landmarks-xs.md) | blender-e2 | checked; waiting for the user's look |
 | 11 | Townsfolk: the base helper and one per category | [11](11-townsfolk.md) | blender-f3 | checked; waiting for the user's look |
 | 12 | Cargo (t0–t6), animals, props, trees, rocks, hill | [12](12-life-and-props.md) | blender-f3 | checked; waiting for the user's look |
-| 13 | 2D art: icons, badges, ranks, app icons, effects | [13](13-2d-art.md) | blender-e2 | in progress |
+| 13 | 2D art: icons, badges, ranks, app icons, effects | [13](13-2d-art.md) | blender-e2 | approved by the user; the v2 theme uses it (art: true); fix round: light tab icons, a bigger app-icon keep, clearer dust |
 
 The landmark classes come from each protocol's value on Ethereum (`src/castle/world/tvl.json`), so a protocol may change class when the snapshot is renewed. Batch 3 (castle wings) was dropped: castle layout 2 has none.
 

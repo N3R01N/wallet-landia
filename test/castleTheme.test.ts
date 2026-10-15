@@ -28,11 +28,12 @@ describe('castle theme manifest', () => {
 });
 
 describe('themes that extend others (a style pilot)', () => {
-  it('a manifest may extend another theme and say it has no art of its own', () => {
+  it('a manifest may extend another theme; v2 has its own art now (art: false would borrow the parent’s)', () => {
     const raw: unknown = JSON.parse(readFileSync(new URL('../public/themes/medieval-castle-v2/theme.json', import.meta.url), 'utf8'));
     const parsed = parseTheme(raw, '/themes/medieval-castle-v2/') as { theme: CastleTheme; extends?: string };
     expect(parsed.extends).toBe('medieval-castle');
-    expect(parsed.theme.art).toBe(false);
+    expect(parsed.theme.art).toBe(true);
+    expect((parseTheme({ format: 'wallet-landia-theme/1', id: 'ab', version: '1.0.0', art: false }, ROOT) as { theme: CastleTheme }).theme.art).toBe(false);
     // its models are made for the v2 castle (halls in the walls); a theme that does not say gets its parent's
     expect(parsed.theme.castleLayout).toBe(2);
     const plain = parseTheme({ format: 'wallet-landia-theme/1', id: 'ab', version: '1.0.0', castleLayout: 7 }, ROOT) as { theme: CastleTheme };
