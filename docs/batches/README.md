@@ -15,8 +15,8 @@ Rules: `docs/STYLEGUIDE_V2.md`, especially §10 (lessons).
 | 2 | Town frame (ground, path, lit overlay, water, lilies, reeds, bell tower, bell) | [02](02-town-frame.md) | blender-f3 | checked; waiting for the user's look |
 | 4a | Category buildings, class S (7) | [04](04-category-buildings.md) | design agent "categories" | checked; waiting for the user's look |
 | 4b | Category buildings, class M (7) | [04](04-category-buildings.md) | design agent "categories" | checked; waiting for the user's look |
-| 5 | Category buildings, classes XS and L (14) | [04](04-category-buildings.md) | blender-3e | XS checked (waiting for the user's look); L in progress |
-| 6 | Category buildings, class XL (7) | [04](04-category-buildings.md) | blender-3e | next after 5 |
+| 5 | Category buildings, classes XS and L (14) | [04](04-category-buildings.md) | blender-3e | XS and L checked; waiting for the user's look |
+| 6 | Category buildings, class XL (7) | [04](04-category-buildings.md) | blender-3e | in progress |
 | 7a | Landmarks XL: Lido, Spark, EigenLayer, then Maker, Ethena, Morpho | [07a](07a-landmarks-xl.md) | design agent "landmarks" | all six checked; waiting for the user's look |
 | 7b | Landmarks L: Uniswap, Compound, Curve, Rocket Pool, Fluid, Pendle, Convex | [07b](07b-landmarks-l.md) | design agent "landmarks-l" | checked; waiting for the user's look |
 | 7c | Landmarks M and S: Frax, Yearn, Euler, Balancer, Blur, Across, Zora, Gondi | [07c](07c-landmarks-m-s.md) | blender-e2 | 7 of 8 built and checked in the game (no renders yet); Gondi to build |
@@ -28,6 +28,8 @@ Rules: `docs/STYLEGUIDE_V2.md`, especially §10 (lessons).
 The landmark classes come from each protocol's value on Ethereum (`src/castle/world/tvl.json`), so a protocol may change class when the snapshot is renewed. Batch 3 (castle wings) was dropped: castle layout 2 has none.
 
 **Looking at a batch in the game:** `/?theme=medieval-castle-v2&preview=lido,spark,eigenlayer` puts those landmarks into the town at their real value. `preview=lending:5e6,dex:2e8` puts in category buildings at a given value (a $5M lending protocol, a $200M exchange).
+
+**Committed in 0d5a849:** every batch marked checked, except the nft and other category buildings, the market stall prop and the 7c/7d buildings not yet reviewed (Gondi, OpenSea, ENS, SushiSwap, 1inch, CoW, Stargate, Safe, ParaSwap, Kyber, LI.FI).
 
 **Open fixes from the user's look (2026-10-15):**
 - Lido: holes in the boats;
@@ -42,3 +44,4 @@ The landmarks go to blender-e2 and the keep to blender-3e.
 
 `preview=lending:5e6` borrows a real protocol's logo (`lending:5e6:aave` names which one), so preview category buildings show real logos.
 
+**Fix rounds done (2026-10-15):** Spark's lantern, Rocket Pool's open side, Maker's plates; the market stall's apples (a basket), real paintings on nft, shop doors opening outwards, banner and awning clearances (check_cloth).
