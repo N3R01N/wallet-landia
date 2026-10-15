@@ -2,7 +2,7 @@
  * The asset gallery (assets.html): every asset the castle asks for, with its
  * spec, and whether the theme has the file yet. Shows the real model when it
  * exists, the standin otherwise. Built for the design handoff: drop a file
- * into public/themes/medieval-castle/ and reload.
+ * into public/themes/medieval-castle-v2/ and reload.
  */
 
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';

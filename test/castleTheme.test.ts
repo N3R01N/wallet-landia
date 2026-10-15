@@ -53,5 +53,7 @@ describe('themes that extend others (a style pilot)', () => {
     expect(themeFromUrl('?theme=medieval-castle-v2')).toBe('medieval-castle-v2');
     expect(themeFromUrl('?theme=../../etc')).toBe(DEFAULT_THEME);
     expect(themeFromUrl('')).toBe(DEFAULT_THEME);
+    // the v2 theme (its own models and art, the first theme behind it) is the default
+    expect(DEFAULT_THEME).toBe('medieval-castle-v2');
   });
 });

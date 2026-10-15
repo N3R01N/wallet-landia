@@ -539,4 +539,4 @@ export function findAsset(name: string): AssetSpec | undefined {
 }
 
 /** The theme's folder under public/, where the design agent's files go (docs/ASSET_SPEC.md §1.9). */
-export const THEME_DIR = 'themes/medieval-castle';
+export const THEME_DIR = 'themes/medieval-castle-v2';

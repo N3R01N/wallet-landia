@@ -21,7 +21,7 @@ test('the player card, every medal (earned ones first), and a badge’s sheet', 
   await expect(page.locator('.topbar .rank')).toContainText(/Lv \d+ · /);
   // the pictures come from the theme, with its version
   const src = await tab.locator('.badge-card img').first().getAttribute('src');
-  expect(src).toMatch(/\/themes\/medieval-castle\/art\/badge\/[a-z-]+\.svg\?v=\d+\.\d+\.\d+$/);
+  expect(src).toMatch(/\/themes\/medieval-castle-v2\/art\/badge\/[a-z-]+\.svg\?v=\d+\.\d+\.\d+$/);
 
   for (const card of [tab.locator('.castle-badge').first(), tab.locator('.badge-card:not(.castle-badge)').first()]) {
     await card.click();
