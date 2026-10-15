@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { assetPath, findAsset, tierFallbacks, type AssetSpec } from './manifest.js';
 import { themeChain, themeFileUrl, type CastleTheme } from './theme.js';
@@ -18,7 +19,8 @@ export interface Loaded {
 
 export class ModelLibrary {
   readonly #theme: Promise<CastleTheme>;
-  readonly #loader = new GLTFLoader();
+  // the built site's models are meshopt-compressed (scripts/compress-models.ts)
+  readonly #loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   readonly #cache = new Map<string, Promise<Loaded | null>>();
 
   /** The theme to load from; its version goes on every file's URL. */

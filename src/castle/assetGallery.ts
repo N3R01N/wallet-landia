@@ -6,6 +6,7 @@
  */
 
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { el } from '../util/dom.js';
 import { ASSETS, THEME_DIR, assetPath, tierColor, type AssetSpec } from './assets/manifest.js';
 import { buildStandin } from './assets/standin.js';
@@ -41,7 +42,7 @@ if (!root) throw new Error('#app is missing from assets.html');
 
 const ready = new Set<string>();
 const thumbnailer = new Thumbnailer();
-const loader = new GLTFLoader();
+const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 const cards = new Map<string, Card>();
 /** The picture each model's card shows, so the detail view can reuse it. */
 const thumbs = new Map<string, string>();

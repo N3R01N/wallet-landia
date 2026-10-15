@@ -41,7 +41,7 @@ export default defineConfig({
   },
   // Pre-bundle the three.js add-ons the castle uses, so the dev server never
   // finds one mid-session and reloads the page.
-  optimizeDeps: { include: ['three/examples/jsm/loaders/GLTFLoader.js', 'three/examples/jsm/utils/SkeletonUtils.js', 'three/examples/jsm/environments/RoomEnvironment.js', 'three/examples/jsm/controls/OrbitControls.js'] },
+  optimizeDeps: { include: ['three/examples/jsm/loaders/GLTFLoader.js', 'three/examples/jsm/utils/SkeletonUtils.js', 'three/examples/jsm/environments/RoomEnvironment.js', 'three/examples/jsm/controls/OrbitControls.js', 'three/examples/jsm/libs/meshopt_decoder.module.js'] },
   // /api/zerion → api.zerion.io for `vite preview` (production builds use the
   // proxy transport; on Vercel the edge function in api/ answers instead).
   server: { proxy: { '/api/zerion': zerionProxy } },
