@@ -19,11 +19,11 @@ Rules: `docs/STYLEGUIDE_V2.md`, especially §10 (lessons).
 | 6 | Category buildings, class XL (7) | [04](04-category-buildings.md) | blender-3e | in progress |
 | 7a | Landmarks XL: Lido, Spark, EigenLayer, then Maker, Ethena, Morpho | [07a](07a-landmarks-xl.md) | design agent "landmarks" | all six checked; waiting for the user's look |
 | 7b | Landmarks L: Uniswap, Compound, Curve, Rocket Pool, Fluid, Pendle, Convex | [07b](07b-landmarks-l.md) | design agent "landmarks-l" | checked; waiting for the user's look |
-| 7c | Landmarks M and S: Frax, Yearn, Euler, Balancer, Blur, Across, Zora, Gondi | [07c](07c-landmarks-m-s.md) | blender-e2 | 7 of 8 built and checked in the game (no renders yet); Gondi to build |
-| 7d | Landmarks XS: 1inch, OpenSea, ENS, SushiSwap, CoW, Stargate, Safe, ParaSwap, Kyber, LI.FI | [07d](07d-landmarks-xs.md) | blender-e2 | OpenSea, ENS built; SushiSwap broken mid-build; 7 to build |
+| 7c | Landmarks M and S: Frax, Yearn, Euler, Balancer, Blur, Across, Zora, Gondi | [07c](07c-landmarks-m-s.md) | blender-e2 | checked; waiting for the user's look |
+| 7d | Landmarks XS: 1inch, OpenSea, ENS, SushiSwap, CoW, Stargate, Safe, ParaSwap, Kyber, LI.FI | [07d](07d-landmarks-xs.md) | blender-e2 | checked; waiting for the user's look |
 | 11 | Townsfolk: the base helper and one per category | [11](11-townsfolk.md) | blender-f3 | checked; waiting for the user's look |
 | 12 | Cargo (t0–t6), animals, props, trees, rocks, hill | [12](12-life-and-props.md) | blender-f3 | checked; waiting for the user's look |
-| 13 | 2D art: icons, badges, ranks, app icons, effects | — | — | own short guide first |
+| 13 | 2D art: icons, badges, ranks, app icons, effects | [13](13-2d-art.md) | blender-e2 | in progress |
 
 The landmark classes come from each protocol's value on Ethereum (`src/castle/world/tvl.json`), so a protocol may change class when the snapshot is renewed. Batch 3 (castle wings) was dropped: castle layout 2 has none.
 
