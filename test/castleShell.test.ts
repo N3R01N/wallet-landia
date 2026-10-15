@@ -4,19 +4,19 @@ import { DESKTOP_MIN_WIDTH, closeSheet, initialShell, isTab, layoutFor, openShee
 describe('castle shell state', () => {
   it('starts on the castle with no sheet', () => {
     expect(initialShell()).toEqual({ tab: 'castle', sheet: null });
-    expect(initialShell('town').tab).toBe('town');
+    expect(initialShell('guild').tab).toBe('guild');
   });
 
   it('opening a sheet keeps the tab; switching tabs closes it', () => {
-    const open = openSheet(initialShell('town'), { id: 'building:dex', title: 'Market' });
-    expect(open.tab).toBe('town');
+    const open = openSheet(initialShell('guild'), { id: 'building:dex', title: 'Market' });
+    expect(open.tab).toBe('guild');
     expect(open.sheet?.id).toBe('building:dex');
     expect(selectTab(open, 'badges')).toEqual({ tab: 'badges', sheet: null });
   });
 
   it('selecting the current tab changes nothing (keeps an open sheet)', () => {
-    const open = openSheet(initialShell('town'), { id: 'building:dex', title: 'Market' });
-    expect(selectTab(open, 'town')).toBe(open);
+    const open = openSheet(initialShell('guild'), { id: 'building:dex', title: 'Market' });
+    expect(selectTab(open, 'guild')).toBe(open);
   });
 
   it('closing with no sheet returns the same state', () => {
@@ -35,6 +35,8 @@ describe('castle shell state', () => {
   it('recognises tab ids only', () => {
     expect(isTab('castle')).toBe(true);
     expect(isTab('realms')).toBe(false);
+    // the town is part of the castle's scene now, not a tab of its own
+    expect(isTab('town')).toBe(false);
   });
 });
 

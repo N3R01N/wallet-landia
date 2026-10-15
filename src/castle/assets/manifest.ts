@@ -202,6 +202,11 @@ const TOWN: AssetSpec[] = [
   { name: 'path.tile.straight', kind: 'model', required: true, size: [1, 1, 0.02], standin: { shape: 'plane', color: '#c9b48a' }, note: 'Path across.' },
   { name: 'path.tile.corner', kind: 'model', required: true, size: [1, 1, 0.02], standin: { shape: 'plane', color: '#c9b48a' }, note: 'Path bend, 90°.' },
   { name: 'path.tile.junction', kind: 'model', required: true, size: [1, 1, 0.02], standin: { shape: 'plane', color: '#c9b48a' }, note: 'Three-way path.' },
+  // v2 path shapes (docs/batches/18-path-tiles.md): the game picks one per cell from its neighbours
+  { name: 'path.tile.bend', kind: 'model', required: false, size: [1, 1, 0.02], standin: { shape: 'plane', color: '#c9b48a' }, note: 'v2: a 90° turn, open to +z and +x.' },
+  { name: 'path.tile.tee', kind: 'model', required: false, size: [1, 1, 0.02], standin: { shape: 'plane', color: '#c9b48a' }, note: 'v2: a branch, open to +z, −z and +x.' },
+  { name: 'path.tile.cross', kind: 'model', required: false, size: [1, 1, 0.02], standin: { shape: 'plane', color: '#c9b48a' }, note: 'v2: a crossing, open on all four sides.' },
+  { name: 'path.tile.end', kind: 'model', required: false, size: [1, 1, 0.02], standin: { shape: 'plane', color: '#c9b48a' }, note: 'v2: where a path ends, open to +z only.' },
   { name: 'path.tile.lit', kind: 'model', required: true, size: [1, 1, 0.01], standin: { shape: 'plane', color: '#ffd166' }, note: 'Glow overlay on any path tile.' },
 ];
 

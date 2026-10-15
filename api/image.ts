@@ -21,10 +21,13 @@ export const IMAGE_HOSTS = [
   'lh3.googleusercontent.com',
   'i2c.seadn.io',
   'i2.seadn.io',
+  // NFT pictures read from the chain (a loan's collateral): IPFS and Arweave gateways
+  'ipfs.filebase.io',
+  'arweave.net',
 ];
 
-/** A picture no bigger than this (a 3D texture's worth; the pictures are small). */
-const MAX_BYTES = 2_000_000;
+/** A picture no bigger than this (a 3D texture's worth; NFT art can be a few MB). */
+const MAX_BYTES = 8_000_000;
 const TIMEOUT_MS = 10_000;
 
 /** The address to fetch, if it is a https picture on one of the hosts; else null. Pure. */
@@ -37,7 +40,9 @@ export function allowedImageUrl(raw: string | null): string | null {
     return null;
   }
   if (u.protocol !== 'https:' || u.username !== '' || u.password !== '') return null;
-  return IMAGE_HOSTS.includes(u.hostname) ? u.href : null;
+  // Arweave serves from per-file subdomains too (<hash>.arweave.net)
+  const host = u.hostname.endsWith('.arweave.net') ? 'arweave.net' : u.hostname;
+  return IMAGE_HOSTS.includes(host) ? u.href : null;
 }
 
 /** A raster picture's type from its first bytes (PNG, JPEG, GIF, WebP), else null (never SVG: it can carry script). Pure. */

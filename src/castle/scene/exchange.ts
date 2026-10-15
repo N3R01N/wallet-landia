@@ -46,6 +46,8 @@ interface Flying {
 
 /** Coins and frames fly bigger than life (as in collecting games): readable from the game's camera. */
 const COIN_SCALE = 2.4;
+/** An NFT's picture is drawn down to this many pixels across at most. */
+const PICTURE_PX = 512;
 const FRAME_SCALE = 2.2;
 /** Stablecoins travel as silver. */
 const STABLES = new Set(['USDC', 'USDT', 'DAI', 'USDS', 'FRAX', 'LUSD', 'PYUSD', 'GHO', 'USDE', 'CRVUSD', 'TUSD', 'USDP', 'BUSD', 'SUSD']);
@@ -65,14 +67,32 @@ export function coinMark(symbol: string): string {
   return s.slice(0, 4);
 }
 
+const LOCK_GOLD = new THREE.MeshStandardMaterial({ color: 0xc9a24a, metalness: 0.7, roughness: 0.35 });
+const LOCK_IRON = new THREE.MeshStandardMaterial({ color: 0x3a3a40, metalness: 0.6, roughness: 0.45 });
+
+/** A padlock hung on a frame's lower edge (the frame's origin is its handle's grip at the top). */
+function padlock(): THREE.Object3D {
+  const g = new THREE.Group();
+  g.name = 'padlock';
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.13, 0.06), LOCK_GOLD);
+  const shackle = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.014, 6, 12, Math.PI), LOCK_IRON);
+  shackle.position.y = 0.065;
+  const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.065, 8).rotateX(Math.PI / 2), LOCK_IRON);
+  g.add(body, shackle, hole);
+  g.position.set(0, -0.6, 0.06);
+  return g;
+}
+
 /** How many coins a value shows as: more for more, never a slow trickle. */
 export function coinCount(usd: number | null): number {
   const v = Math.abs(usd ?? 0);
   return Math.max(3, Math.min(14, Math.round(Math.log10(v + 1) * 3)));
 }
 
-/** A short label for goods: "+0.52 ETH", "−1,200 USDC", "+1 Elders #29". Pure. */
+/** A short label for goods: "+0.52 ETH", "−1,200 USDC", "+1 Elders #29", "🔒 Elders #29". Pure. */
 export function goodsLabel(g: Goods, incoming: boolean): string {
+  // a loan's collateral: held (coming home) or released (going back)
+  if (g.collateral) return `${incoming ? '🔒 Collateral' : '🔓 Back'}: ${g.name ?? g.symbol}`;
   const sign = incoming ? '+' : '−';
   // value only (a toll, goods with no token named)
   if (!g.symbol) return `${sign}$${Math.abs(g.usd ?? 0) < 1 ? Math.abs(g.usd ?? 0).toFixed(2) : Math.round(Math.abs(g.usd ?? 0)).toLocaleString('en-US')}${g.name ? ` ${g.name}` : ''}`;
@@ -176,7 +196,17 @@ export class Exchange {
 
   /** A framed picture of an NFT (its own image when it can be had, else a stylised painting), for carrying or sending. */
   frame(g: Goods): THREE.Object3D {
-    const obj = this.#host.model('fx.nft.frame') ?? this.#standinFrame();
+    const model = this.#host.model('fx.nft.frame');
+    // its moulding (`Trim`) gilt
+    model?.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const swap = (m: THREE.Material) => (m.name === 'Trim' ? this.#coinMaterial('frame|gilt', m, (mine) => mine.color.set(0xd9a93a)) : m);
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map(swap) : swap(mesh.material);
+    });
+    const obj = model ?? this.#standinFrame();
+    // a loan's collateral: a padlock on the frame (held while the loan runs)
+    if (g.collateral) obj.add(padlock());
     void this.#picture(g).then((tex) => {
       if (!tex) return;
       obj.traverse((o) => {
@@ -185,7 +215,7 @@ export class Exchange {
         const m = mesh.material as THREE.MeshStandardMaterial;
         if (m.name === 'Picture') {
           const mine = m.clone();
-          mine.map = tex;
+          mine.map = this.#gltfWay(tex);
           mine.color.set(0xffffff);
           this.#mine.push(mine);
           mesh.material = mine;
@@ -194,6 +224,22 @@ export class Exchange {
     });
     return obj;
   }
+
+  /** A picture as a glTF model's UVs want it (not flipped: they run top-down), once per picture. */
+  #gltfWay(tex: THREE.Texture): THREE.Texture {
+    if (!tex.flipY) return tex;
+    let mine = this.#unflipped.get(tex);
+    if (!mine) {
+      mine = tex.clone();
+      mine.flipY = false;
+      mine.needsUpdate = true;
+      this.#textures.push(mine);
+      this.#unflipped.set(tex, mine);
+    }
+    return mine;
+  }
+
+  readonly #unflipped = new Map<THREE.Texture, THREE.Texture>();
 
   /** The coin model's faces show the token (Ξ, $, its symbol) and its rim (`Trim`) is gold, or silver for a stablecoin; one material per kind, shared. */
   #dressCoin(coin: THREE.Object3D, symbol: string, silver: boolean): void {
@@ -245,6 +291,7 @@ export class Exchange {
     g.fillText(mark, 64, 68);
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
+    t.flipY = false; // on the coin model's glTF UVs
     this.#textures.push(t);
     return t;
   }
@@ -297,12 +344,20 @@ export class Exchange {
     if (!url) return Promise.resolve(null);
     let p = this.#pictures.get(url);
     if (!p) {
-      p = new THREE.TextureLoader()
-        .loadAsync(`/api/image?u=${encodeURIComponent(url)}`)
-        .then((t) => {
+      // a picture kept in the metadata itself (data:) loads as it is; the rest through our proxy. Drawn down to
+      // PICTURE_PX on a canvas: NFT art can be thousands of pixels, far too much texture for a frame on a phone
+      p = new THREE.ImageLoader()
+        .loadAsync(url.startsWith('data:') ? url : `/api/image?u=${encodeURIComponent(url)}`)
+        .then((img) => {
+          const scale = Math.min(1, PICTURE_PX / Math.max(img.width || PICTURE_PX, img.height || PICTURE_PX));
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round((img.width || PICTURE_PX) * scale));
+          c.height = Math.max(1, Math.round((img.height || PICTURE_PX) * scale));
+          c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+          const t = new THREE.CanvasTexture(c);
           t.colorSpace = THREE.SRGBColorSpace;
           this.#textures.push(t);
-          return t;
+          return t as THREE.Texture;
         })
         .catch(() => null);
       this.#pictures.set(url, p);

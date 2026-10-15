@@ -22,7 +22,7 @@ import { ModelLibrary, disposeTree, type Loaded } from '../assets/models.js';
 import { artTheme, loadThemeImage, themeFileUrl, type CastleTheme } from '../assets/theme.js';
 import { crestColors } from '../../util/rng.js';
 import { DEFAULT_TIMING, buildCourierScript, courierAt, type CourierScript, type CourierState, type NpcClip } from './courier.js';
-import { planCastle, routeBetweenWallets, routeTo, type BuildingPlacement, type CastleLayout, type CastlePlan, type Placement, type WalletPlacement } from './plan.js';
+import { pathRow, pathShape, planCastle, routeBetweenWallets, routeFromHome, routeTo, type BuildingPlacement, type CastleLayout, type CastlePlan, type Placement, type WalletPlacement } from './plan.js';
 import type { CastleWorld, Errand } from '../world/world.js';
 import { lightAt, type Weather } from '../world/sky.js';
 import { logoPath } from '../world/logos.js';
@@ -111,6 +111,18 @@ const TILT_STEP = Math.PI / 18;
 const TURN_BUTTON = Math.PI / 4;
 /** Seconds the bell swings for a block. */
 const BELL_RING = 1.5;
+/** The hover ring's radius under someone walking (m). */
+const HOVER_WALKER = 0.7;
+/** Lit windows' colour, and how bright by day (dark glass) and at night (lamplight). */
+const WINDOW_GLOW = 0xffa23c;
+const WINDOW_DAY = 0.04;
+const WINDOW_NIGHT = 0.85;
+/** A block's light ripples out from the tower: it reaches the farthest path in this many seconds (within the bell's swing), and each tile glows this long as it passes. */
+const RIPPLE_TIME = 1.2;
+const RIPPLE_LIT = 0.35;
+/** How strongly the ripple shows (the courier's own glow is full). */
+const RIPPLE_OPACITY = 0.3;
+const RIPPLE_MIN_SPEED = 12;
 /** With no block reported for this long, the bell keeps time by itself (Ethereum's 12 s), so an offline town still rings. */
 const BLOCK_SILENCE = 20;
 const BLOCK_TIME = 12;
@@ -140,7 +152,7 @@ const CLOUD_LOBE = new THREE.IcosahedronGeometry(1, 2);
 const CLOUD_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, emissive: 0x9fb4c8, emissiveIntensity: 0.25 });
 const CLOUD_STORM_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x8a909c, roughness: 1 });
 /** Models placed by the hundred and never moved: drawn instanced. */
-const INSTANCED = new Set(['town.ground', 'moat.water', 'path.tile.straight']);
+const INSTANCED = new Set(['town.ground', 'moat.water', 'path.tile.straight', 'path.tile.bend', 'path.tile.tee', 'path.tile.cross', 'path.tile.end']);
 /** The ring under what the mouse is over: gold, a little wider than the thing's footprint. */
 const HOVER_RING = new THREE.RingGeometry(0.92, 1, 64).rotateX(-Math.PI / 2);
 const HOVER_COLOR = 0xffd45a;
@@ -158,6 +170,8 @@ const VILLAGER_TINT = '#5a7d9a';
 const BURST_SCALE = 3;
 /** A carried NFT frame, bigger than life so the picture reads (×, against the courier). */
 const CARRY_FRAME_SCALE = 1.4;
+/** The NFT frame's height under its handle's grip (m, fx.nft.frame). */
+const FRAME_HEIGHT = 0.62;
 const CHATTER_EVERY = 6;
 /** A bubble's foot above a person's feet (m). */
 const BUBBLE_HEIGHT = 2.1;
@@ -306,6 +320,8 @@ export class CastleView {
   #autoReplay = true;
   /** When the bell last started ringing, and when a real block last came. */
   #ringAt = -Infinity;
+  /** The block ripple's speed for this layout (m/s; null: work it out on the next ring). */
+  #rippleSpeedNow: number | null = null;
   #blockAt = 0;
   readonly #courierScratch: CourierState[] = [];
   // a cool sky fill with a warm bounce from the ground, and a warm sun that casts shadows (docs/research/LOOK_AND_FEEL.md §10.3)
@@ -470,7 +486,7 @@ export class CastleView {
     return this.#ready;
   }
 
-  /** Test hook: the page coordinates of a protocol's building, to tap it. */
+  /** Test hook: the page coordinates of a protocol's building, to tap it (null: off the view, or hidden behind a bigger one from this side). */
   screenPoint(protocolId: string): { x: number; y: number } | null {
     const b = this.#plan.buildings.find((p) => p.protocol.id === protocolId);
     if (!b) return null;
@@ -491,8 +507,31 @@ export class CastleView {
         }
       }
     }
-    this.#scratch.set(b.x, 1, b.z).project(this.#camera);
-    return toPage();
+    // hidden from this side (a bigger building in front): none
+    return null;
+  }
+
+  /** Test hook: the first courier out carries a framed picture now; where it and the frame are (null: none out). */
+  carryTest(): { courier: number[]; frame: number[]; clip: boolean } | null {
+    const run = this.#runs[0];
+    if (!run) return null;
+    this.#carryFrame(run, { symbol: 'TEST', quantity: 1, usd: null, isNft: true, name: 'Test #1' });
+    const v = new THREE.Vector3();
+    return { courier: run.figure.object.getWorldPosition(v).toArray(), frame: run.frame ? run.frame.getWorldPosition(new THREE.Vector3()).toArray() : [], clip: run.figure.has('carry') };
+  }
+
+  /** Test hook: sends out the first courier taking a loan's collateral back (false: none known yet), and follows it. */
+  sendCollateralBack(): boolean {
+    const e = this.#opts.world.errands.find((x) => x.collateralBack);
+    if (!e) return false;
+    this.sendNow(e);
+    this.follow(e);
+    return true;
+  }
+
+  /** Test hook: how far from the tower the path tiles lit now are (m). */
+  litDistances(): number[] {
+    return this.#litTiles.filter((t) => t.visible).map((t) => this.#towerDistance(t));
   }
 
   /** Test hook: brings a townsperson out walking to the middle of the view (false: none). */
@@ -512,6 +551,21 @@ export class CastleView {
     this.#scratch.y += 1;
     this.#scratch.project(this.#camera);
     if (Math.abs(this.#scratch.x) > 0.9 || Math.abs(this.#scratch.y) > 0.9) return null;
+    const rect = this.#canvas.getBoundingClientRect();
+    return { x: rect.left + ((this.#scratch.x + 1) / 2) * rect.width, y: rect.top + ((1 - this.#scratch.y) / 2) * rect.height };
+  }
+
+  /** Turns the camera to the castle or the town (the tour; the tests). */
+  lookAt(where: CastleFocus): void {
+    const [x, z] = FOCUS_POINT[where];
+    const island = this.#plan.island;
+    this.focusAt(x, where === 'castle' && this.#plan.layout === 2 ? (island.z0 + island.z1) / 2 + 1.5 : z);
+  }
+
+  /** Test hook: the page coordinates of a point in the world (null: off the view). */
+  pagePoint(x: number, y: number, z: number): { x: number; y: number } | null {
+    this.#scratch.set(x, y, z).project(this.#camera);
+    if (Math.abs(this.#scratch.x) > 1 || Math.abs(this.#scratch.y) > 1) return null;
     const rect = this.#canvas.getBoundingClientRect();
     return { x: rect.left + ((this.#scratch.x + 1) / 2) * rect.width, y: rect.top + ((1 - this.#scratch.y) / 2) * rect.height };
   }
@@ -623,6 +677,14 @@ export class CastleView {
     if (this.#queue.length > MAX_QUEUED) this.#queue.splice(0, this.#queue.length - MAX_QUEUED);
   }
 
+  /** Sends this errand's courier out now, ahead of the queue and the limit on couriers out (a replay asked for). */
+  sendNow(errand: Errand): void {
+    this.#queue = this.#queue.filter((e) => e !== errand);
+    if (this.#runs.some((r) => r.errand === errand)) return;
+    this.#spawn(errand);
+    this.#lastSpawn = this.#time;
+  }
+
   /** Forget the couriers waiting to set out (those out finish their errands). */
   clearQueue(): void {
     this.#queue = [];
@@ -648,6 +710,7 @@ export class CastleView {
     this.#resize.disconnect();
     window.removeEventListener('keydown', this.#onKey);
     for (const f of this.#figures) f.dispose();
+    for (const m of this.#softGlow.values()) m.dispose();
     for (const f of this.#ambient) f.dispose();
     for (const r of this.#runs) r.figure.dispose();
     this.#life?.dispose();
@@ -788,11 +851,13 @@ export class CastleView {
     const plan = this.#plan;
     const placements = this.#placements();
     // the many plain tiles (cobbles, water, the avenue): one instanced draw per mesh of each, not one per tile
-    const tiles = placements.filter((p) => INSTANCED.has(p.name) && p.key !== 'lit' && !this.#loaded.get(p.name)?.clips.length);
+    const tiles = placements.filter((p) => INSTANCED.has(p.name) && p.key !== 'lit' && p.key !== 'road' && !this.#loaded.get(p.name)?.clips.length);
     this.#placeInstanced(tiles);
     const tileSet = new Set(tiles);
+    // the paths: the plan's road and each building's walkway, laid together once the buildings stand (#layPaths)
+    const pathCells: { x: number; z: number }[] = plan.road.map((t) => ({ x: t.x, z: t.z }));
     for (const p of placements) {
-      if (tileSet.has(p)) continue;
+      if (tileSet.has(p) || p.key === 'road') continue;
       // the first of the name and its fallbacks that has a model; the last one's standin otherwise
       const options = [p.name, ...(p.fallbacks ?? [])];
       if (p.optional && !options.some((n) => this.#loaded.get(n))) continue; // decoration waits for its model
@@ -849,7 +914,7 @@ export class CastleView {
         obj.userData.building = p;
         this.#buildingRoots.push(obj);
         this.#noteLod(obj);
-        this.#walkway(obj, p as BuildingPlacement);
+        pathCells.push(...this.#walkway(obj, p as BuildingPlacement));
         const brand = brandColor((p as BuildingPlacement).protocol.id);
         if (brand) paint(obj, 'Tint', brand, this.#painted);
         void this.#showLogo(obj, (p as BuildingPlacement).protocol.id, (p as BuildingPlacement).protocol.iconUrl);
@@ -885,6 +950,8 @@ export class CastleView {
       }
     }
 
+    this.#layPaths(pathCells, new Set(plan.road.map((t) => `${t.x},${t.z}`)));
+
     // Each building's person waits inside, to come out when a courier calls.
     for (const b of plan.buildings) {
       const name = this.#loaded.get(`person.npc.${b.protocol.category}`) ? `person.npc.${b.protocol.category}` : 'person.npc.base';
@@ -907,7 +974,13 @@ export class CastleView {
     this.#layout.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
-      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) if (m.name === 'Glow' && 'emissiveIntensity' in m) this.#glows.add(m as THREE.MeshStandardMaterial);
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        // windows and lanterns (not the path glow, which has its own colour)
+        if (m.name !== 'Glow' || !('emissiveIntensity' in m) || m.userData.glowTinted) continue;
+        // lamplight: a warm amber, kept under the tone mapping's white point so it stays warm, never beige
+        (m as THREE.MeshStandardMaterial).emissive.setHex(WINDOW_GLOW);
+        this.#glows.add(m as THREE.MeshStandardMaterial);
+      }
     });
   }
 
@@ -927,6 +1000,7 @@ export class CastleView {
     // the models' geometry and materials belong to the library and stay
     this.#layout.clear();
     this.#litTiles = [];
+    this.#rippleSpeedNow = null;
     this.#buildingRoots.length = 0;
     this.#castleRoots.length = 0;
     this.#hovered = null;
@@ -1093,7 +1167,7 @@ export class CastleView {
     this.#sun.color.setHex(0xffe2b8).lerp(SHINE_COLOR, w.shine * 0.5).lerp(GLOOM_COLOR, w.gloom);
     this.#hemi.intensity = l.ambient * (1 - 0.2 * w.gloom);
     this.#renderer.setClearColor(l.sky, 1);
-    for (const m of this.#glows) m.emissiveIntensity = l.glow;
+    for (const m of this.#glows) m.emissiveIntensity = WINDOW_DAY + (WINDOW_NIGHT - WINDOW_DAY) * l.night;
     this.element.dataset.night = l.night.toFixed(2);
   }
 
@@ -1257,7 +1331,15 @@ export class CastleView {
       if (!way) return;
       script = buildCourierScript(way.route, DEFAULT_TIMING, 'inside', { height: way.height });
     } else {
-      script = buildCourierScript(routeTo(this.#plan.avenue, building), DEFAULT_TIMING, errand.direction, { failed: errand.failed });
+      // from its wallet's hall door across the courtyard (and home to it again), then the town's way
+      const home = routeFromHome(this.#plan, this.#opts.world.walletIds.indexOf(errand.wallet));
+      const town = routeTo(this.#plan.avenue, building);
+      let route = home.length ? [...home.slice(0, -1), { ...home[home.length - 1]!, ...town[0] }, ...town.slice(1)] : town;
+      // a loan's collateral going back: the courier walks it there from the hall (no toll: the borrower paid it)
+      // and brings the repayment home
+      const back = !!errand.collateralBack && errand.direction === 'in';
+      if (back) route = route.map(({ stop, ...p }) => (stop === 'toll' ? p : { ...p, ...(stop ? { stop } : {}) }));
+      script = buildCourierScript(route, DEFAULT_TIMING, back ? 'out' : errand.direction, { failed: errand.failed });
     }
     const figure = new Figure(this.#make('courier.base'), this.#loaded.get('courier.base')?.clips ?? [], [TAP_CLIP]);
     // its goods, sized by value, in its right hand (on the standin's back)
@@ -1276,6 +1358,8 @@ export class CastleView {
     this.#courierTargets.push(target);
     this.#scene.add(figure.object);
     this.#runs.push({ errand, building, script, start: this.#time, figure, cargo, standin: !this.#loaded.get('courier.base') });
+    // a loan ended: the courier takes its collateral from the hall back to the building, held up before it
+    if (errand.collateralBack) this.#carryFrame(this.#runs[this.#runs.length - 1]!, errand.collateralBack);
     this.#lastSpawn = this.#time;
   }
 
@@ -1302,9 +1386,11 @@ export class CastleView {
     const b = run.building;
     const them = b ? new THREE.Vector3(b.npc.x, 0, b.npc.z) : at.clone().add(new THREE.Vector3(0, 0, 1.5));
     let delay = 0;
-    if (e.direction === 'out' && (give.length || e.valueUsd > 0)) {
+    // the courier hands over what it took out (a loan's collateral going back too)
+    const handed = e.collateralBack ? [e.collateralBack, ...give] : give;
+    if ((e.direction === 'out' || e.collateralBack) && (handed.length || e.valueUsd > 0)) {
       this.#dropFrame(run);
-      delay = ex.send(at, them, give.length ? give : this.#valueGoods(e.valueUsd), false) * 0.6;
+      delay = ex.send(at, them, handed.length ? handed : this.#valueGoods(e.valueUsd), false) * 0.6;
     }
     if (get.length) {
       const back = ex.send(them, at, get, true, delay + 0.3);
@@ -1328,15 +1414,17 @@ export class CastleView {
   #carryFrame(run: Run, g: Goods): void {
     if (!this.#exchange || !this.#runs.includes(run) || run.frame) return;
     const frame = this.#exchange.frame(g);
-    // held in its hand when it has the `carry` clip (the frame's origin is the handle's grip), else over its head
+    // held up in front with both hands when it has the `carry` clip: the picture stands on its raised
+    // hands, facing ahead (the frame's origin is the handle's grip, at its top); else over its head
     let hand: THREE.Object3D | undefined;
     run.figure.object.traverse((o) => {
       if (!hand && ((o.userData.name as string | undefined) ?? o.name) === 'hand') hand = o;
     });
     if (hand && run.figure.has('carry')) {
-      const s = hand.getWorldScale(new THREE.Vector3()).x / run.figure.object.getWorldScale(new THREE.Vector3()).x;
-      frame.scale.setScalar(CARRY_FRAME_SCALE / s);
-      hand.add(frame);
+      frame.scale.setScalar(CARRY_FRAME_SCALE);
+      frame.userData.hand = hand; // it follows the hands each frame (#holdFrame)
+      run.figure.object.add(frame);
+      this.#holdFrame(run);
     } else {
       frame.position.set(0, 2.6, 0);
       frame.scale.setScalar(1.6);
@@ -1344,6 +1432,18 @@ export class CastleView {
     }
     run.frame = frame;
   }
+
+  /** A held frame stands on the courier's raised hands, a little in front of them. */
+  #holdFrame(run: Run): void {
+    const frame = run.frame;
+    const hand = frame?.userData.hand as THREE.Object3D | undefined;
+    if (!frame || !hand) return;
+    run.figure.object.updateMatrixWorld(true);
+    const at = run.figure.object.worldToLocal(hand.getWorldPosition(this.#holdScratch));
+    frame.position.set(0, at.y + FRAME_HEIGHT * CARRY_FRAME_SCALE, Math.max(at.z, 0.25) + 0.05);
+  }
+
+  readonly #holdScratch = new THREE.Vector3();
 
   #dropFrame(run: Run): void {
     run.frame?.removeFromParent();
@@ -1505,30 +1605,52 @@ export class CastleView {
    * A path from the avenue to a building's door: path tiles along the line from the avenue's
    * edge to the model's own `door` point (where its door is: not always the plot's middle).
    */
-  #walkway(root: THREE.Object3D, b: BuildingPlacement): void {
+  #walkway(root: THREE.Object3D, b: BuildingPlacement): { x: number; z: number }[] {
     root.updateMatrixWorld(true);
     let door: THREE.Object3D | null = null;
     root.traverse((o) => {
       if (((o.userData.name as string | undefined) ?? o.name) === 'door') door = o;
     });
-    if (!door) return;
+    if (!door) return [];
     const at = new THREE.Vector3();
     (door as THREE.Object3D).getWorldPosition(at);
     const side = Math.sign(b.door.x);
-    const z = Math.round(at.z * 2) / 2;
-    // from the tile beside the avenue up to the door (its point stands a metre in front of it), a tile a
-    // metre; the plan's own step tile kept
-    const end = Math.abs(at.x) + 0.5;
-    for (let x = 1; x <= end + 0.01; x += 1) {
-      if (x === 1 && Math.abs(z - b.door.z) < 0.5) continue;
-      const tile = this.#make('path.tile.straight');
-      tile.position.set(side * x, 0, z);
-      tile.rotation.y = Math.PI / 2;
-      tile.traverse((o) => {
-        if ((o as THREE.Mesh).isMesh) o.receiveShadow = true;
-      });
-      this.#layout.add(tile);
+    // along the door's row from the plan's step (x = ±1) out to the door's point (a metre in front of
+    // the door); then, if the model's door sits off that row, a turn along the plot's front to it
+    const cells: { x: number; z: number }[] = [];
+    const out = Math.max(2, Math.round(Math.abs(at.x)));
+    for (let x = 2; x <= out; x++) cells.push({ x: side * x, z: b.door.z });
+    const row = pathRow(at.z);
+    for (let z = b.door.z; Math.abs(z - row) > 0.01; z += Math.sign(row - z)) cells.push({ x: side * out, z: z + Math.sign(row - z) });
+    return cells;
+  }
+
+  /**
+   * Lays the path cells (one per grid metre, docs/batches/18-path-tiles.md): each
+   * gets the tile its neighbours call for (straight, bend, tee, cross, end), or a
+   * straight one along the busier way until the theme has that shape; the cells
+   * the plan does not light get a glow overlay too.
+   */
+  #layPaths(cells: readonly { x: number; z: number }[], lit: ReadonlySet<string>): void {
+    const key = (x: number, z: number) => `${round2(x)},${round2(z)}`;
+    const all = new Map<string, { x: number; z: number }>();
+    for (const c of cells) all.set(key(c.x, c.z), c);
+    const tiles: Placement[] = [];
+    for (const c of all.values()) {
+      const { shape, rot, straightRot } = pathShape({ n: all.has(key(c.x, c.z - 1)), e: all.has(key(c.x + 1, c.z)), s: all.has(key(c.x, c.z + 1)), w: all.has(key(c.x - 1, c.z)) });
+      const name = `path.tile.${shape}`;
+      const own = shape === 'straight' || this.#loaded.get(name);
+      tiles.push({ name: own ? name : 'path.tile.straight', x: c.x, z: c.z, rot: own ? rot : straightRot });
+      if (!lit.has(key(c.x, c.z))) {
+        const glow = this.#make('path.tile.lit');
+        glow.position.set(c.x, GLOW_LIFT, c.z);
+        glow.visible = false;
+        tintGlow(glow);
+        this.#litTiles.push(glow);
+        this.#layout.add(glow);
+      }
     }
+    this.#placeInstanced(tiles);
   }
 
   /** A building's near and far copies (`….lod0`, `….lod1`, docs/STYLEGUIDE_V2.md §8), when it has both. */
@@ -1752,6 +1874,8 @@ export class CastleView {
     const errand = courier?.object.userData.errand as Errand | undefined;
     if (errand) {
       this.#runs.find((r) => r.errand === errand)?.figure.react(TAP_CLIP, false);
+      // the camera goes with it from where it is now (the timeline plays on as it was)
+      this.follow(errand);
       this.#opts.onTapped?.('courier');
       this.#opts.onSelectErrand?.(errand);
       return;
@@ -1809,14 +1933,20 @@ export class CastleView {
     const rect = this.#canvas.getBoundingClientRect();
     this.#pointer.set(((at.x - rect.left) / rect.width) * 2 - 1, -((at.y - rect.top) / rect.height) * 2 + 1);
     this.#raycaster.setFromCamera(this.#pointer, this.#camera);
-    const courier = this.#raycaster.intersectObjects(this.#courierTargets, false)[0];
-    this.#setHovered(courier ? null : this.#pick());
-    this.#canvas.style.cursor = courier || this.#hovered ? 'pointer' : '';
+    // what a tap would take, in the same order: a courier, someone out and about (life), else a building, castle piece or prop
+    const courier = this.#raycaster.intersectObjects(this.#courierTargets, false)[0]?.object.parent ?? null;
+    const lifeHit = !courier && this.#life ? this.#raycaster.intersectObjects(this.#life.tappable, true)[0] : undefined;
+    let walker: THREE.Object3D | null = lifeHit?.object ?? null;
+    while (walker && !this.#life!.figureOf(walker)) walker = walker.parent;
+    const moving = courier ?? walker;
+    this.#setHovered(moving ?? this.#pick(), !!moving);
+    this.#canvas.style.cursor = this.#hovered ? 'pointer' : '';
   }
 
-  #setHovered(o: THREE.Object3D | null): void {
+  #setHovered(o: THREE.Object3D | null, moving = false): void {
     if (o === this.#hovered) return;
     this.#hovered = o;
+    this.#hoverMoving = moving;
     if (!o) {
       this.#hoverRing.visible = false;
       return;
@@ -1832,10 +1962,22 @@ export class CastleView {
       cz = (box.min.z + box.max.z) / 2;
       Object.assign(o.userData, { hoverRadius: r, hoverX: cx, hoverZ: cz });
     }
-    this.#hoverRing.scale.setScalar(r);
+    this.#hoverRing.scale.setScalar(moving ? HOVER_WALKER : r);
     this.#hoverRing.position.set(cx, 0.06, cz);
     this.#hoverRing.visible = true;
+    this.#followHover();
   }
+
+  /** The ring keeps under someone walking (a courier, a townsperson, a grazer). */
+  #followHover(): void {
+    if (!this.#hovered || !this.#hoverMoving) return;
+    if (!this.#hovered.parent) return this.#setHovered(null);
+    const at = this.#hovered.getWorldPosition(this.#hoverScratch);
+    this.#hoverRing.position.set(at.x, 0.06, at.z);
+  }
+
+  #hoverMoving = false;
+  readonly #hoverScratch = new THREE.Vector3();
 
   /** The camera follows this errand's courier (a replay) once it sets out, until it is home or the player moves the view. */
   follow(errand: Errand): void {
@@ -1918,6 +2060,7 @@ export class CastleView {
     this.#life?.update(dt);
     this.#exchange?.update(dt);
     this.#chatter(dt);
+    this.#followHover();
     this.#bursts = this.#bursts.filter((b) => {
       b.figure.update(dt);
       if (this.#time < b.until) return true;
@@ -1982,6 +2125,7 @@ export class CastleView {
       run.figure.play(run.frame && s.clip === 'walk' && run.figure.has('carry') ? 'carry' : s.clip);
       run.cargo.visible = s.carrying;
       run.figure.update(dt);
+      this.#holdFrame(run);
       bridgeDown ||= s.bridgeDown;
       barrierUp ||= s.barrierUp;
       if (run.building && s.npc !== 'hidden' && !npcState.has(run.building.protocol.id)) npcState.set(run.building.protocol.id, s.npc);
@@ -2013,10 +2157,15 @@ export class CastleView {
     const phase = now - this.#ringAt;
     const ringing = phase >= 0 && phase < BELL_RING;
     if (this.#bell) this.#bell.rotation.z = ringing ? Math.sin((phase / BELL_RING) * Math.PI * 4) * 0.35 : 0;
+    // the block's light ripples out from the tower along the paths: each tile lights as the ring passes it
+    const ripple = this.#rippleSpeed();
     for (const tile of this.#litTiles) {
-      let lit = ringing && phase < 0.6;
-      for (const s of states) if (!lit && Math.hypot(tile.position.x - s.x, tile.position.z - s.z) < 1.2) lit = true;
-      tile.visible = lit;
+      const reach = phase - this.#towerDistance(tile) / ripple;
+      // under a courier: the full warm glow; the block's ripple: a soft one passing over
+      const walked = states.some((s) => Math.hypot(tile.position.x - s.x, tile.position.z - s.z) < 1.2);
+      const rippled = ringing && reach >= 0 && reach < RIPPLE_LIT;
+      tile.visible = walked || rippled;
+      if (tile.visible) this.#glowSoft(tile, !walked);
     }
 
     // The tower fades while a courier or a person at a door is behind it.
@@ -2032,6 +2181,52 @@ export class CastleView {
         m.depthWrite = !faded;
       }
     }
+  }
+
+  /** Softer copies of the path glow's materials (the ripple's), by source material. */
+  readonly #softGlow = new Map<THREE.Material, THREE.Material>();
+
+  /** A path glow in its full colour, or soft (the ripple: faint and see-through). */
+  #glowSoft(tile: THREE.Object3D, soft: boolean): void {
+    if (tile.userData.soft === soft) return;
+    tile.userData.soft = soft;
+    tile.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const full = (mesh.userData.fullGlow as THREE.Material | undefined) ?? mesh.material as THREE.Material;
+      mesh.userData.fullGlow = full;
+      let quiet = this.#softGlow.get(full);
+      if (!quiet) {
+        const m = full.clone() as THREE.MeshStandardMaterial;
+        m.transparent = true;
+        m.opacity = RIPPLE_OPACITY;
+        m.depthWrite = false;
+        m.emissiveIntensity = (m.emissiveIntensity ?? 1) * 0.35;
+        quiet = m;
+        this.#softGlow.set(full, quiet);
+      }
+      mesh.material = soft ? quiet : full;
+    });
+  }
+
+  /** A path tile's distance from the tower on the ground (m), kept on the tile. */
+  #towerDistance(tile: THREE.Object3D): number {
+    if (!this.#tower) return 0;
+    const cached = tile.userData.towerDistance as number | undefined;
+    if (cached !== undefined) return cached;
+    const d = Math.hypot(tile.position.x - this.#tower.position.x, tile.position.z - this.#tower.position.z);
+    tile.userData.towerDistance = d;
+    return d;
+  }
+
+  /** How fast the ripple runs (m/s): out to the farthest path in RIPPLE_TIME, never slower than a walk across the plaza. */
+  #rippleSpeed(): number {
+    if (this.#rippleSpeedNow === null) {
+      let far = 0;
+      for (const t of this.#litTiles) far = Math.max(far, this.#towerDistance(t));
+      this.#rippleSpeedNow = Math.max(RIPPLE_MIN_SPEED, far / RIPPLE_TIME);
+    }
+    return this.#rippleSpeedNow;
   }
 
   /** Whether a spot on the ground is in the tower's shadow line: behind it, away from the camera (as it faces now). */
@@ -2146,6 +2341,11 @@ function tintGlow(root: THREE.Object3D): void {
       std.emissive?.setHex(GLOW_COLOR);
     }
   });
+}
+
+/** A grid coordinate as a stable key part (half metres). */
+function round2(v: number): number {
+  return Math.round(v * 2) / 2;
 }
 
 /** A div with a class (the weather's layers). */

@@ -102,6 +102,8 @@ export interface Errand {
   tier: number;
   time: number;
   label: string;
+  /** A loan's collateral that goes back from the wallet's hall to the building as this errand begins (the loan ended). */
+  collateralBack?: Goods;
 }
 
 export interface ErrandStep {
@@ -135,23 +137,53 @@ export interface CastleWorld {
 export const MAX_BUILDINGS = 16;
 /** How many of the latest journeys count as recent (the castle replays about this many). */
 const RECENT_JOURNEYS = 24;
+/** Less than this (USD) kept somewhere is dust: it doesn't earn a building on its own. */
+const HELD_MIN = 1;
+
+/** Tokens that are a stake in a protocol (a liquid staking or savings receipt; not its governance token), by symbol. */
+const RECEIPT_TOKENS: Record<string, { id: string; name: string; category: ProtocolCategory }> = {
+  STETH: { id: 'lido', name: 'Lido', category: 'staking' },
+  WSTETH: { id: 'lido', name: 'Lido', category: 'staking' },
+  RETH: { id: 'rocket-pool', name: 'Rocket Pool', category: 'staking' },
+  CBETH: { id: 'coinbase-wrapped-staked-eth', name: 'Coinbase staked ETH', category: 'staking' },
+  WEETH: { id: 'ether.fi', name: 'ether.fi', category: 'restaking' },
+  EETH: { id: 'ether.fi', name: 'ether.fi', category: 'restaking' },
+  SFRXETH: { id: 'frax', name: 'Frax', category: 'staking' },
+  SDAI: { id: 'maker', name: 'Maker (Sky)', category: 'lending' },
+  SUSDS: { id: 'maker', name: 'Maker (Sky)', category: 'lending' },
+  SUSDE: { id: 'ethena', name: 'Ethena', category: 'yield' },
+};
 
 export function worldFromGuild(guild: Guild): CastleWorld {
   const held = new Map<string, number>();
   for (const hero of guild.heroes) for (const s of hero.stashes) held.set(s.protocolId, (held.get(s.protocolId) ?? 0) + s.grossUsd);
+  // a protocol's own token kept in the wallet is a stake there too (stETH is Lido, rETH Rocket Pool)
+  const known = new Map(guild.protocols);
+  const receipts: (Holding & { protocolId: string })[] = [];
+  for (const hero of guild.heroes)
+    for (const item of hero.items) {
+      const r = RECEIPT_TOKENS[item.symbol.toUpperCase()];
+      if (!r || (item.usd ?? 0) < HELD_MIN) continue;
+      const id = [...known.keys()].find((k) => protocolFamily(k) === r.id) ?? r.id;
+      if (!known.has(id)) known.set(id, { id, name: r.name, iconUrl: null, url: null, category: r.category, building: 'temple', visits: 0 });
+      held.set(id, (held.get(id) ?? 0) + (item.usd ?? 0));
+      receipts.push({ protocolId: id, label: `${item.symbol} (in the wallet)`, kind: 'staked', usd: item.usd ?? 0, wallet: hero.address });
+    }
 
   // the protocols the recent couriers go to come first after what the guild holds (every one a courier
   // visits should have its building: an approval for OpenSea, a one-off swap)
   const recent = new Set<string>();
   for (const j of guild.journeys.slice(-RECENT_JOURNEYS)) for (const st of j.steps ?? []) if (st.target.kind === 'building') recent.add(st.target.protocolId);
-  const rank = (id: string) => ((held.get(id) ?? 0) > 0 ? 0 : recent.has(id) ? 1 : 2);
+  // what the guild really keeps first, then where its couriers went lately; dust ($0 positions) last
+  const rank = (id: string) => ((held.get(id) ?? 0) >= HELD_MIN ? 0 : recent.has(id) ? 1 : 2);
   // one building per protocol family: OpenSea's Seaport and SeaDrop, Aave's v2 and v3 share one (the first
   // in the order stands for the family; what the guild holds in the others counts there too)
   const members = new Map<string, string[]>();
   const familyOf = new Map<string, string>();
-  const candidates = [...guild.protocols.values()]
+  const candidates = [...known.values()]
     .filter((p) => (held.get(p.id) ?? 0) > 0 || p.visits > 0)
-    .sort((a, b) => rank(a.id) - rank(b.id) || (held.get(b.id) ?? 0) - (held.get(a.id) ?? 0) || b.visits - a.visits || a.name.localeCompare(b.name))
+    // within a rank: what's kept by value; the rest by how often the couriers went there
+    .sort((a, b) => rank(a.id) - rank(b.id) || (rank(a.id) === 0 ? (held.get(b.id) ?? 0) - (held.get(a.id) ?? 0) : b.visits - a.visits) || a.name.localeCompare(b.name))
     .filter((p) => {
       const fam = protocolFamily(p.id);
       const first = familyOf.get(fam);
@@ -171,6 +203,7 @@ export function worldFromGuild(guild: Guild): CastleWorld {
       const group = new Set(members.get(p.id) ?? [p.id]);
       const holdings: Holding[] = guild.heroes
         .flatMap((h) => h.stashes.filter((st) => group.has(st.protocolId)).flatMap((st) => st.entries.map((e) => ({ label: e.name || e.symbol, kind: e.kind, usd: e.usd, wallet: h.address }))))
+        .concat(receipts.filter((r) => group.has(r.protocolId)).map(({ protocolId: _, ...h }) => h))
         .sort((a, b) => Math.abs(b.usd) - Math.abs(a.usd))
         .slice(0, MAX_HOLDINGS);
       const tvlUsd = tvlOf(p.id);
@@ -181,11 +214,11 @@ export function worldFromGuild(guild: Guild): CastleWorld {
         tier: tierOf(sumHeld(p.id)),
         signature: family in SIGNATURE_PROTOCOLS ? family : null,
         holdings,
-        visits: [...group].reduce((t, m) => t + (guild.protocols.get(m)?.visits ?? 0), 0),
+        visits: [...group].reduce((t, m) => t + (known.get(m)?.visits ?? 0), 0),
         tvlUsd,
         // unknown to the snapshot: as big as what the guild keeps there, at least a house
         size: sizeFor(tvlUsd ?? Math.max(sumHeld(p.id), SIZE_REFERENCE_USD)),
-        iconUrl: [...group].map((m) => guild.protocols.get(m)?.iconUrl ?? null).find((u) => u) ?? null,
+        iconUrl: [...group].map((m) => known.get(m)?.iconUrl ?? null).find((u) => u) ?? null,
       };
     });
 

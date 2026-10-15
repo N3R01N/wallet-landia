@@ -18,8 +18,12 @@ import { artTheme, loadCastleTheme, themeChain, themeFileUrl, themeFromUrl } fro
 import { newErrands, previewWorld, worldFromGuild, type CastleWorld } from './world/world.js';
 import { lightAt, weatherFor, type Weather } from './world/sky.js';
 import { priceMove } from '../domain/risk.js';
-import { chronicleSheet, errandSheet, guildSheet, personSheet, protocolSheet, walletSheet } from './sheets.js';
+import { chronicleSheet, collateralSheet, errandSheet, guildSheet, personSheet, protocolSheet, walletSheet } from './sheets.js';
 import { pickLine } from './world/chatter.js';
+import { gondiTxs, lentLoans, type LentLoan } from '../data/gondi.js';
+import { nftLook, type NftLook } from '../data/nftLook.js';
+import type { Goods } from '../domain/model.js';
+import { protocolFamily } from './assets/manifest.js';
 import type { Person } from './scene/life.js';
 import { Conditions } from './conditions.js';
 import { logoPath } from './world/logos.js';
@@ -41,7 +45,7 @@ import type { Guild } from '../domain/model.js';
 import { castleBadges } from './world/castleBadges.js';
 import { PlayerController } from './player.js';
 import type { CastleTheme } from './assets/theme.js';
-import { setRpcUrl, startHeartbeat, validRpcUrl } from '../data/rpc.js';
+import { currentRpcUrl, setRpcUrl, startHeartbeat, validRpcUrl } from '../data/rpc.js';
 import { loadPrefs, savePrefs } from '../settings.js';
 import { Soundscape } from '../audio/soundscape.js';
 import { crestColors, setCrests } from '../util/rng.js';
@@ -53,6 +57,16 @@ const WALLET_SHEET = 'wallet:';
 const KEEP_SHEET = 'keep';
 const CONDITIONS_SHEET = 'conditions';
 const PERSON_SHEET = 'person';
+const COLLATERAL_SHEET = 'collateral:';
+/** A loan's collateral a wallet holds: kept in its hall with its NFTs (its gallery in the wallet's sheet). */
+interface Collateral {
+  key: string;
+  wallet: string;
+  goods: Goods;
+}
+/** The loans' collateral the guild holds now (framed before the halls), and each loan by its NFT, for its sheet. */
+let collateralNow: Collateral[] = [];
+const loansNow = new Map<string, { loan: LentLoan; goods: Goods; since: number | null }>();
 /** The townsperson last tapped (the person sheet's subject). */
 let personNow: { who: Person; line: string | null } | null = null;
 
@@ -105,7 +119,7 @@ function placeholderScene(label: string): HTMLElement {
 }
 
 function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
-  if (tab === 'castle' || tab === 'town') {
+  if (tab === 'castle') {
     if (!world || !themeLoaded) {
       view = null;
       return el('section', { class: 'tab-page', 'data-tab-page': tab }, placeholderScene('Raising the castle…'));
@@ -151,7 +165,13 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
     const chronicle = el('button', { class: 'btn scene-action chronicle-btn', type: 'button', 'aria-label': 'Chronicle: recent transactions' }, '📜 Chronicle');
     chronicle.addEventListener('click', () => open({ id: CHRONICLE_SHEET, title: 'Chronicle' }));
     view.element.append(chronicle);
-    timelineNow = attachTimeline(view, world.errands);
+    timelineNow = attachTimeline(view, world.errands, {
+      range: prefs.replayRange,
+      setRange: (id) => {
+        prefs.replayRange = id;
+        savePrefs(prefs);
+      },
+    });
     if (own)
       arrangeNow = attachArrange(view, {
         get: () => prefs.castleArrangement,
@@ -235,7 +255,7 @@ function renderSheet(sheet: SheetState): HTMLElement {
         // its courier goes next; the sheet closes so the scene shows it
         // the timeline plays from where it happened, and the camera goes with its courier
         if (timelineNow) timelineNow.startAt(e);
-        else view?.enqueue([e]);
+        else view?.sendNow(e);
         view?.follow(e);
         shell.close();
       });
@@ -246,6 +266,16 @@ function renderSheet(sheet: SheetState): HTMLElement {
     return castle ? castleBadgeSheet(castle, themeNow) : badgeSheet(id, player.profile, themeNow);
   }
   if (sheet.id === CONDITIONS_SHEET) return conditions.sheet();
+  if (sheet.id.startsWith(COLLATERAL_SHEET)) {
+    const key = sheet.id.slice(COLLATERAL_SHEET.length);
+    const held = loansNow.get(key);
+    if (held)
+      return collateralSheet(
+        { ...held, wallet: walletName(world?.walletIds.indexOf(held.loan.wallet) ?? 0) },
+        collateralNow.map((c) => ({ key: c.key, name: c.goods.name ?? c.goods.symbol, current: c.key === key })),
+        (k) => shell.open({ id: COLLATERAL_SHEET + k, title: '🔒 Collateral' }),
+      );
+  }
   if (sheet.id.startsWith(PERSON_SHEET + ':') && personNow) {
     const b = personNow.who.building ? world?.protocols.find((p) => p.name === personNow!.who.building) : undefined;
     return personSheet(personNow.who, personNow.line, b ? () => shell.open({ id: SHEET_PREFIX + b.id, title: b.name }) : undefined);
@@ -255,7 +285,15 @@ function renderSheet(sheet: SheetState): HTMLElement {
     const hero = guildNow?.heroes[i];
     if (hero && world)
       return walletSheet(
-        { hero, name: walletName(i), crest: crestColors(hero.address)[0], errands: world.errands.filter((e) => e.wallet === hero.address), protocolName: (id) => guildNow?.protocols.get(id)?.name ?? id },
+        {
+          hero,
+          name: walletName(i),
+          crest: crestColors(hero.address)[0],
+          errands: world.errands.filter((e) => e.wallet === hero.address),
+          protocolName: (id) => guildNow?.protocols.get(id)?.name ?? id,
+          collateral: collateralNow.filter((c) => c.wallet === hero.address.toLowerCase() || c.wallet === hero.address),
+          openCollateral: (key) => shell.open({ id: COLLATERAL_SHEET + key, title: '🔒 Collateral' }),
+        },
         (e) => shell.open({ id: ERRAND_SHEET + e.key, title: e.label || 'A transaction' }),
         () => shell.go('guild'),
       );
@@ -333,7 +371,7 @@ const TOUR_SEEN = 'wallet-landia-v4/castle/tour-seen';
 const tourBtn = el('button', { class: 'btn topbar-icon tour-btn', type: 'button', 'aria-label': 'Show the tour', title: 'Show the tour' }, '?');
 function startTour(): void {
   new Tour(
-    tourSteps({ go: (t) => shell.go(t), find: (sel) => shell.element.querySelector<HTMLElement>(sel), demo: mode === 'demo' || mode === 'captured' }),
+    tourSteps({ go: (t) => shell.go(t), look: (w) => view?.lookAt(w), find: (sel) => shell.element.querySelector<HTMLElement>(sel), demo: mode === 'demo' || mode === 'captured' }),
     () => {
       try {
         localStorage.setItem(TOUR_SEEN, '1');
@@ -410,6 +448,55 @@ function worldOf(town: Shown): CastleWorld {
   return preview ? previewWorld(real, preview) : real;
 }
 
+/**
+ * Gondi loans the guild lent, read from the chain (data/gondi.ts): the courier
+ * that lent brings the collateral home (a padlocked frame), the one that
+ * brought the loan's end takes it back, and those still running stand framed
+ * before the lending wallet's hall.
+ */
+async function readCollateral(w: CastleWorld, town: Shown): Promise<void> {
+  const gondi = w.errands.filter((e) => e.protocolId !== null && protocolFamily(e.protocolId) === 'gondi' && e.direction !== 'inside');
+  if (!gondi.length) {
+    collateralNow = [];
+    return;
+  }
+  // Gondi's escrow contracts: the pools of the guild's Gondi positions (the loans' own events add theirs)
+  const pools = new Set<string>();
+  for (const r of town.raws) for (const p of r.complex) if (/gondi/i.test(p.attributes.protocol ?? '') && p.attributes.pool_address) pools.add(p.attributes.pool_address.toLowerCase());
+  const txs = await gondiTxs(gondi.map((e) => e.hash), pools, currentRpcUrl());
+  if (world !== w) return; // a newer town came meanwhile
+  const looks = new Map<string, Promise<NftLook>>();
+  const look = (c: string, id: string) => {
+    const k = `${c}:${id}`;
+    if (!looks.has(k)) looks.set(k, nftLook(c, id, currentRpcUrl()));
+    return looks.get(k)!;
+  };
+  const held: Collateral[] = [];
+  for (const wallet of w.walletIds) {
+    const mine = gondi.filter((e) => e.wallet === wallet).sort((a, b) => a.time - b.time);
+    const loans = lentLoans(wallet, mine.flatMap((e) => txs.get(e.hash.toLowerCase()) ?? []));
+    for (const l of loans) void look(l.collection, l.tokenId); // all at once
+    for (const loan of loans) {
+      const nft = await look(loan.collection, loan.tokenId);
+      if (world !== w) return;
+      const goods: Goods = { symbol: nft.collection ?? 'NFT', quantity: 1, usd: null, isNft: true, name: `${nft.collection ?? 'NFT'} #${loan.tokenId}`, ...(nft.image ? { image: nft.image } : {}), collateral: true };
+      const start = mine.find((e) => e.hash.toLowerCase() === loan.startedBy);
+      // the courier that lent brings it home
+      const last = start?.steps[start.steps.length - 1];
+      if (last && !last.get.some((g) => g.collateral)) last.get.push(goods);
+      if (loan.end) {
+        const end = mine.find((e) => e.hash.toLowerCase() === loan.end!.by);
+        if (end) end.collateralBack = goods;
+        continue;
+      }
+      const key = `${loan.collection}:${loan.tokenId}`;
+      held.push({ key, wallet, goods });
+      loansNow.set(key, { loan, goods, since: start?.time ?? null });
+    }
+  }
+  collateralNow = held;
+}
+
 /** Each of your wallets' teaching quests. */
 function walletQuests(): WalletQuest[] {
   const g = homeGuild;
@@ -429,7 +516,7 @@ function layoutChanged(a: CastleWorld, b: CastleWorld): boolean {
  */
 function redrawForData(): void {
   const tab = shell.state.tab;
-  if (tab === 'castle' || tab === 'town') shell.refresh();
+  if (tab === 'castle') shell.refresh();
   const source = shell.element.querySelector('.guild-tab .source');
   if (source) source.textContent = modeText(mode);
 }
@@ -478,10 +565,11 @@ const session = new Session(prefs, {
     shown = town;
     // the wallets are in: next the castle's models (or, on a tab with no scene, straight to the welcome)
     const tab = shell.state.tab;
-    loading.report(tab === 'castle' || tab === 'town' ? 'castle' : 'welcome');
+    loading.report(tab === 'castle' ? 'castle' : 'welcome');
     world = worldOf(town);
     mode = town.mode;
     settlePrice(world);
+    void readCollateral(world, town);
     showTopbar();
     redrawForData();
     void player.refresh();
@@ -494,6 +582,7 @@ const session = new Session(prefs, {
     const fresh = newErrands(world, next);
     const rebuild = !world || layoutChanged(world, next);
     world = next;
+    void readCollateral(next, town);
     if (rebuild) redrawForData();
     else view?.enqueue(fresh);
   },
@@ -531,7 +620,7 @@ const player = new PlayerController({
 
 void theme.then((t) => {
   themeLoaded = t;
-  if (shell.state.tab === 'castle' || shell.state.tab === 'town') shell.refresh();
+  if (shell.state.tab === 'castle') shell.refresh();
   // the 2D art (icons, badges) from the theme that has it
   themeNow = artTheme(t);
   shell.setTabIcons((tab) => themeFileUrl(artTheme(t), assetPath({ name: `ui.icon.${tab}`, kind: 'art' })));

@@ -79,7 +79,7 @@ export function validRpcUrl(url: string): boolean {
 const RPC_TIMEOUT_MS = 10_000;
 
 /** One JSON-RPC POST; a node that refuses (429, 5xx) or does not answer throws. */
-async function rpcPost(url: string, body: unknown): Promise<unknown> {
+export async function rpcPost(url: string, body: unknown): Promise<unknown> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

@@ -136,6 +136,8 @@ export interface Goods {
   name?: string;
   /** An NFT's picture (a preview URL), when known. */
   image?: string;
+  /** Collateral for a loan the guild lent (a Gondi loan's NFT): held while the loan runs, a padlock on its frame. */
+  collateral?: boolean;
 }
 
 export type Target =

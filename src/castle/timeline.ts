@@ -1,47 +1,61 @@
 /**
- * The replay timeline over the scene: play the guild's history window as time
- * passing (an hour, a day or a week of it per second), pause, drag to any day;
- * couriers set out as the clock passes their transactions. "Live" goes back to
- * the scene's own life (new transactions, the recent ones again). One per
- * scene view; it stops by itself when the view leaves the page.
+ * The replay over the scene, as the old town had it: pick what to replay (the
+ * last 25 or 100 transactions, the last 7 or 30 days, everything loaded) and
+ * the couriers set out one after another, a beat apart, at 0.5× to 4×. Pause,
+ * drag to any transaction ("12 of 100"), close (✕) to go back to the scene's
+ * own life. One per scene view; it stops by itself when the view leaves the page.
  */
 
 import { el, fmtDate } from '../util/dom.js';
-import { REPLAY_SPEEDS, ReplayClock } from './world/replay.js';
+import { REPLAY_RANGES, REPLAY_SPEEDS, ReplaySequence, inRange, replayRange } from './world/replay.js';
 import type { CastleView } from './scene/castleView.js';
 import type { Errand } from './world/world.js';
 
 const TICK_MS = 200;
-/** The slider's steps across the window. */
-const STEPS = 1000;
+/** No more couriers out at once while replaying (a fast replay waits for one to come home). */
+const MAX_OUT = 10;
 
 export interface Timeline {
-  /** Opens the timeline at this transaction: its courier sets out first, then the history plays on from its moment. */
+  /** Opens the replay at this transaction: its courier sets out now, then the rest play on from it. */
   startAt(errand: Errand): void;
 }
 
-/** Adds the "⏱ Replay" button and its timeline bar to a scene view. */
-export function attachTimeline(view: CastleView, errands: readonly Errand[]): Timeline {
-  let clock: ReplayClock<Errand> | null = null;
+export interface TimelineHost {
+  /** What to replay (a REPLAY_RANGES id), and keeping a new choice. */
+  range: string;
+  setRange(id: string): void;
+}
+
+/** Adds the "⏱ Replay" button and its bar to a scene view. */
+export function attachTimeline(view: CastleView, errands: readonly Errand[], host: TimelineHost): Timeline {
+  let seq: ReplaySequence<Errand> | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
+  let rangeId = replayRange(host.range).id;
 
   const open = el('button', { class: 'btn scene-action replay-open', type: 'button', 'aria-label': 'Replay your history' }, '⏱ Replay');
+  const range = el('select', { 'aria-label': 'What to replay', class: 'timeline-range' });
+  for (const r of REPLAY_RANGES) range.append(el('option', { value: r.id }, r.label));
+  range.value = rangeId;
   const play = el('button', { class: 'btn timeline-play', type: 'button', 'aria-label': 'Pause' }, '⏸');
-  const slider = el('input', { type: 'range', min: '0', max: String(STEPS), step: '1', value: '0', 'aria-label': 'Replay position', class: 'timeline-slider' });
+  const slider = el('input', { type: 'range', min: '0', max: '0', step: '1', value: '0', 'aria-label': 'Replay position', class: 'timeline-slider' });
   const when = el('span', { class: 'timeline-when' });
   const speed = el('select', { 'aria-label': 'Replay speed', class: 'timeline-speed' });
-  REPLAY_SPEEDS.forEach((s, i) => speed.append(el('option', { value: String(i) }, s.label)));
+  for (const s of REPLAY_SPEEDS) speed.append(el('option', { value: String(s) }, `${s}×`));
   speed.value = '1';
-  const live = el('button', { class: 'btn timeline-live', type: 'button' }, 'Live');
-  const bar = el('div', { class: 'timeline', role: 'group', 'aria-label': 'Replay timeline', hidden: '' }, play, slider, when, speed, live);
+  // closes the replay: back to the town as it is now
+  const live = el('button', { class: 'btn timeline-live timeline-close', type: 'button', 'aria-label': 'Close the replay and go back to live', title: 'Close the replay (back to live)' }, '✕ Close');
+  const bar = el('div', { class: 'timeline', role: 'group', 'aria-label': 'Replay timeline', hidden: '' }, range, play, slider, when, speed, live);
 
   const show = () => {
-    if (!clock) return;
-    slider.value = String(Math.round(clock.progress * STEPS));
-    when.textContent = fmtDate(clock.position);
-    play.textContent = clock.playing ? '⏸' : '▶';
-    play.setAttribute('aria-label', clock.playing ? 'Pause' : 'Play');
-    view.element.dataset.replay = clock.playing ? 'playing' : 'paused';
+    if (!seq) return;
+    const n = seq.items.length;
+    slider.max = String(n);
+    slider.value = String(Math.round(seq.position));
+    const at = seq.items[seq.current];
+    when.textContent = n === 0 ? 'Nothing in this range' : `${seq.current + 1} of ${n}${at ? ` · ${fmtDate(at.time)}` : ''}`;
+    play.textContent = seq.playing ? '⏸' : '▶';
+    play.setAttribute('aria-label', seq.playing ? 'Pause' : 'Play');
+    view.element.dataset.replay = seq.playing ? 'playing' : 'paused';
   };
   const stop = () => {
     if (timer !== null) clearInterval(timer);
@@ -49,43 +63,63 @@ export function attachTimeline(view: CastleView, errands: readonly Errand[]): Ti
   };
   const tick = () => {
     if (!view.element.isConnected) return stop();
-    if (!clock) return;
-    const passed = clock.advance(TICK_MS / 1000);
-    if (passed.length) view.enqueue(passed, true);
+    if (!seq) return;
+    // a full town waits: the next sets out when one is home
+    if (view.state().couriers >= MAX_OUT) return show();
+    const reached = seq.advance(TICK_MS / 1000);
+    for (const e of reached) view.sendNow(e);
     show();
   };
 
-  const begin = () => {
-    clock = new ReplayClock(errands);
-    clock.speed = REPLAY_SPEEDS[Number(speed.value)]?.ms ?? REPLAY_SPEEDS[1].ms;
-    clock.playing = true;
+  /** The replay over the chosen range, from its first transaction (or a given one). */
+  const begin = (from?: Errand) => {
+    seq = new ReplaySequence(inRange(errands, replayRange(rangeId).range));
+    seq.speed = Number(speed.value) || 1;
+    if (from) {
+      let i = seq.items.indexOf(from);
+      // not in this range: everything loaded has it
+      if (i === -1) {
+        rangeId = 'all';
+        range.value = rangeId;
+        seq = new ReplaySequence(inRange(errands, replayRange(rangeId).range));
+        seq.speed = Number(speed.value) || 1;
+        i = seq.items.indexOf(from);
+      }
+      seq.seek(i);
+    }
+    seq.playing = true;
     view.setAutoReplay(false);
     view.clearQueue();
     bar.hidden = false;
     open.hidden = true;
     stop();
     timer = setInterval(tick, TICK_MS);
-    show();
+    tick();
   };
-  open.addEventListener('click', begin);
+  open.addEventListener('click', () => begin());
+  range.addEventListener('change', () => {
+    rangeId = range.value;
+    host.setRange(rangeId);
+    begin();
+  });
   play.addEventListener('click', () => {
-    if (!clock) return;
-    if (!clock.playing && clock.progress >= 1) clock.seek(clock.from); // at the end: from the start again
-    clock.playing = !clock.playing;
+    if (!seq) return;
+    if (!seq.playing && seq.done) seq.seek(0); // at the end: from the start again
+    seq.playing = !seq.playing;
     show();
   });
   slider.addEventListener('input', () => {
-    if (!clock) return;
-    clock.seek(clock.from + (Number(slider.value) / STEPS) * (clock.to - clock.from));
+    if (!seq) return;
+    seq.seek(Number(slider.value));
     view.clearQueue();
     show();
   });
   speed.addEventListener('change', () => {
-    if (clock) clock.speed = REPLAY_SPEEDS[Number(speed.value)]?.ms ?? clock.speed;
+    if (seq) seq.speed = Number(speed.value) || 1;
   });
   live.addEventListener('click', () => {
     stop();
-    clock = null;
+    seq = null;
     bar.hidden = true;
     open.hidden = false;
     view.clearQueue();
@@ -96,15 +130,7 @@ export function attachTimeline(view: CastleView, errands: readonly Errand[]): Ti
   view.element.append(open, bar);
   return {
     startAt(errand) {
-      if (!clock) begin();
-      if (!clock) return;
-      // its courier sets out first; the history plays on from that moment
-      clock.seek(errand.time);
-      if (clock.position === clock.from) clock.seek(errand.time + 1); // the window's start would hand it out again
-      clock.playing = true;
-      view.clearQueue();
-      view.enqueue([errand], true);
-      show();
+      begin(errand);
     },
   };
 }

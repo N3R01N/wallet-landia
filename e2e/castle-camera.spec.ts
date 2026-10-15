@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { sceneState, tapBuilding } from './castleHelpers.js';
+import { sceneState, showTown, tapBuilding } from './castleHelpers.js';
 
 /** Turning and tilting the castle view: keys, a right-drag and the corner buttons move the camera, and buildings can still be tapped after. */
 
@@ -56,7 +56,7 @@ test.describe('desktop', () => {
 
   test('after turning the view round, tapping a building still opens its sheet', async ({ page }) => {
     await page.goto('/');
-    await page.locator('.tab', { hasText: 'Town' }).click();
+    await showTown(page);
     await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
     const view = page.locator('.castle-view:visible');
     await view.locator('.camera-right').click();
@@ -72,7 +72,7 @@ test.describe('phone', () => {
 
   test('the turn buttons sit bottom right, big enough to tap, clear of the other buttons; a building can be tapped after turning', async ({ page }) => {
     await page.goto('/');
-    await page.locator('.tab', { hasText: 'Town' }).click();
+    await showTown(page);
     await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
     const view = page.locator('.castle-view:visible');
     const area = (await view.boundingBox())!;

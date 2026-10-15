@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AVENUE_HALF, ISLAND, ISLAND_V2, MOAT, MOAT_V2, SLOT_COUNT, assignSlots, layPlots, moveToSlot, planCastle, routeAlongWalls, routeBetweenWallets, routeTo, type CastlePlan } from '../src/castle/scene/plan.js';
+import { AVENUE_HALF, ISLAND, ISLAND_V2, MOAT, MOAT_V2, SLOT_COUNT, assignSlots, layPlots, moveToSlot, pathShape, planCastle, routeFromHome, routeAlongWalls, routeBetweenWallets, routeTo, type CastlePlan } from '../src/castle/scene/plan.js';
 import type { CastleWorld, WorldProtocol } from '../src/castle/world/world.js';
 import { sizeFor } from '../src/castle/world/size.js';
 
@@ -114,10 +114,44 @@ describe('castle plan', () => {
   it('every door is at the avenue’s edge, facing it, and the building stands off the avenue', () => {
     for (const b of full.buildings) {
       expect(Math.abs(b.door.x)).toBeCloseTo(AVENUE_HALF);
-      expect(b.door.z).toBeCloseTo(b.z);
+      // on the path grid's row (half metres) nearest the plot's middle
+      expect(Math.abs(b.door.z - b.z)).toBeLessThanOrEqual(0.5);
+      expect(b.door.z % 1).toBeCloseTo(0.5);
       expect(Math.abs(b.x) - b.half).toBeGreaterThanOrEqual(AVENUE_HALF + b.half - 1e-3); // the front wall a size-wide step back
       expect(Math.sign(b.x)).toBe(Math.sign(b.door.x));
     }
+  });
+
+  it('the road is one network on the path grid: every tile touches another, every step meets the avenue', () => {
+    const cells = new Set(full.road.map((t) => `${t.x},${t.z}`));
+    const near = (x: number, z: number) => [`${x},${z - 1}`, `${x + 1},${z}`, `${x},${z + 1}`, `${x - 1},${z}`].filter((k) => cells.has(k));
+    for (const t of full.road) {
+      expect(Number.isInteger(t.x), `${t.x},${t.z}`).toBe(true);
+      expect(t.z % 1, `${t.x},${t.z}`).toBeCloseTo(0.5);
+      expect(near(t.x, t.z).length, `${t.x},${t.z} stands alone`).toBeGreaterThan(0);
+    }
+    for (const b of full.buildings) expect(cells.has(`0,${b.door.z}`) && cells.has(`${Math.sign(b.door.x)},${b.door.z}`), `${b.protocol.id}'s step`).toBe(true);
+    // from the gate every tile is reached, tile to tile
+    const seen = new Set(['0,0.5']);
+    const todo = ['0,0.5'];
+    while (todo.length) {
+      const [x, z] = todo.pop()!.split(',').map(Number) as [number, number];
+      for (const k of near(x, z)) if (!seen.has(k)) seen.add(k), todo.push(k);
+    }
+    expect(seen.size).toBe(cells.size);
+  });
+
+  it('each path tile’s shape comes from its neighbours', () => {
+    const o = (n: boolean, e: boolean, s: boolean, w: boolean) => ({ n, e, s, w });
+    expect(pathShape(o(true, false, true, false))).toMatchObject({ shape: 'straight', rot: 0 });
+    expect(pathShape(o(false, true, false, true))).toMatchObject({ shape: 'straight', rot: Math.PI / 2 });
+    expect(pathShape(o(false, true, true, false))).toMatchObject({ shape: 'bend', rot: 0 }); // +z and +x, as modelled
+    expect(pathShape(o(true, false, false, true)).shape).toBe('bend');
+    expect(pathShape(o(true, true, true, false))).toMatchObject({ shape: 'tee', rot: 0 });
+    expect(pathShape(o(true, true, true, true)).shape).toBe('cross');
+    expect(pathShape(o(false, false, true, false))).toMatchObject({ shape: 'end', rot: 0 });
+    // a branch off the avenue lies along it until the theme has a tee
+    expect(pathShape(o(true, false, true, true)).straightRot).toBe(0);
   });
 
   it('plots never overlap one another, and none stands beside the plaza', () => {
@@ -256,6 +290,17 @@ describe('castle plan, layout 2', () => {
     return { x0: p.x - hx, x1: p.x + hx, z0: p.z - hz, z1: p.z + hz };
   };
   const pieces = (plan: CastlePlan) => [...plan.walls, ...plan.wallets, plan.keep, plan.gatehouse, plan.storehouse!];
+
+  it('couriers set out from their wallet’s hall door and come home to it, across the courtyard to the gate', () => {
+    for (let i = 0; i < six.wallets.length; i++) {
+      const way = routeFromHome(six, i);
+      expect(way[0]).toMatchObject(six.wallets[i]!.door);
+      expect(way[way.length - 1]).toMatchObject({ x: 0, z: -3 }); // the gate, under the gatehouse
+      // from the door onto its lane, then along the lanes: every step after the first runs along x or z
+      for (let k = 2; k < way.length; k++) expect(way[k]!.x === way[k - 1]!.x || way[k]!.z === way[k - 1]!.z).toBe(true);
+    }
+    expect(routeFromHome(six, 9)).toEqual([]);
+  });
 
   it('a hall per wallet, up to six, each its wallet’s tier’s own hall; the keep and the gatehouse; the one hall, then the old towers as fallbacks', () => {
     expect(six.layout).toBe(2);

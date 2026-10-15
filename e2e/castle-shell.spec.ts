@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { tapBuilding } from './castleHelpers.js';
+import { showTown, tapBuilding } from './castleHelpers.js';
 
 /** The castle shell: a phone gets bottom tabs and a drawer sheet, a desktop a side rail and a docked sheet. */
 
@@ -20,8 +20,10 @@ test.describe('phone', () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
 
-    await page.locator('.tab', { hasText: 'Town' }).click();
-    await expect(page.locator('.tab', { hasText: 'Town' })).toHaveAttribute('aria-current', 'page');
+    await showTown(page);
+    await expect(page.locator('.tab', { hasText: 'Castle' })).toHaveAttribute('aria-current', 'page');
+    // one tab for the castle and the town: there is no Town tab
+    await expect(page.locator('.tab', { hasText: 'Town' })).toHaveCount(0);
     const name = await tapBuilding(page);
     const sheet = page.locator('.sheet');
     await expect(sheet).toBeVisible();
@@ -45,7 +47,7 @@ test.describe('phone', () => {
 
   test('switching tabs closes the sheet', async ({ page }) => {
     await page.goto('/');
-    await page.locator('.tab', { hasText: 'Town' }).click();
+    await showTown(page);
     await tapBuilding(page);
     await expect(page.locator('.sheet')).toBeVisible();
     await page.locator('.tab', { hasText: 'Guild' }).click();
@@ -56,7 +58,7 @@ test.describe('phone', () => {
 test.describe('desktop', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test('side rail, and the sheet docks beside the stage without covering it', async ({ page }) => {
+  test('side rail, and the sheet slides in over the stage’s right edge without resizing it (no jump)', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('.shell')).toHaveAttribute('data-layout', 'desktop');
 
@@ -64,16 +66,18 @@ test.describe('desktop', () => {
     expect(tabs?.x).toBeLessThan(10); // on the left
     expect(tabs?.width).toBeLessThan(200);
 
-    await page.locator('.tab', { hasText: 'Town' }).click();
+    await showTown(page);
     const stageBefore = await page.locator('.stage').boundingBox();
     await tapBuilding(page);
     const sheet = page.locator('.sheet');
     await expect(sheet).toBeVisible();
     const sheetBox = await sheet.boundingBox();
     expect(sheetBox?.x).toBeGreaterThan(900); // on the right
+    // the stage (the scene) keeps its size: nothing jumps when the sheet opens
     const stageAfter = await page.locator('.stage').boundingBox();
-    expect(stageAfter && stageBefore && stageAfter.width).toBeLessThan(stageBefore?.width ?? 0);
-    expect(stageAfter && sheetBox && stageAfter.x + stageAfter.width).toBeLessThanOrEqual(sheetBox?.x ?? 0);
+    expect(stageAfter?.width).toBe(stageBefore?.width);
+    // slid fully in to the window's right edge
+    await expect.poll(async () => Math.round(((await sheet.boundingBox())?.x ?? 0) + ((await sheet.boundingBox())?.width ?? 0))).toBe(1280);
     // no backdrop on a desktop
     await expect(page.locator('.scrim')).toBeHidden();
   });

@@ -4,12 +4,12 @@
  * (shell.ts) only draws what these functions return.
  */
 
-export const TABS = ['castle', 'town', 'badges', 'guild'] as const;
+// one scene for the castle and the town in front of it (it pans between them)
+export const TABS = ['castle', 'badges', 'guild'] as const;
 export type TabId = (typeof TABS)[number];
 
 export const TAB_LABEL: Record<TabId, string> = {
   castle: 'Castle',
-  town: 'Town',
   badges: 'Badges',
   guild: 'Guild',
 };

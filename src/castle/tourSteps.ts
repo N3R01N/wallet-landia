@@ -9,6 +9,8 @@ import type { TabId } from './shellState.js';
 export interface TourContext {
   /** Show a tab. */
   go(tab: TabId): void;
+  /** Turn the scene's camera to the castle or the town. */
+  look(where: 'castle' | 'town'): void;
   /** What a step points at, by selector (null: a card in the middle). */
   find(selector: string): HTMLElement | null;
   /** The castle on show is a demo (no wallets of the player's yet). */
@@ -36,7 +38,10 @@ export function tourSteps(ctx: TourContext): TourStep[] {
         'Each protocol you use has a building. Tap one to see what you keep there.',
         'The bell in the tower rings for every new block.',
       ],
-      before: () => ctx.go('town'),
+      before: () => {
+        ctx.go('castle');
+        ctx.look('town');
+      },
       target: () => ctx.find('.castle-view canvas'),
     },
     {

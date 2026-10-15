@@ -171,7 +171,8 @@ const TOWN_START = 6;
 const PLOT_GAP = 3;
 /** The plaza's length along the avenue, and how far round the tower the avenue keeps. */
 const PLAZA_LENGTH = 14;
-const TOWER_CLEAR = 2.5;
+/** How far left of the avenue the road goes round the tower: a whole metre, so its tiles line up with the avenue's. */
+const TOWER_CLEAR = 3;
 
 /** Wing slots on the island, beside the keep. Each is 4×3 m. */
 const WING_SLOTS = [
@@ -302,8 +303,9 @@ export function planCastle(
       protocol,
       slot,
       half: plot.half,
-      door: { x: Math.sign(plot.x) * AVENUE_HALF, z: plot.z },
-      npc: { x: round(Math.sign(plot.x) * (AVENUE_HALF + plot.half * (1 - NPC_IN))), z: plot.z },
+      // the door's step on the path grid's row nearest the plot's middle (cells are 1 m, centred on half metres)
+      door: { x: Math.sign(plot.x) * AVENUE_HALF, z: pathRow(plot.z) },
+      npc: { x: round(Math.sign(plot.x) * (AVENUE_HALF + plot.half * (1 - NPC_IN))), z: pathRow(plot.z) },
     });
   }
   // nearest the gate first (couriers, the chronicle and the tests read them in this order)
@@ -326,11 +328,13 @@ export function planCastle(
     taken.add(key);
     road.push({ name: 'path.tile.straight', x: round(x), z: round(z), rot, key: 'road' });
   };
-  for (let z = 0.5; z < avenue.plazaStart; z += 1) pave(0, z, 0);
-  for (let x = -1; x >= -TOWER_CLEAR; x -= 1) pave(x, avenue.plazaStart, Math.PI / 2);
-  for (let z = avenue.plazaStart + 1; z < avenue.plazaEnd; z += 1) pave(-TOWER_CLEAR, z, 0);
-  for (let x = -1; x >= -TOWER_CLEAR; x -= 1) pave(x, avenue.plazaEnd, Math.PI / 2);
-  for (let z = avenue.plazaEnd + 0.5; z < avenue.end; z += 1) pave(0, z, 0);
+  // all on one grid: x on whole metres, z on half metres, so every turn and branch meets its neighbour edge to edge
+  const [turnIn, turnOut] = plazaRows(avenue);
+  for (let z = 0.5; z <= turnIn; z += 1) pave(0, z, 0);
+  for (let x = -1; x >= -TOWER_CLEAR; x -= 1) pave(x, turnIn, Math.PI / 2);
+  for (let z = turnIn + 1; z < turnOut; z += 1) pave(-TOWER_CLEAR, z, 0);
+  for (let x = -1; x >= -TOWER_CLEAR; x -= 1) pave(x, turnOut, Math.PI / 2);
+  for (let z = turnOut; z < avenue.end; z += 1) pave(0, z, 0);
   for (const b of buildings) pave(Math.sign(b.door.x), b.door.z, Math.PI / 2);
   // The lit overlay sits over every road and path tile; the view shows it while a courier is near.
   for (const t of road) lit.push({ name: 'path.tile.lit', x: t.x, z: t.z, rot: t.rot ?? 0, key: 'lit' });
@@ -493,6 +497,21 @@ export function routeBetweenWallets(plan: Pick<CastlePlan, 'layout' | 'wallets'>
   return { route: route.filter((p, i) => i === 0 || p.x !== route[i - 1]!.x || p.z !== route[i - 1]!.z), height: 0 };
 }
 
+/**
+ * A wallet's way to the gate across the courtyard (layout 2): from its hall's
+ * door onto its side's lane, along the cross lane to the middle, and out under
+ * the gatehouse. Couriers set out from their wallet's door and come home to it,
+ * in sight, not in the gate's tunnel. Empty for layout 1 or a wallet without a hall.
+ */
+export function routeFromHome(plan: Pick<CastlePlan, 'layout' | 'wallets'>, wallet: number): Waypoint[] {
+  const hall = plan.wallets[wallet];
+  if (plan.layout !== 2 || !hall) return [];
+  const side = Math.sign(hall.door.x) * LANE_X;
+  const lane = { x: side, z: Math.min(hall.door.z, LANE_Z) };
+  const route: Waypoint[] = [{ ...hall.door }, lane, { x: side, z: LANE_Z }, { x: 0, z: LANE_Z }, { ...GATE_AT }];
+  return route.filter((p, i) => i === 0 || p.x !== route[i - 1]!.x || p.z !== route[i - 1]!.z);
+}
+
 /** The wall-walk's height: the top of the 3 m curtain wall, where couriers pass between towers. */
 export const WALL_WALK = 3;
 
@@ -572,6 +591,48 @@ export function layPlots(sizes: readonly number[]): { list: { x: number; z: numb
 /** The courier's start: inside the gate. */
 export const GATE_AT = { x: 0, z: ISLAND.z1 - 1 } as const;
 
+/** The path grid's row (a half metre) nearest z. */
+export function pathRow(z: number): number {
+  return Math.floor(z) + 0.5;
+}
+
+/** The rows where the road turns off the avenue round the tower, and back onto it: the last before the plaza, the first after. */
+function plazaRows(avenue: Avenue): [number, number] {
+  return [pathRow(avenue.plazaStart - 0.5), pathRow(avenue.plazaEnd + 0.5)];
+}
+
+/** Which way a path tile opens: towards −z, +x, +z, −x (its neighbours on the grid). */
+export type Openings = { n: boolean; e: boolean; s: boolean; w: boolean };
+
+/**
+ * A path cell's tile from its neighbours (docs/batches/18-path-tiles.md):
+ * straight, bend, tee, cross or end, and how it turns. Each shape is modelled
+ * opening towards +z (straight: +z and −z; bend: +z and +x; tee: +z, −z and
+ * +x; end: +z only); `rot` turns it about y as three.js does (+z towards +x).
+ * `straightRot` is how a plain straight tile lies there instead, along the
+ * busier axis, until the theme has the shape. Pure.
+ */
+export function pathShape(o: Openings): { shape: 'straight' | 'bend' | 'tee' | 'cross' | 'end'; rot: number; straightRot: number } {
+  // directions as unit steps; a model's +z opening turned by rot points (sin rot, cos rot)
+  const dirs = [o.s && [0, 1], o.e && [1, 0], o.n && [0, -1], o.w && [-1, 0]].filter((d): d is number[] => !!d);
+  const alongZ = o.n || o.s;
+  const alongX = o.e || o.w;
+  const straightRot = alongX && !alongZ ? Math.PI / 2 : 0;
+  const turned = (base: number[][], rot: number) => base.map(([x, z]) => [Math.round(x! * Math.cos(rot) + z! * Math.sin(rot)), Math.round(-x! * Math.sin(rot) + z! * Math.cos(rot))]);
+  const same = (a: number[][], b: number[][]) => a.length === b.length && a.every(([x, z]) => b.some(([x2, z2]) => x === x2 && z === z2));
+  const fit = (shape: 'straight' | 'bend' | 'tee' | 'end', base: number[][]) => {
+    for (const rot of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) if (same(turned(base, rot), dirs)) return { shape, rot, straightRot };
+    return null;
+  };
+  if (dirs.length === 4) return { shape: 'cross', rot: 0, straightRot };
+  return (
+    fit('straight', [[0, 1], [0, -1]]) ??
+    fit('tee', [[0, 1], [0, -1], [1, 0]]) ??
+    fit('bend', [[0, 1], [1, 0]]) ??
+    fit('end', [[0, 1]]) ?? { shape: 'straight', rot: straightRot, straightRot }
+  );
+}
+
 /**
  * A courier's way out from the gate: over the bridge, a stop at the barrier for
  * the toll, up the avenue (round the tower past the plaza), then one step to
@@ -581,11 +642,12 @@ export const GATE_AT = { x: 0, z: ISLAND.z1 - 1 } as const;
 export function routeTo(avenue: Avenue, building: BuildingPlacement | null): Waypoint[] {
   const start: Waypoint[] = [{ ...GATE_AT }, { ...TOLL_STOP, stop: 'toll' }];
   // someone outside the town (a protocol without a building, another person): up the avenue and out at its far end
+  const [turnIn, turnOut] = plazaRows(avenue);
   const roundTower: Waypoint[] = [
-    { x: 0, z: avenue.plazaStart },
-    { x: -TOWER_CLEAR, z: avenue.plazaStart },
-    { x: -TOWER_CLEAR, z: avenue.plazaEnd },
-    { x: 0, z: avenue.plazaEnd },
+    { x: 0, z: turnIn },
+    { x: -TOWER_CLEAR, z: turnIn },
+    { x: -TOWER_CLEAR, z: turnOut },
+    { x: 0, z: turnOut },
   ];
   if (!building) return [...start, ...roundTower, { x: 0, z: avenue.end, stop: 'hand-over' }];
   const z = building.door.z;
