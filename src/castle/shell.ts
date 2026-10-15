@@ -168,7 +168,7 @@ export class Shell {
     }
     const scrim = this.element.querySelector<HTMLElement>('.scrim');
     if (sheet) {
-      this.#sheetTitle.textContent = sheet.title;
+      this.#sheetTitle.replaceChildren(sheet.icon ? el('img', { class: 'sheet-icon', src: sheet.icon, alt: '', width: '28', height: '28' }) : '', sheet.title);
       this.#sheetBody.replaceChildren(this.#opts.renderSheet(sheet, () => this.close()));
       this.#sheet.hidden = false;
       if (scrim) scrim.hidden = false;

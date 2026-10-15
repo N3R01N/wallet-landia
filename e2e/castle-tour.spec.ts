@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 test.use({ storageState: { cookies: [], origins: [] }, viewport: { width: 390, height: 844 } });
 
 test('a first visit gets the tour; it ends in the Guild tab; it does not come back, but the ? button shows it again', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(150_000); // the v2 town loads two scenes in software WebGL here
   await page.goto('/');
   const card = page.locator('.tour-card');
   await expect(card).toBeVisible({ timeout: 20_000 });

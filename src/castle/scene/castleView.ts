@@ -49,6 +49,12 @@ export interface CastleViewOptions {
   layout?: CastleLayout;
   /** A building was tapped. */
   onSelect?: (building: BuildingPlacement) => void;
+  /** A wallet's tower or hall was tapped (its index in the guild's wallets). */
+  onSelectWallet?: (index: number) => void;
+  /** The keep was tapped: the guild as a whole. */
+  onSelectKeep?: () => void;
+  /** Something was tapped (for the sound): a building or castle piece, a person or animal, a courier. */
+  onTapped?: (what: 'building' | 'person' | 'courier') => void;
   /** A courier was tapped: its errand (the transaction). */
   onSelectErrand?: (errand: Errand) => void;
   /** A courier pays the toll at the barrier (for the coins' sound). */
@@ -111,6 +117,12 @@ const BELL_HEIGHT = 9.1;
 const BARRIER_HEIGHT = 1;
 /** A tap moves less than this many pixels; more is a drag. */
 const TAP_SLOP = 6;
+/** The ring under what the mouse is over: gold, a little wider than the thing's footprint. */
+const HOVER_RING = new THREE.RingGeometry(0.92, 1, 64).rotateX(-Math.PI / 2);
+const HOVER_COLOR = 0xffd45a;
+/** Following a courier (a replay): the zoom it eases to, and how quickly the view catches up (per second). */
+const FOLLOW_ZOOM = 2.2;
+const FOLLOW_RATE = 3;
 const FADE = 0.25;
 /** The Chronicle tower turns this see-through while someone is behind it. */
 const TOWER_FADED = 0.3;
@@ -300,8 +312,18 @@ export class CastleView {
   readonly #scratch = new THREE.Vector3();
   readonly #figures: Figure[] = [];
   readonly #buildingRoots: THREE.Object3D[] = [];
+  /** The castle's wallet towers or halls and the keep (they open sheets). */
+  readonly #castleRoots: THREE.Object3D[] = [];
   /** Buildings with a far copy (`….lod1`): which to draw follows how tall they show on screen. */
   readonly #lods: { near: THREE.Object3D; far: THREE.Object3D; height: number }[] = [];
+  /** The ring under what the mouse is over, and what that is. */
+  readonly #hoverRing = new THREE.Mesh(HOVER_RING, new THREE.MeshBasicMaterial({ color: HOVER_COLOR, transparent: true, opacity: 0.9, depthWrite: false }));
+  #hovered: THREE.Object3D | null = null;
+  /** The mouse's position over the canvas, to look under once a frame (null: not over it, or a touch). */
+  #hoverAt: { x: number; y: number } | null = null;
+  /** A replayed errand whose courier the camera follows (by key), and its courier once out. */
+  #followKey: string | null = null;
+  #followRun: Run | null = null;
   /** Whether the far copies are drawn now (null: not decided yet). */
   #farNow: boolean | null = null;
   readonly #resize: ResizeObserver;
@@ -416,7 +438,9 @@ export class CastleView {
     pmrem.dispose();
     this.#scene.environment = this.#quality === 'high' ? this.#environment : null;
     this.#scene.environmentIntensity = ENVIRONMENT_INTENSITY;
-    this.#scene.add(this.#hemi, this.#layout, this.#arrangeMarks);
+    this.#hoverRing.visible = false;
+    this.#hoverRing.renderOrder = 1;
+    this.#scene.add(this.#hemi, this.#layout, this.#arrangeMarks, this.#hoverRing);
     // the sun shines from the same side whichever way the camera turns; its shadows follow the view (#updateCamera)
     this.#sun.castShadow = true;
     const small = Math.min(window.innerWidth, window.innerHeight) < 700;
@@ -635,6 +659,8 @@ export class CastleView {
     // nothing is shared beyond the view, so all of it goes.
     for (const t of this.#courierTargets) t.removeFromParent(); // shared by every view: kept
     this.#arrangeMarks.clear(); // build mode's rings: shared, kept
+    this.#hoverRing.removeFromParent(); // its geometry is shared: kept
+    this.#hoverRing.material.dispose();
     disposeTree(this.#scene);
     this.#environment?.dispose();
     this.#sun.shadow.map?.dispose();
@@ -796,6 +822,7 @@ export class CastleView {
         obj.userData.building = p;
         this.#buildingRoots.push(obj);
         this.#noteLod(obj);
+        this.#walkway(obj, p as BuildingPlacement);
         const brand = brandColor((p as BuildingPlacement).protocol.id);
         if (brand) paint(obj, 'Tint', brand, this.#painted);
         void this.#showLogo(obj, (p as BuildingPlacement).protocol.id);
@@ -805,6 +832,16 @@ export class CastleView {
         paint(obj, 'Trim', tierColor(p.tier ?? plan.keep.tier ?? 0), this.#painted);
         // a hall's banners in its wallet's crest colour, the keep's and the gate's in the guild's (the first wallet's)
         const w = plan.wallets.indexOf(p as (typeof plan.wallets)[number]);
+        // a wallet's tower or hall, and the keep, open their sheets when tapped
+        if (w >= 0) {
+          obj.userData.walletIndex = w;
+          obj.userData.reacts = true;
+        }
+        if (p === plan.keep) {
+          obj.userData.keep = true;
+          obj.userData.reacts = true;
+        }
+        if (w >= 0 || p === plan.keep) this.#castleRoots.push(obj);
         const crest = this.#opts.world.walletIds[Math.max(0, w)];
         if (plan.layout === 2 && crest) paint(obj, 'Tint', crestColors(crest)[0], this.#painted);
       }
@@ -861,6 +898,9 @@ export class CastleView {
     this.#layout.clear();
     this.#litTiles = [];
     this.#buildingRoots.length = 0;
+    this.#castleRoots.length = 0;
+    this.#hovered = null;
+    this.#hoverRing.visible = false;
     this.#lods.length = 0;
     this.#farNow = null;
     this.#tower = null;
@@ -1142,6 +1182,36 @@ export class CastleView {
     this.#pickLods();
   }
 
+  /**
+   * A path from the avenue to a building's door: path tiles along the line from the avenue's
+   * edge to the model's own `door` point (where its door is: not always the plot's middle).
+   */
+  #walkway(root: THREE.Object3D, b: BuildingPlacement): void {
+    root.updateMatrixWorld(true);
+    let door: THREE.Object3D | null = null;
+    root.traverse((o) => {
+      if (((o.userData.name as string | undefined) ?? o.name) === 'door') door = o;
+    });
+    if (!door) return;
+    const at = new THREE.Vector3();
+    (door as THREE.Object3D).getWorldPosition(at);
+    const side = Math.sign(b.door.x);
+    const z = Math.round(at.z * 2) / 2;
+    // from the tile beside the avenue up to the door (its point stands a metre in front of it), a tile a
+    // metre; the plan's own step tile kept
+    const end = Math.abs(at.x) + 0.5;
+    for (let x = 1; x <= end + 0.01; x += 1) {
+      if (x === 1 && Math.abs(z - b.door.z) < 0.5) continue;
+      const tile = this.#make('path.tile.straight');
+      tile.position.set(side * x, 0, z);
+      tile.rotation.y = Math.PI / 2;
+      tile.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) o.receiveShadow = true;
+      });
+      this.#layout.add(tile);
+    }
+  }
+
   /** A building's near and far copies (`….lod0`, `….lod1`, docs/STYLEGUIDE_V2.md §8), when it has both. */
   #noteLod(root: THREE.Object3D): void {
     let near: THREE.Object3D | null = null;
@@ -1206,6 +1276,8 @@ export class CastleView {
       prev.x = e.clientX;
       prev.y = e.clientY;
       g.moved += Math.hypot(dx, dy);
+      // the player takes the camera back from a followed courier
+      if (g.moved > TAP_SLOP) this.#followKey = null;
       if (this.#pointers.size >= 2) {
         // two fingers: spread to zoom, twist to turn, move up or down together to tilt
         const { pinch, twist, midY } = g;
@@ -1231,6 +1303,15 @@ export class CastleView {
       }
     };
     c.addEventListener('pointerup', end);
+    // the mouse over the scene: the ring under what it points at (looked up once a frame)
+    c.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'mouse' && e.buttons === 0) this.#hoverAt = { x: e.clientX, y: e.clientY };
+    });
+    c.addEventListener('pointerleave', () => {
+      this.#hoverAt = null;
+      this.#setHovered(null);
+      c.style.cursor = '';
+    });
     c.addEventListener('pointercancel', (e) => {
       this.#pointers.delete(e.pointerId);
       if (this.#pointers.size === 0) this.#gesture = null;
@@ -1303,6 +1384,7 @@ export class CastleView {
   }
 
   #setZoom(zoom: number): void {
+    this.#followKey = null; // the player takes the camera back
     this.#zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
     this.#updateCamera();
   }
@@ -1340,23 +1422,109 @@ export class CastleView {
     const errand = courier?.object.userData.errand as Errand | undefined;
     if (errand) {
       this.#runs.find((r) => r.errand === errand)?.figure.react(TAP_CLIP, false);
+      this.#opts.onTapped?.('courier');
       this.#opts.onSelectErrand?.(errand);
       return;
     }
-    // the nearest building or castle piece that reacts to a tap
-    const hit = this.#raycaster.intersectObjects([...this.#buildingRoots, ...[...this.#reactions.keys()].filter((r) => !r.userData.building && r.visible)], true)[0];
-    let o: THREE.Object3D | null = hit?.object ?? null;
-    while (o && !o.userData.building && !o.userData.reacts) o = o.parent;
-    if (o && !o.userData.building) {
+    const o = this.#pick();
+    if (!o) return;
+    if (!o.userData.building) {
       // a person's tap takes over its whole body (and back); a castle piece's plays over its idle
       if (this.#reactions.get(o)?.react(TAP_CLIP, !o.userData.person) && !o.userData.person) this.#shadowsMoveUntil = this.#time + 2;
+      this.#opts.onTapped?.(o.userData.person ? 'person' : 'building');
+      if (o.userData.walletIndex !== undefined) this.#opts.onSelectWallet?.(o.userData.walletIndex as number);
+      else if (o.userData.keep) this.#opts.onSelectKeep?.();
       return;
     }
-    if (o) {
-      // it bounces (docs/STYLEGUIDE_V2.md §8.2), its shadow with it
-      if (this.#reactions.get(o)?.react(TAP_CLIP, true)) this.#shadowsMoveUntil = this.#time + 2;
-      this.#opts.onSelect?.(o.userData.building as BuildingPlacement);
+    // it bounces (docs/STYLEGUIDE_V2.md §8.2), its shadow with it
+    if (this.#reactions.get(o)?.react(TAP_CLIP, true)) this.#shadowsMoveUntil = this.#time + 2;
+    this.#opts.onTapped?.('building');
+    this.#opts.onSelect?.(o.userData.building as BuildingPlacement);
+  }
+
+  /** What is under the pointer (set on the raycaster): the nearest building, castle piece, person or animal that reacts. */
+  #pick(): THREE.Object3D | null {
+    const targets = [...this.#buildingRoots, ...this.#castleRoots, ...[...this.#reactions.keys()].filter((r) => !r.userData.building && r.visible)];
+    const hit = this.#raycaster.intersectObjects(targets, true)[0];
+    let o: THREE.Object3D | null = hit?.object ?? null;
+    while (o && !o.userData.building && !o.userData.reacts) o = o.parent;
+    return o;
+  }
+
+  /** The ring under what the mouse is over (once a frame, only when the mouse moved). */
+  #updateHover(): void {
+    // a drag or build mode: no ring; the mouse still: the ring stays where it is
+    if (this.#gesture || this.#arranging) {
+      if (this.#hovered) this.#setHovered(null);
+      return;
     }
+    const at = this.#hoverAt;
+    if (!at) return;
+    this.#hoverAt = null;
+    const rect = this.#canvas.getBoundingClientRect();
+    this.#pointer.set(((at.x - rect.left) / rect.width) * 2 - 1, -((at.y - rect.top) / rect.height) * 2 + 1);
+    this.#raycaster.setFromCamera(this.#pointer, this.#camera);
+    const courier = this.#raycaster.intersectObjects(this.#courierTargets, false)[0];
+    this.#setHovered(courier ? null : this.#pick());
+    this.#canvas.style.cursor = courier || this.#hovered ? 'pointer' : '';
+  }
+
+  #setHovered(o: THREE.Object3D | null): void {
+    if (o === this.#hovered) return;
+    this.#hovered = o;
+    if (!o) {
+      this.#hoverRing.visible = false;
+      return;
+    }
+    // sized to its footprint once (people and buildings alike), round its middle
+    let r = o.userData.hoverRadius as number | undefined;
+    let cx = o.userData.hoverX as number | undefined;
+    let cz = o.userData.hoverZ as number | undefined;
+    if (r === undefined || cx === undefined || cz === undefined) {
+      const box = new THREE.Box3().setFromObject(o);
+      r = Math.max(0.5, Math.hypot(box.max.x - box.min.x, box.max.z - box.min.z) / 2) * 0.82;
+      cx = (box.min.x + box.max.x) / 2;
+      cz = (box.min.z + box.max.z) / 2;
+      Object.assign(o.userData, { hoverRadius: r, hoverX: cx, hoverZ: cz });
+    }
+    this.#hoverRing.scale.setScalar(r);
+    this.#hoverRing.position.set(cx, 0.06, cz);
+    this.#hoverRing.visible = true;
+  }
+
+  /** The camera follows this errand's courier (a replay) once it sets out, until it is home or the player moves the view. */
+  follow(errand: Errand): void {
+    this.#followKey = errand.key;
+    this.#followRun = null;
+  }
+
+  #updateFollow(dt: number): void {
+    if (!this.#followKey) return;
+    if (!this.#followRun) {
+      this.#followRun = this.#runs.find((r) => r.errand.key === this.#followKey) ?? null;
+      if (!this.#followRun) return;
+    }
+    if (!this.#runs.includes(this.#followRun)) {
+      this.#followKey = null;
+      this.#followRun = null;
+      return;
+    }
+    const at = this.#followRun.figure.object.position;
+    const k = Math.min(1, dt * FOLLOW_RATE);
+    this.#focus.x += (at.x - this.#focus.x) * k;
+    this.#focus.z += (at.z - this.#focus.z) * k;
+    this.#zoom += (FOLLOW_ZOOM - this.#zoom) * k;
+    this.#updateCamera();
+  }
+
+  /** What the hover ring is under (its name; null: nothing), for tests. */
+  get hovering(): string | null {
+    return this.#hoverRing.visible ? (this.#hovered?.name ?? '') : null;
+  }
+
+  /** Whether the camera follows a courier now (test hook). */
+  get following(): boolean {
+    return this.#followRun !== null;
   }
 
   readonly #tick = (now: number): void => {
@@ -1371,6 +1539,8 @@ export class CastleView {
     // the camera turns and tilts towards where it was sent
     if (dampAngles(this.#angles, this.#angleTarget, dt)) this.#updateCamera();
     if (this.#ready) {
+      this.#updateHover();
+      this.#updateFollow(dt);
       this.#animate(dt);
       this.#watchSpeed(dt);
       if (this.#time < this.#shadowsMoveUntil) this.#renderer.shadowMap.needsUpdate = true;

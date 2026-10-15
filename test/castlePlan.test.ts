@@ -153,10 +153,11 @@ describe('castle plan', () => {
     expect(full.road.length).toBe(full.lit.length);
   });
 
-  it('an errand for someone outside the town ends before the plaza, after paying the toll', () => {
+  it('an errand for someone outside the town pays the toll, goes round the tower and out at the avenue’s far end', () => {
     const r = routeTo(plan.avenue, null);
     expect(r.some((p) => p.stop === 'toll')).toBe(true);
-    expect(r[r.length - 1]!.z).toBeLessThan(plan.avenue.plazaStart);
+    expect(r[r.length - 1]).toEqual({ x: 0, z: plan.avenue.end, stop: 'hand-over' });
+    for (const p of sample(r)) expect(inTower(plan, p.x, p.z), `${p.x},${p.z} in the tower`).toBe(false);
   });
 
   it('build mode: arranged protocols get their plots, the rest fill the free ones in order; nonsense is ignored', () => {

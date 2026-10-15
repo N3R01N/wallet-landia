@@ -157,7 +157,7 @@ const HALL_SLOTS: readonly { x: number; z: number; rot: number; door: { x: numbe
 }));
 
 /** How many plots the town has (one per building). */
-export const SLOT_COUNT = 10;
+export const SLOT_COUNT = 16;
 /** The avenue's half width: every door stands at its edge. */
 export const AVENUE_HALF = 1.5;
 /** Where the first plots start (past the toll gate and the market at the town's front). */
@@ -555,18 +555,16 @@ export const GATE_AT = { x: 0, z: ISLAND.z1 - 1 } as const;
  */
 export function routeTo(avenue: Avenue, building: BuildingPlacement | null): Waypoint[] {
   const start: Waypoint[] = [{ ...GATE_AT }, { x: 0, z: TOLL_Z - 0.7, stop: 'toll' }];
-  if (!building) return [...start, { x: 0, z: avenue.plazaStart - 1 }];
+  // someone outside the town (a protocol without a building, another person): up the avenue and out at its far end
+  const roundTower: Waypoint[] = [
+    { x: 0, z: avenue.plazaStart },
+    { x: -TOWER_CLEAR, z: avenue.plazaStart },
+    { x: -TOWER_CLEAR, z: avenue.plazaEnd },
+    { x: 0, z: avenue.plazaEnd },
+  ];
+  if (!building) return [...start, ...roundTower, { x: 0, z: avenue.end, stop: 'hand-over' }];
   const z = building.door.z;
-  const roundTower: Waypoint[] =
-    z > avenue.plazaEnd
-      ? [
-          { x: 0, z: avenue.plazaStart },
-          { x: -TOWER_CLEAR, z: avenue.plazaStart },
-          { x: -TOWER_CLEAR, z: avenue.plazaEnd },
-          { x: 0, z: avenue.plazaEnd },
-        ]
-      : [];
-  return [...start, ...roundTower, { x: 0, z }, { x: building.door.x, z, stop: 'hand-over' }];
+  return [...start, ...(z > avenue.plazaEnd ? roundTower : []), { x: 0, z }, { x: building.door.x, z, stop: 'hand-over' }];
 }
 
 /**

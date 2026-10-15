@@ -1478,3 +1478,132 @@ h1 {
     animation: none !important;
   }
 }
+
+/* ---------- sheet title logo, wallet and keep sheets ---------- */
+
+.sheet-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sheet-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: contain;
+  background: #efe3c8;
+  flex: none;
+}
+
+.crest-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.25);
+  vertical-align: middle;
+}
+
+.wallet-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.wallet-head .crest-dot {
+  width: 22px;
+  height: 22px;
+}
+
+/* ---------- market and road (conditions.ts) ---------- */
+
+.topbar .conditions-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  color: inherit;
+}
+
+.conditions-chip .chip-label {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.road-gauge {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.road-gauge i {
+  display: block;
+  width: 4px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.road-gauge i:nth-child(1) {
+  height: 6px;
+}
+.road-gauge i:nth-child(2) {
+  height: 10px;
+}
+.road-gauge i:nth-child(3) {
+  height: 14px;
+}
+
+.road-gauge.quiet i.on {
+  background: #7fd17a;
+}
+.road-gauge.busy i.on {
+  background: #f0c24a;
+}
+.road-gauge.crowded i.on {
+  background: #ff6a4a;
+}
+
+.price-arrow {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: -1px;
+}
+
+.price-arrow.boom,
+.price-arrow.up {
+  color: #7fd17a;
+}
+.price-arrow.flat,
+.price-arrow.none {
+  color: #e8dcc0;
+}
+.price-arrow.down,
+.price-arrow.crash {
+  color: #ff8a6a;
+}
+
+/* phones: room in the top bar for the market chip and the settings button (the brand name gives way) */
+.shell[data-layout='phone'] .topbar {
+  gap: 6px;
+}
+
+.shell[data-layout='phone'] .topbar .brand {
+  display: none;
+}
+
+.shell[data-layout='phone'] .topbar .sound-toggle,
+.shell[data-layout='phone'] .topbar .topbar-icon {
+  min-width: 36px;
+  padding: 0 4px;
+}
+
+.shell[data-layout='phone'] .topbar .conditions-chip {
+  padding: 0 6px;
+  gap: 3px;
+}

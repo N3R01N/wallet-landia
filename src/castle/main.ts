@@ -14,11 +14,13 @@ import { Shell } from './shell.js';
 import { TAB_LABEL, type SheetState, type TabId } from './shellState.js';
 import { CastleView } from './scene/castleView.js';
 import { assetPath } from './assets/manifest.js';
-import { artTheme, loadCastleTheme, themeFileUrl, themeFromUrl } from './assets/theme.js';
+import { artTheme, loadCastleTheme, themeChain, themeFileUrl, themeFromUrl } from './assets/theme.js';
 import { newErrands, previewWorld, worldFromGuild, type CastleWorld } from './world/world.js';
 import { lightAt, weatherFor, type Weather } from './world/sky.js';
 import { priceMove } from '../domain/risk.js';
-import { chronicleSheet, errandSheet, protocolSheet } from './sheets.js';
+import { chronicleSheet, errandSheet, guildSheet, protocolSheet, walletSheet } from './sheets.js';
+import { Conditions } from './conditions.js';
+import { logoPath } from './world/logos.js';
 import { buildGuild } from '../domain/mappers.js';
 import { Session, type Mode, type Shown } from '../data/session.js';
 import { setRealmChains } from '../data/zerion/endpoints.js';
@@ -39,11 +41,14 @@ import type { CastleTheme } from './assets/theme.js';
 import { setRpcUrl, startHeartbeat, validRpcUrl } from '../data/rpc.js';
 import { loadPrefs, savePrefs } from '../settings.js';
 import { Soundscape } from '../audio/soundscape.js';
-import { setCrests } from '../util/rng.js';
+import { crestColors, setCrests } from '../util/rng.js';
 
 const SHEET_PREFIX = 'protocol:';
 const ERRAND_SHEET = 'errand:';
 const CHRONICLE_SHEET = 'chronicle';
+const WALLET_SHEET = 'wallet:';
+const KEEP_SHEET = 'keep';
+const CONDITIONS_SHEET = 'conditions';
 
 /** The theme's manifest, read once: its version keeps players' copies of the models fresh. */
 // `?theme=` picks another theme (a style pilot extends the default; what it lacks comes from there)
@@ -106,7 +111,13 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       ...(pinnedHour !== undefined ? { hour: pinnedHour } : {}),
       // `?quality=low|high` pins the rendering quality; otherwise it adapts to the device
       quality: qualityParam,
-      onSelect: (b) => open({ id: SHEET_PREFIX + b.protocol.id, title: b.protocol.name }),
+      onSelect: (b) => {
+        const icon = protocolLogo(b.protocol.id);
+        open({ id: SHEET_PREFIX + b.protocol.id, title: b.protocol.name, ...(icon ? { icon } : {}) });
+      },
+      onSelectWallet: (i) => open({ id: WALLET_SHEET + i, title: walletName(i) }),
+      onSelectKeep: () => open({ id: KEEP_SHEET, title: shown?.label ?? 'Your guild' }),
+      onTapped: (what) => sound.tap(what),
       onReady: () => loading.report('welcome'),
       onSelectErrand: (e) => open({ id: ERRAND_SHEET + e.key, title: e.label || 'A transaction' }),
       onToll: (e) => sound.tollNow(Math.min(3, e.tier / 2)),
@@ -189,6 +200,8 @@ function renderSheet(sheet: SheetState): HTMLElement {
       return errandSheet(e, e.protocolId ? (world?.protocols.find((p) => p.id === e.protocolId)?.name ?? null) : null, () => {
         // its courier goes next; the sheet closes so the scene shows it
         view?.enqueue([e]);
+        // the camera goes with it
+        view?.follow(e);
         shell.close();
       });
   }
@@ -196,6 +209,34 @@ function renderSheet(sheet: SheetState): HTMLElement {
     const id = sheet.id.slice(BADGE_SHEET.length);
     const castle = world ? castleBadges(world, player.profile?.stats ?? null).find((b) => b.id === id) : undefined;
     return castle ? castleBadgeSheet(castle, themeNow) : badgeSheet(id, player.profile, themeNow);
+  }
+  if (sheet.id === CONDITIONS_SHEET) return conditions.sheet();
+  if (sheet.id.startsWith(WALLET_SHEET)) {
+    const i = Number(sheet.id.slice(WALLET_SHEET.length));
+    const hero = guildNow?.heroes[i];
+    if (hero && world)
+      return walletSheet(
+        { hero, name: walletName(i), crest: crestColors(hero.address)[0], errands: world.errands.filter((e) => e.wallet === hero.address), protocolName: (id) => guildNow?.protocols.get(id)?.name ?? id },
+        (e) => shell.open({ id: ERRAND_SHEET + e.key, title: e.label || 'A transaction' }),
+        () => shell.go('guild'),
+      );
+  }
+  if (sheet.id === KEEP_SHEET && guildNow && world) {
+    const heroes = guildNow.heroes;
+    const p = player.profile;
+    return guildSheet(
+      {
+        wallets: heroes.map((h, i) => ({ name: walletName(i), crest: crestColors(h.address)[0], worth: h.netWorth, tier: h.tier, address: h.address })),
+        worth: heroes.reduce((t, h) => t + h.netWorth, 0),
+        tier: world.tier,
+        protocols: world.protocols.length,
+        errands: world.errands.length,
+        level: p ? `Level ${p.level} · ${p.rank}, ${playerTitle(p, prefs.title)}` : null,
+        xp: p ? `${p.xp.toLocaleString('en-US')} XP · ${Math.max(0, p.nextXp - p.xp).toLocaleString('en-US')} to level ${p.level + 1}` : null,
+      },
+      (i) => shell.open({ id: WALLET_SHEET + i, title: walletName(i) }),
+      () => shell.go('badges'),
+    );
   }
   const id = sheet.id.startsWith(SHEET_PREFIX) ? sheet.id.slice(SHEET_PREFIX.length) : null;
   const p = id ? world?.protocols.find((x) => x.id === id) : undefined;
@@ -271,6 +312,13 @@ function offerTour(): void {
   }
   if (!seen && !new URLSearchParams(location.search).has('notour')) setTimeout(startTour, 800);
 }
+// the market and the road at a glance; the numbers in a sheet (conditions.ts)
+const conditions = new Conditions(() => shell.open({ id: CONDITIONS_SHEET, title: 'Market and road' }));
+// settings: the key, the wallets, their names and crest colours live in the Guild tab
+const settingsBtn = el('button', { class: 'btn topbar-icon settings-btn', type: 'button', 'aria-label': 'Settings: key, wallets, crest colours', title: 'Settings: your Zerion key, wallets, names and crest colours' }, '⚙');
+settingsBtn.addEventListener('click', () => shell.go('guild'));
+shell.addTopbarAction(conditions.chip);
+shell.addTopbarAction(settingsBtn);
 shell.addTopbarAction(tourBtn);
 shell.addTopbarAction(homeBtn);
 shell.addTopbarAction(soundBtn);
@@ -284,10 +332,29 @@ if (import.meta.env.DEV) (window as unknown as { castleSound?: Soundscape }).cas
 
 /** Your own guild (never a visited one): its teaching quests. */
 let homeGuild: Guild | null = null;
+/** The guild on show (yours, or a visited one): its wallets' sheets. */
+let guildNow: Guild | null = null;
+
+/** A wallet's name: its ENS or label, else its short address. */
+function walletName(i: number): string {
+  const h = guildNow?.heroes[i];
+  if (!h) return 'A wallet';
+  return prefs.ens[h.address] ?? (h.name && !h.name.startsWith('0x') ? h.name : shortAddr(h.address));
+}
+
+/** A protocol's logo picture (from the theme that has the logos), for its sheet's title. */
+function protocolLogo(id: string): string | undefined {
+  const path = logoPath(id);
+  const t = themeLoaded;
+  if (!path || !t) return undefined;
+  const chain = themeChain(t);
+  return themeFileUrl(chain[chain.length - 1]!, path);
+}
 
 function worldOf(town: Shown): CastleWorld {
   const guild = buildGuild(town.raws, prefs.window, { names: town.names });
   if (town.visiting === null) homeGuild = guild;
+  guildNow = guild;
   const real = worldFromGuild(guild);
   // `?preview=lido,spark,lending:5e6` shows those buildings in town instead (for looking at models)
   const preview = new URLSearchParams(location.search).get('preview');
@@ -331,7 +398,9 @@ function settlePrice(w: CastleWorld): void {
   if (eth.seen && t - eth.seen.at > 60 * 60_000) eth.prev = eth.seen;
   eth.seen = { usd: w.ethUsd, at: t };
   savePrefs(prefs);
-  weather = weatherFor(eth.prev ? priceMove(w.ethUsd, eth.prev).mood : null);
+  const move = eth.prev ? priceMove(w.ethUsd, eth.prev) : null;
+  conditions.price(w.ethUsd, move);
+  weather = weatherFor(move ? move.mood : null);
   view?.setWeather(weather);
 }
 
@@ -379,6 +448,7 @@ const session = new Session(prefs, {
 // the player's own node, if they chose one (the same setting as the town)
 if (prefs.rpcUrl !== '' && validRpcUrl(prefs.rpcUrl)) setRpcUrl(prefs.rpcUrl);
 startHeartbeat((beat) => {
+  conditions.block(beat);
   view?.ringBell();
   sound.ringNow(0.5 + beat.busy * 0.5); // a fuller block rings louder
   void session.onBlock();

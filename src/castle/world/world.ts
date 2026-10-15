@@ -127,20 +127,45 @@ export interface CastleWorld {
 }
 
 /** As many buildings as the town has slots for (plan.ts). */
-export const MAX_BUILDINGS = 10;
+export const MAX_BUILDINGS = 16;
+/** How many of the latest journeys count as recent (the castle replays about this many). */
+const RECENT_JOURNEYS = 24;
 
 export function worldFromGuild(guild: Guild): CastleWorld {
   const held = new Map<string, number>();
   for (const hero of guild.heroes) for (const s of hero.stashes) held.set(s.protocolId, (held.get(s.protocolId) ?? 0) + s.grossUsd);
 
-  const protocols = [...guild.protocols.values()]
+  // the protocols the recent couriers go to come first after what the guild holds (every one a courier
+  // visits should have its building: an approval for OpenSea, a one-off swap)
+  const recent = new Set<string>();
+  for (const j of guild.journeys.slice(-RECENT_JOURNEYS)) for (const st of j.steps ?? []) if (st.target.kind === 'building') recent.add(st.target.protocolId);
+  const rank = (id: string) => ((held.get(id) ?? 0) > 0 ? 0 : recent.has(id) ? 1 : 2);
+  // one building per protocol family: OpenSea's Seaport and SeaDrop, Aave's v2 and v3 share one (the first
+  // in the order stands for the family; what the guild holds in the others counts there too)
+  const members = new Map<string, string[]>();
+  const familyOf = new Map<string, string>();
+  const candidates = [...guild.protocols.values()]
     .filter((p) => (held.get(p.id) ?? 0) > 0 || p.visits > 0)
-    .sort((a, b) => (held.get(b.id) ?? 0) - (held.get(a.id) ?? 0) || b.visits - a.visits || a.name.localeCompare(b.name))
+    .sort((a, b) => rank(a.id) - rank(b.id) || (held.get(b.id) ?? 0) - (held.get(a.id) ?? 0) || b.visits - a.visits || a.name.localeCompare(b.name))
+    .filter((p) => {
+      const fam = protocolFamily(p.id);
+      const first = familyOf.get(fam);
+      if (first !== undefined) {
+        members.get(first)!.push(p.id);
+        return false;
+      }
+      familyOf.set(fam, p.id);
+      members.set(p.id, [p.id]);
+      return true;
+    });
+  const sumHeld = (id: string) => (members.get(id) ?? [id]).reduce((t, m) => t + (held.get(m) ?? 0), 0);
+  const protocols = candidates
     .slice(0, MAX_BUILDINGS)
     .map((p): WorldProtocol => {
       const family = protocolFamily(p.id);
+      const group = new Set(members.get(p.id) ?? [p.id]);
       const holdings: Holding[] = guild.heroes
-        .flatMap((h) => h.stashes.filter((st) => st.protocolId === p.id).flatMap((st) => st.entries.map((e) => ({ label: e.name || e.symbol, kind: e.kind, usd: e.usd, wallet: h.address }))))
+        .flatMap((h) => h.stashes.filter((st) => group.has(st.protocolId)).flatMap((st) => st.entries.map((e) => ({ label: e.name || e.symbol, kind: e.kind, usd: e.usd, wallet: h.address }))))
         .sort((a, b) => Math.abs(b.usd) - Math.abs(a.usd))
         .slice(0, MAX_HOLDINGS);
       const tvlUsd = tvlOf(p.id);
@@ -148,17 +173,20 @@ export function worldFromGuild(guild: Guild): CastleWorld {
         id: p.id,
         name: p.name,
         category: CATEGORY_FOR[p.category] ?? 'other',
-        tier: tierOf(held.get(p.id) ?? 0),
+        tier: tierOf(sumHeld(p.id)),
         signature: family in SIGNATURE_PROTOCOLS ? family : null,
         holdings,
-        visits: p.visits,
+        visits: [...group].reduce((t, m) => t + (guild.protocols.get(m)?.visits ?? 0), 0),
         tvlUsd,
         // unknown to the snapshot: as big as what the guild keeps there, at least a house
-        size: sizeFor(tvlUsd ?? Math.max(held.get(p.id) ?? 0, SIZE_REFERENCE_USD)),
+        size: sizeFor(tvlUsd ?? Math.max(sumHeld(p.id), SIZE_REFERENCE_USD)),
       };
     });
 
-  const shown = new Set(protocols.map((p) => p.id));
+  // each protocol with a building, and every member of its family, to the building's own id
+  const buildingOf = new Map<string, string>();
+  for (const p of protocols) for (const m of members.get(p.id) ?? [p.id]) buildingOf.set(m, p.id);
+  const shown = new Set(buildingOf.keys());
   const walletIds = guild.heroes.map((h) => h.address);
   const towerOf = new Map(walletIds.map((a, i) => [a, i]));
   // a send between two of the guild's wallets is one journey key on both sides: one errand
@@ -166,7 +194,8 @@ export function worldFromGuild(guild: Guild): CastleWorld {
   const errands: Errand[] = [];
   for (const j of guild.journeys) {
     if (seen.has(j.key)) continue;
-    const e = errandOf(j, shown, towerOf, (id) => guild.protocols.get(id)?.name ?? id);
+    const found = errandOf(j, shown, towerOf, (id) => guild.protocols.get(id)?.name ?? id);
+    const e = found && found.protocolId ? { ...found, protocolId: buildingOf.get(found.protocolId) ?? found.protocolId } : found;
     if (e) {
       seen.add(j.key);
       errands.push(e);

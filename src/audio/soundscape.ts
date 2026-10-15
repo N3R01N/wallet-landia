@@ -211,6 +211,26 @@ export class Soundscape {
     this.played.coins = (this.played.coins ?? 0) + 1;
   }
 
+  /**
+   * A tap on something in the scene: a soft wooden knock and a warm two-note
+   * pluck (a marimba's), rising for a building, a single note for a person, a
+   * quick tick for a courier. Silent while sound is off.
+   */
+  tap(what: 'building' | 'person' | 'courier' = 'building'): void {
+    if (!this.#on || !this.#ctx || !this.#master) return;
+    const t = this.#ctx.currentTime;
+    // the knock: a short low thump of filtered noise
+    this.#noiseBurst(t, 'lowpass', what === 'courier' ? 1400 : 700, what === 'building' ? 0.22 : 0.12, 0.07);
+    // the pluck: a sine with its octave, quickly fading (a struck wooden bar)
+    const notes = what === 'building' ? [523.25, 783.99] : what === 'person' ? [659.25] : [987.77];
+    notes.forEach((f, i) => {
+      this.#tone(t + 0.012 + i * 0.07, f, 0.09, 0.45, 'sine');
+      this.#tone(t + 0.012 + i * 0.07, f * 2, 0.025, 0.18, 'sine');
+      this.#tone(t + 0.012 + i * 0.07, f * 4.02, 0.008, 0.06, 'triangle');
+    });
+    this.played.tap = (this.played.tap ?? 0) + 1;
+  }
+
   /** A medal: a short fanfare. */
   fanfare(): void {
     const ctx = this.#ctx;

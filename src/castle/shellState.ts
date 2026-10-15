@@ -18,6 +18,8 @@ export interface SheetState {
   /** What the sheet shows, for the renderer to look up (e.g. `building:aave`). */
   id: string;
   title: string;
+  /** A picture beside the title (a protocol's logo). */
+  icon?: string;
 }
 
 export interface ShellState {

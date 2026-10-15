@@ -9,7 +9,7 @@ import { el, fmtDate, safeHref, shortAddr } from '../util/dom.js';
 import { approxUsd, exactUsd, formatQty } from '../domain/tiers.js';
 import { verbText } from '../domain/mappers.js';
 import { EXPLORERS, VERB_EXPLAIN } from '../domain/verbs.js';
-import type { Goods, PositionKind } from '../domain/model.js';
+import type { Goods, Hero, PositionKind } from '../domain/model.js';
 import { TIER_NAMES } from './assets/manifest.js';
 import type { Errand, ErrandStep, WorldProtocol } from './world/world.js';
 
@@ -156,4 +156,121 @@ export function chronicleSheet(errands: readonly Errand[], openErrand: (e: Erran
       }),
     ),
   );
+}
+
+/** A small table of facts (label, value), as the errand's sheet shows them. */
+export function factsTable(rows: readonly ([string, string] | null)[]): HTMLElement {
+  return el('table', { class: 'facts' }, el('tbody', {}, ...rows.filter((r): r is [string, string] => r !== null).map(([k, v]) => el('tr', {}, el('th', {}, k), el('td', {}, v)))));
+}
+
+/** What a wallet's sheet needs: the wallet (a hero of the guild), its name and crest, its recent errands. */
+export interface WalletSheetData {
+  hero: Hero;
+  name: string;
+  crest: string;
+  errands: readonly Errand[];
+  /** Protocol names, by id (for its positions). */
+  protocolName(id: string): string;
+}
+
+/** A wallet's tower or hall: what it is worth, what it holds and keeps where, what it did lately. */
+export function walletSheet(d: WalletSheetData, openErrand: (e: Errand) => void, openSettings: () => void): HTMLElement {
+  const h = d.hero;
+  const out = el(
+    'div',
+    { class: 'sheet-content wallet-sheet' },
+    el(
+      'div',
+      { class: 'wallet-head' },
+      el('span', { class: 'crest-dot', style: `background:${d.crest}`, 'aria-hidden': 'true' }),
+      el('div', {}, el('strong', {}, d.name), el('div', { class: 'muted' }, shortAddr(h.address))),
+    ),
+    factsTable([
+      ['Worth', approxUsd(h.netWorth)],
+      ['Tier', `${h.tier} · ${TIER_NAMES[h.tier] ?? '?'}`],
+      ['Tokens and positions', approxUsd(h.tokenWorth)],
+      h.nftWorth > 0 ? ['NFTs (floor)', approxUsd(h.nftWorth)] : null,
+      ['Last active', h.lastActiveAt ? fmtDate(h.lastActiveAt) : '—'],
+    ]),
+  );
+  const coins = [...h.items].filter((i) => (i.usd ?? 0) > 0).sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0)).slice(0, 6);
+  if (coins.length) {
+    out.append(el('h3', {}, 'In the treasury'));
+    out.append(el('ul', { class: 'holdings' }, ...coins.map((i) => el('li', {}, el('span', { class: 'holding-name' }, i.symbol), el('span', { class: 'holding-meta muted' }, formatQty(i.quantity)), el('span', { class: 'holding-usd' }, approxUsd(i.usd ?? 0))))));
+  }
+  const stashes = [...h.stashes].sort((a, b) => Math.abs(b.netUsd) - Math.abs(a.netUsd)).slice(0, 6);
+  if (stashes.length) {
+    out.append(el('h3', {}, 'Kept in the town'));
+    out.append(el('ul', { class: 'holdings' }, ...stashes.map((st) => el('li', { class: st.netUsd < 0 ? 'debt' : '' }, el('span', { class: 'holding-name' }, d.protocolName(st.protocolId)), el('span', { class: 'holding-meta muted' }, st.hasDebt ? 'with a loan' : st.hasRewards ? 'earning rewards' : ''), el('span', { class: 'holding-usd' }, approxUsd(st.netUsd))))));
+  }
+  const recent = [...d.errands].reverse().slice(0, 5);
+  if (recent.length) {
+    out.append(el('h3', {}, 'Lately'));
+    const list = el('ul', { class: 'chronicle' });
+    for (const e of recent) {
+      const arrow = e.direction === 'out' ? '↗' : e.direction === 'in' ? '↙' : '↔';
+      const row = el(
+        'button',
+        { class: `chronicle-row${e.failed ? ' failed' : ''}`, type: 'button' },
+        el('span', { class: 'chronicle-dir', 'aria-hidden': 'true' }, arrow),
+        el('span', { class: 'chronicle-label' }, e.label || 'A transaction'),
+        el('span', { class: 'chronicle-meta muted' }, fmtDate(e.time)),
+        el('span', { class: 'chronicle-usd' }, approxUsd(e.valueUsd)),
+      );
+      row.addEventListener('click', () => openErrand(e));
+      list.append(el('li', {}, row));
+    }
+    out.append(list);
+  }
+  const edit = el('button', { class: 'btn', type: 'button' }, '⚙ Name, crest colour, remove…');
+  edit.addEventListener('click', openSettings);
+  out.append(el('p', {}, edit));
+  return out;
+}
+
+/** What the keep's sheet needs: the guild and its wallets, and the player's standing. */
+export interface GuildSheetData {
+  wallets: { name: string; crest: string; worth: number; tier: number; address: string }[];
+  worth: number;
+  tier: number;
+  protocols: number;
+  errands: number;
+  level: string | null;
+  xp: string | null;
+}
+
+/** The keep: the guild as a whole (its worth, its wallets) and the player's standing. */
+export function guildSheet(d: GuildSheetData, openWallet: (index: number) => void, openBadges: () => void): HTMLElement {
+  const out = el(
+    'div',
+    { class: 'sheet-content guild-sheet' },
+    factsTable([
+      ['The guild is worth', approxUsd(d.worth)],
+      ['Tier', `${d.tier} · ${TIER_NAMES[d.tier] ?? '?'}`],
+      ['Wallets', String(d.wallets.length)],
+      ['Protocols in town', String(d.protocols)],
+      ['Recent transactions', String(d.errands)],
+      d.level ? ['Your standing', d.level] : null,
+    ]),
+  );
+  if (d.xp) out.append(el('p', { class: 'muted' }, d.xp));
+  out.append(el('h3', {}, 'The wallets'));
+  const list = el('ul', { class: 'chronicle' });
+  d.wallets.forEach((w, i) => {
+    const row = el(
+      'button',
+      { class: 'chronicle-row', type: 'button' },
+      el('span', { class: 'chronicle-dir' }, el('span', { class: 'crest-dot', style: `background:${w.crest}`, 'aria-hidden': 'true' })),
+      el('span', { class: 'chronicle-label' }, w.name),
+      el('span', { class: 'chronicle-meta muted' }, `Tier ${w.tier} · ${TIER_NAMES[w.tier] ?? ''}`),
+      el('span', { class: 'chronicle-usd' }, approxUsd(w.worth)),
+    );
+    row.addEventListener('click', () => openWallet(i));
+    list.append(el('li', {}, row));
+  });
+  out.append(list);
+  const badges = el('button', { class: 'btn', type: 'button' }, 'Badges and quests');
+  badges.addEventListener('click', openBadges);
+  out.append(el('p', {}, badges));
+  return out;
 }
