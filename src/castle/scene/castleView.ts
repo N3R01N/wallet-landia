@@ -159,6 +159,9 @@ const SUN_DISTANCE = 120;
 const SUN_RIGHT = new THREE.Vector3().crossVectors(SUN_DIRECTION.clone().negate(), new THREE.Vector3(0, 1, 0)).normalize();
 const SUN_UP = new THREE.Vector3().crossVectors(SUN_RIGHT, SUN_DIRECTION.clone().negate()).normalize();
 const SHADOW_REACH = 45;
+/** The far copies of big buildings: drawn when the shortest of them shows below LOD_FAR_PX, the full ones again above LOD_NEAR_PX. */
+const LOD_FAR_PX = 360;
+const LOD_NEAR_PX = 420;
 /** The path glow: warm lamplight rather than the model's plain white. */
 const GLOW_COLOR = 0xffc861;
 /** The glow plate is 0.01 m high and the road 0.02 m: lift the plate just above the road. */
@@ -297,6 +300,10 @@ export class CastleView {
   readonly #scratch = new THREE.Vector3();
   readonly #figures: Figure[] = [];
   readonly #buildingRoots: THREE.Object3D[] = [];
+  /** Buildings with a far copy (`….lod1`): which to draw follows how tall they show on screen. */
+  readonly #lods: { near: THREE.Object3D; far: THREE.Object3D; height: number }[] = [];
+  /** Whether the far copies are drawn now (null: not decided yet). */
+  #farNow: boolean | null = null;
   readonly #resize: ResizeObserver;
   readonly #library: ModelLibrary;
   #zoom = 1;
@@ -543,6 +550,9 @@ export class CastleView {
     ringing: boolean;
     /** The errands of the couriers out and the next one queued. */
     upcoming: string[];
+    /** Big buildings with a far copy, and whether the far copies are drawn now. */
+    lods: number;
+    far: boolean;
   } {
     const c = this.#runs[0]?.figure.object.position;
     return {
@@ -556,6 +566,8 @@ export class CastleView {
       pitch: this.#angles.pitch,
       ringing: this.#time - this.#ringAt < BELL_RING,
       upcoming: [...this.#runs.map((r) => r.errand.key), ...this.#queue.slice(0, 1).map((e) => e.key)],
+      lods: this.#lods.length,
+      far: this.#farNow === true,
     };
   }
 
@@ -764,6 +776,7 @@ export class CastleView {
       if ('protocol' in p) {
         obj.userData.building = p;
         this.#buildingRoots.push(obj);
+        this.#noteLod(obj);
         const brand = brandColor((p as BuildingPlacement).protocol.id);
         if (brand) paint(obj, 'Tint', brand, this.#painted);
         void this.#showLogo(obj, (p as BuildingPlacement).protocol.id);
@@ -829,6 +842,8 @@ export class CastleView {
     this.#layout.clear();
     this.#litTiles = [];
     this.#buildingRoots.length = 0;
+    this.#lods.length = 0;
+    this.#farNow = null;
     this.#tower = null;
     this.#towerMaterials = [];
     this.#towerOpacity = 1;
@@ -1095,6 +1110,43 @@ export class CastleView {
     this.#sun.position.copy(SUN_DIRECTION).multiplyScalar(SUN_DISTANCE).add(at);
     this.#sun.target.updateMatrixWorld();
     if (moved) this.#renderer.shadowMap.needsUpdate = true;
+    this.#pickLods();
+  }
+
+  /** A building's near and far copies (`….lod0`, `….lod1`, docs/STYLEGUIDE_V2.md §8), when it has both. */
+  #noteLod(root: THREE.Object3D): void {
+    let near: THREE.Object3D | null = null;
+    let far: THREE.Object3D | null = null;
+    root.traverse((o) => {
+      const name = (o.userData.name as string | undefined) ?? o.name;
+      if (/\.lod0$/.test(name)) near = o;
+      else if (/\.lod1$/.test(name)) far = o;
+    });
+    if (!near || !far) return;
+    root.updateMatrixWorld(true);
+    const height = new THREE.Box3().setFromObject(near).getSize(new THREE.Vector3()).y;
+    this.#lods.push({ near, far, height });
+    this.#farNow = null;
+  }
+
+  /**
+   * Near or far copies, by how tall a building shows: below LOD_FAR_PX on screen the far copy
+   * (about half the triangles) is drawn; above LOD_NEAR_PX the full one (the gap keeps them from
+   * flickering at the edge). One switch for all: the camera is orthographic, so it is the zoom.
+   */
+  #pickLods(): void {
+    if (!this.#lods.length) return;
+    const pxPerMetre = (this.element.clientHeight || 1) / this.#viewHeight();
+    const shortest = Math.min(...this.#lods.map((l) => l.height));
+    const px = shortest * pxPerMetre;
+    const far = this.#farNow === null ? px < LOD_FAR_PX : this.#farNow ? px < LOD_NEAR_PX : px < LOD_FAR_PX;
+    if (far === this.#farNow) return;
+    this.#farNow = far;
+    for (const l of this.#lods) {
+      l.near.visible = !far;
+      l.far.visible = far;
+    }
+    this.#renderer.shadowMap.needsUpdate = true;
   }
 
   /** Metres of the scene shown top to bottom now: tall enough for the minimum width, divided by the zoom. */
