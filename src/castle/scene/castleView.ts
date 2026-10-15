@@ -13,14 +13,16 @@
 
 import * as THREE from 'three';
 import { Figure } from './figure.js';
-import { Life } from './life.js';
+import { Life, ROLE, type Person } from './life.js';
+import { Exchange } from './exchange.js';
+import type { Goods } from '../../domain/model.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { SIZE_CLASSES, assetPath, brandColor, findAsset, sizeClassOf, tierColor } from '../assets/manifest.js';
 import { ModelLibrary, disposeTree, type Loaded } from '../assets/models.js';
 import { artTheme, loadThemeImage, themeFileUrl, type CastleTheme } from '../assets/theme.js';
 import { crestColors } from '../../util/rng.js';
 import { DEFAULT_TIMING, buildCourierScript, courierAt, type CourierScript, type CourierState, type NpcClip } from './courier.js';
-import { planCastle, routeBetweenWallets, routeTo, type BuildingPlacement, type CastleLayout, type CastlePlan, type Placement } from './plan.js';
+import { planCastle, routeBetweenWallets, routeTo, type BuildingPlacement, type CastleLayout, type CastlePlan, type Placement, type WalletPlacement } from './plan.js';
 import type { CastleWorld, Errand } from '../world/world.js';
 import { lightAt, type Weather } from '../world/sky.js';
 import { logoPath } from '../world/logos.js';
@@ -55,8 +57,15 @@ export interface CastleViewOptions {
   onSelectWallet?: (index: number) => void;
   /** The keep was tapped: the guild as a whole. */
   onSelectKeep?: () => void;
+  /** A coin of a stream landed (its number, of how many; whether the guild receives), and an NFT set out or landed: for the sounds. */
+  onCoin?: (index: number, of: number, incoming: boolean) => void;
+  onNft?: (landed: boolean) => void;
   /** Something was tapped (for the sound): a building or castle piece, a person or animal, a courier. */
   onTapped?: (what: 'building' | 'person' | 'courier') => void;
+  /** What a townsperson says now (the chain's chatter, world/chatter.ts); none: they keep quiet. */
+  chatter?: (who: Person) => string;
+  /** A townsperson tapped: who they are and what they just said. */
+  onSelectPerson?: (who: Person, line: string | null) => void;
   /** A courier was tapped: its errand (the transaction). */
   onSelectErrand?: (errand: Errand) => void;
   /** A courier pays the toll at the barrier (for the coins' sound). */
@@ -138,6 +147,22 @@ const HOVER_COLOR = 0xffd45a;
 /** Following a courier (a replay): the zoom it eases to, and how quickly the view catches up (per second). */
 const FOLLOW_ZOOM = 2.2;
 const FOLLOW_RATE = 3;
+const FOLLOW_ZOOM_TIME = 1.5;
+/** How long a follow waits for its courier to set out (s). */
+const FOLLOW_WAIT = 40;
+/** A speech bubble stays this many seconds; someone in the street speaks up every this many (plus up to 3). */
+const BUBBLE_TIME = 4.5;
+/** A townsperson of a building with no brand colour wears this. */
+const VILLAGER_TINT = '#5a7d9a';
+/** A sparkle burst, bigger than life like the coins (×). */
+const BURST_SCALE = 3;
+/** A carried NFT frame, bigger than life so the picture reads (×, against the courier). */
+const CARRY_FRAME_SCALE = 1.4;
+const CHATTER_EVERY = 6;
+/** A bubble's foot above a person's feet (m). */
+const BUBBLE_HEIGHT = 2.1;
+/** While following, the player may pan the courier this share of the view's height away from the middle, no further. */
+const FOLLOW_SLACK = 0.3;
 /** The Chronicle tower turns this see-through while someone is behind it. */
 const TOWER_FADED = 0.3;
 /** How far behind the tower (on the ground, away from the camera) it can hide someone, and how wide its shadow is. */
@@ -156,6 +181,10 @@ const DECOR_TINT: Record<string, string> = {
 const RING_GEOMETRY = new THREE.RingGeometry(0.85, 1.05, 32).rotateX(-Math.PI / 2);
 const PLOT_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xe7c46b, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
 const CHOSEN_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+const SWAP_MATERIAL = new THREE.MeshBasicMaterial({ color: 0x6fb8ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+/** The tappable disc inside a build-mode ring (barely seen). */
+const PAD_GEOMETRY = new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2);
+const PAD_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.08, depthWrite: false });
 /** Clips a placed model plays on its own, looping (the first one it has). */
 const LOOPING_CLIPS = ['idle', 'wave', 'swim'];
 /** The clip a building or a person plays once when tapped (docs/STYLEGUIDE_V2.md §8.2). */
@@ -208,6 +237,10 @@ interface Run {
   /** It has paid the toll, and been refused (each told once). */
   tolled?: boolean;
   refusedTold?: boolean;
+  /** Its goods changed hands at the door; it brought them home. */
+  handed?: boolean;
+  /** An NFT it carries (a framed picture over its head), when it carries one. */
+  frame?: THREE.Object3D | null;
 }
 
 export class CastleView {
@@ -237,10 +270,20 @@ export class CastleView {
   /** A replayed errand whose courier the camera follows (by key), and its courier once out. */
   #followKey: string | null = null;
   #followRun: Run | null = null;
+  /** How far the player has panned away from the followed courier, and how long the follow still eases the zoom (s). */
+  readonly #followOffset = new THREE.Vector3();
+  #followZoomFor = 0;
+  #followWait = 0;
+  /** "Following the courier ✕" while it does. */
+  readonly #followChip = Object.assign(document.createElement('button'), { className: 'btn follow-chip', type: 'button' });
   /** The weather, and its clouds (their shadows; a few seen at the edges), the area they drift round. */
   #weather: Weather = { rain: 0, gloom: 0, clouds: 0.45, shine: 0.2 };
-  readonly #clouds: { obj: THREE.Object3D; speed: number; edge?: boolean }[] = [];
+  readonly #clouds: { obj: THREE.Object3D; speed: number; edge?: boolean; mats: THREE.Material[]; opacity: number }[] = [];
+  readonly #cloudMaterials: THREE.Material[] = [];
   #cloudArea = { x0: -60, x1: 60, z0: -60, z1: 60 };
+  /** Coins and NFTs changing hands (exchange.ts), and the labels over the scene they show. */
+  #exchange: Exchange | null = null;
+  readonly #exchangeLabels = el('div', 'exchange-labels');
   /** Birds, grazers, fish, strollers, the toll keeper (life.ts). */
   #life: Life | null = null;
   /** Whether the far copies are drawn now (null: not decided yet). */
@@ -322,6 +365,18 @@ export class CastleView {
   readonly #angles: CameraAngles = { yaw: YAW_DEFAULT, pitch: PITCH_DEFAULT };
   readonly #angleTarget: CameraAngles = { yaw: YAW_DEFAULT, pitch: PITCH_DEFAULT };
   readonly #panScratch = { x: 0, z: 0 };
+  readonly #screenScratch = new THREE.Vector3();
+  readonly #bubbleScratch = new THREE.Vector3();
+  /** Build mode's labels over its rings ("Move here", "Swap with …"). */
+  readonly #arrangeLabels: { el: HTMLElement; at: THREE.Vector3 }[] = [];
+  readonly #arrangeLabelLayer = el('div', 'arrange-labels');
+  /** Speech bubbles over the townsfolk's heads. */
+  readonly #bubbleLayer = el('div', 'speech-bubbles');
+  #bubbles: { el: HTMLElement; obj: THREE.Object3D; until: number }[] = [];
+  /** Sparkle bursts playing (`fx.sparkle.burst`'s `pop`), gone when it ends. */
+  #bursts: { figure: Figure; until: number }[] = [];
+  /** When someone in the street next says something unprompted. */
+  #nextChatter = 4;
   readonly #controls = document.createElement('div');
 
   constructor(opts: CastleViewOptions) {
@@ -438,6 +493,27 @@ export class CastleView {
     }
     this.#scratch.set(b.x, 1, b.z).project(this.#camera);
     return toPage();
+  }
+
+  /** Test hook: brings a townsperson out walking to the middle of the view (false: none). */
+  focusPerson(): boolean {
+    const one = this.#life?.someone(0);
+    if (!one) return false;
+    one.obj.getWorldPosition(this.#scratch);
+    this.focusAt(this.#scratch.x, this.#scratch.z, 2);
+    return true;
+  }
+
+  /** Test hook: the page coordinates of a townsperson out walking, chest high (null: none, or off the view). */
+  personPoint(): { x: number; y: number } | null {
+    const one = this.#life?.someone(0);
+    if (!one) return null;
+    one.obj.getWorldPosition(this.#scratch);
+    this.#scratch.y += 1;
+    this.#scratch.project(this.#camera);
+    if (Math.abs(this.#scratch.x) > 0.9 || Math.abs(this.#scratch.y) > 0.9) return null;
+    const rect = this.#canvas.getBoundingClientRect();
+    return { x: rect.left + ((this.#scratch.x + 1) / 2) * rect.width, y: rect.top + ((1 - this.#scratch.y) / 2) * rect.height };
   }
 
   /** Test hook: the page coordinates of the first courier out (null: none out). */
@@ -575,12 +651,14 @@ export class CastleView {
     for (const f of this.#ambient) f.dispose();
     for (const r of this.#runs) r.figure.dispose();
     this.#life?.dispose();
+    this.#exchange?.dispose();
     // Everything shown came from this view's own library (models, standins, the tower's own materials):
     // nothing is shared beyond the view, so all of it goes.
     for (const t of this.#courierTargets) t.removeFromParent(); // shared by every view: kept
     this.#arrangeMarks.clear(); // build mode's rings: shared, kept
     this.#hoverRing.removeFromParent(); // its geometry is shared: kept
-    for (const c of this.#clouds) c.obj.removeFromParent(); // their lobes and materials are shared: kept
+    for (const c of this.#clouds) c.obj.removeFromParent(); // their lobes are shared: kept
+    for (const m of this.#cloudMaterials) m.dispose();
     this.#hoverRing.material.dispose();
     disposeTree(this.#scene);
     this.#environment?.dispose();
@@ -610,6 +688,9 @@ export class CastleView {
       ...CLOUD_MODELS,
       'scenery.cloud.rain',
       ...Life.MODELS,
+      'fx.coin',
+      'fx.nft.frame',
+      'fx.sparkle.burst',
       // townsfolk who stroll the avenue
       ...['base', 'lending', 'dex', 'staking', 'nft', 'governance', 'bridge', 'other'].map((c) => `person.npc.${c}`),
     ]);
@@ -618,6 +699,19 @@ export class CastleView {
 
     this.#placeLayout();
     this.#makeLife();
+    this.#exchange = new Exchange({
+      model: (n) => (this.#loaded.get(n) ? this.#make(n) : null),
+      add: (o) => this.#scene.add(o),
+      screen: (p) => this.#toScreen(p),
+      labels: this.#exchangeLabels,
+      onCoin: (i, n, incoming) => this.#opts.onCoin?.(i, n, incoming),
+      burst: (at) => this.#burst(at),
+      onNft: (landed) => this.#opts.onNft?.(landed),
+    });
+    this.element.append(this.#exchangeLabels, this.#arrangeLabelLayer, this.#bubbleLayer, this.#followChip);
+    this.#followChip.textContent = '👁 Following the courier ✕';
+    this.#followChip.hidden = true;
+    this.#followChip.addEventListener('click', () => this.stopFollowing());
 
     // The drawbridge swings about its hinge: lowered is flat towards the town, raised stands up.
     // A model with a `lower` clip (raised → flat, its chains following) is posed by that clip instead.
@@ -758,7 +852,7 @@ export class CastleView {
         this.#walkway(obj, p as BuildingPlacement);
         const brand = brandColor((p as BuildingPlacement).protocol.id);
         if (brand) paint(obj, 'Tint', brand, this.#painted);
-        void this.#showLogo(obj, (p as BuildingPlacement).protocol.id);
+        void this.#showLogo(obj, (p as BuildingPlacement).protocol.id, (p as BuildingPlacement).protocol.iconUrl);
         paint(obj, 'Trim', tierColor(p.tier ?? 0), this.#painted);
       } else if (p.name.startsWith('castle.')) {
         // a wallet's tower or hall at its own tier, the rest of the castle at the guild's
@@ -780,6 +874,8 @@ export class CastleView {
       }
       // the tier's extra parts (docs/STYLEGUIDE_V2.md §7): `tier.N` shows from tier N
       showTierParts(obj, p.tier ?? ('protocol' in p ? 0 : (plan.keep.tier ?? 0)));
+      // a hall's dressing by what its wallet mostly holds (`focus.tokens`, `focus.defi`, `focus.nft`)
+      showFocusParts(obj, (p as WalletPlacement).focus ?? 'tokens');
       const decorTint = p.key === 'decor' ? DECOR_TINT[p.name] : undefined;
       if (decorTint) paint(obj, 'Tint', decorTint === 'crest' ? crestColors(this.#opts.world.walletIds[0] ?? '')[0] : decorTint, this.#painted);
       if (p === plan.tower) {
@@ -801,6 +897,7 @@ export class CastleView {
       if (brand) paint(npc.object, 'Tint', brand, this.#painted);
       npc.object.userData.reacts = true;
       npc.object.userData.person = true;
+      npc.object.userData.who = { role: ROLE[b.protocol.category] ?? 'Villager', trade: b.protocol.category, building: b.protocol.name } satisfies Person;
       this.#reactions.set(npc.object, npc);
       this.#layout.add(npc.object);
       this.#figures.push(npc);
@@ -852,20 +949,35 @@ export class CastleView {
   setArranging(on: boolean, selected: string | null): void {
     this.#arranging = on;
     this.#arrangeMarks.clear();
+    for (const l of this.#arrangeLabels) l.el.remove();
+    this.#arrangeLabels.length = 0;
     this.element.dataset.arranging = String(on);
+    this.#setHovered(null);
     if (!on) return;
-    for (const f of this.#plan.freeSlots) {
-      const ring = new THREE.Mesh(RING_GEOMETRY, PLOT_MATERIAL);
-      ring.position.set(f.x, 0.04, f.z);
-      ring.userData.slot = f.slot;
+    // every place it can go: free plots (gold, "Move here"), the other buildings (blue, "Swap"), sized to each plot
+    const mark = (x: number, z: number, half: number, material: THREE.Material, text: string | null, data: Record<string, unknown>) => {
+      const ring = new THREE.Mesh(RING_GEOMETRY, material);
+      ring.position.set(x, 0.06, z);
+      ring.scale.setScalar(Math.max(1.2, half * 1.15));
+      Object.assign(ring.userData, data);
       this.#arrangeMarks.add(ring);
-    }
-    const chosen = this.#plan.buildings.find((b) => b.protocol.id === selected);
-    if (chosen) {
-      const ring = new THREE.Mesh(RING_GEOMETRY, CHOSEN_MATERIAL);
-      ring.position.set(chosen.x, 0.05, chosen.z);
-      ring.scale.setScalar(1.25);
-      this.#arrangeMarks.add(ring);
+      // a flat disc inside, to tap anywhere on the plot
+      const pad = new THREE.Mesh(PAD_GEOMETRY, PAD_MATERIAL);
+      pad.position.set(x, 0.05, z);
+      pad.scale.setScalar(Math.max(1.2, half * 1.15));
+      Object.assign(pad.userData, data);
+      this.#arrangeMarks.add(pad);
+      if (text) {
+        const label = el('div', `arrange-label ${material === PLOT_MATERIAL ? 'move' : 'swap'}`);
+        label.textContent = text;
+        this.#arrangeLabelLayer.append(label);
+        this.#arrangeLabels.push({ el: label, at: new THREE.Vector3(x, 0.5, z) });
+      }
+    };
+    for (const f of this.#plan.freeSlots) mark(f.x, f.z, f.half, PLOT_MATERIAL, 'Move here', { slot: f.slot });
+    for (const b of this.#plan.buildings) {
+      if (b.protocol.id === selected) mark(b.x, b.z, b.half, CHOSEN_MATERIAL, null, {});
+      else mark(b.x, b.z, b.half, SWAP_MATERIAL, `Swap with ${b.protocol.name}`, { protocolId: b.protocol.id });
     }
   }
 
@@ -905,13 +1017,14 @@ export class CastleView {
    * docs/STYLEGUIDE_V2.md §8.1). Models without plates, and protocols without a
    * logo, keep what they have.
    */
-  async #showLogo(root: THREE.Object3D, protocolId: string): Promise<void> {
+  async #showLogo(root: THREE.Object3D, protocolId: string, iconUrl: string | null = null): Promise<void> {
     const plates: THREE.Mesh[] = [];
     root.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (mesh.isMesh && (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).some((m) => m.name === 'Logo')) plates.push(mesh);
     });
-    const path = logoPath(protocolId);
+    // the bundled logo, else the icon Zerion gives the protocol (through our own picture proxy)
+    const path = logoPath(protocolId) ?? (iconUrl ? proxied(iconUrl) : null);
     if (!plates.length || !path) return;
     const first = plates[0]!.material;
     const template = (Array.isArray(first) ? first : [first]).find((m) => m.name === 'Logo')!;
@@ -931,7 +1044,7 @@ export class CastleView {
   async #logoMaterial(template: THREE.Material, path: string): Promise<THREE.Material | null> {
     try {
       const theme = await this.#opts.theme;
-      const img = await loadThemeImage(theme, path);
+      const img = path.startsWith('/api/') ? await loadImage(path) : await loadThemeImage(theme, path);
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = LOGO_SIZE;
       const g = canvas.getContext('2d')!;
@@ -1003,6 +1116,8 @@ export class CastleView {
   #makeClouds(): void {
     for (const c of this.#clouds) c.obj.removeFromParent();
     this.#clouds.length = 0;
+    for (const m of this.#cloudMaterials) m.dispose();
+    this.#cloudMaterials.length = 0;
     const w = this.#weather;
     const t = this.#plan.town;
     const m = this.#plan.moat;
@@ -1018,12 +1133,23 @@ export class CastleView {
     const seen = Math.round(3 + w.clouds * 9);
     for (let i = 0; i < seen; i++) {
       const obj = pick(i + 40);
+      // its own see-through materials: it fades out when it would cover a followed courier
+      const mats: THREE.Material[] = [];
+      obj.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const own = (mesh.material as THREE.Material).clone();
+        own.transparent = true;
+        mats.push(own);
+        mesh.material = own;
+      });
+      this.#cloudMaterials.push(...mats);
       obj.scale.setScalar(0.9 + rand(i + 40) * 0.8);
       const left = rand(i + 41) < 0.5;
       const x = left ? area.x0 + rand(i + 42) * 14 : area.x1 - rand(i + 42) * 14;
       obj.position.set(x, CLOUD_HEIGHT * (0.55 + rand(i + 44) * 0.3), area.z0 + rand(i + 43) * (area.z1 - area.z0));
       this.#scene.add(obj);
-      this.#clouds.push({ obj, speed: CLOUD_WIND * 0.6, edge: true });
+      this.#clouds.push({ obj, speed: CLOUD_WIND * 0.6, edge: true, mats, opacity: 1 });
     }
   }
 
@@ -1050,9 +1176,23 @@ export class CastleView {
   #driftClouds(dt: number): void {
     if (!this.#clouds.length) return;
     const a = this.#cloudArea;
+    // what must stay seen: a followed courier, else the middle of the view
+    const keep = this.#followRun ? this.#followRun.figure.object.position : this.#focus;
+    const k = this.#toScreen(keep);
+    const near = Math.min(this.element.clientWidth, this.element.clientHeight) * 0.28;
     for (const c of this.#clouds) {
       c.obj.position.x += c.speed * dt;
       if (c.obj.position.x > a.x1 + 20) c.obj.position.x = a.x0 - 20;
+      const p = k ? this.#toScreen(c.obj.position) : null;
+      const covers = !!(p && k && Math.hypot(p.x - k.x, p.y - k.y) < near * (1 + c.obj.scale.x * 0.3));
+      // gone altogether while in the way (a faint one reads as a smudge)
+      const target = covers ? 0 : 1;
+      if (Math.abs(target - c.opacity) > 0.01) {
+        c.opacity += (target - c.opacity) * Math.min(1, dt * 4);
+        if (target === 0 && c.opacity < 0.02) c.opacity = 0;
+        for (const m of c.mats) m.opacity = c.opacity;
+        c.obj.visible = c.opacity > 0;
+      }
     }
   }
 
@@ -1065,6 +1205,10 @@ export class CastleView {
         make: (n) => this.#make(n),
         clips: (n) => this.#loaded.get(n)?.clips ?? [],
         add: (o) => this.#layout.add(o),
+        tint: (o, t) => {
+          const color = t === 'crest' ? crestColors(this.#opts.world.walletIds[0] ?? '')[0] : t.startsWith('brand:') ? (brandColor(t.slice(6)) ?? VILLAGER_TINT) : t;
+          paint(o, 'Tint', color, this.#painted);
+        },
       },
       this.#plan,
     );
@@ -1136,7 +1280,140 @@ export class CastleView {
   }
 
   /** A courier home again: it goes. Its model's geometry belongs to the library and stays; a standin's is its own. */
+  /**
+   * The goods change hands at the door: what the courier gives streams to the
+   * building's person (or the stranger at the town's end), what it gets streams
+   * back. Inside the castle, everything goes into the other wallet's hall.
+   */
+  #handOver(run: Run): void {
+    const ex = this.#exchange;
+    if (!ex) return;
+    const e = run.errand;
+    const at = run.figure.object.position.clone();
+    const give = e.steps.flatMap((st) => st.give);
+    const get = e.steps.flatMap((st) => st.get);
+    if (e.direction === 'inside') {
+      const hall = this.#walletAt(this.#plan.wallets[e.toTower ?? -1]);
+      this.#dropFrame(run);
+      ex.send(at, hall ?? at, give.length ? give : get.length ? get : this.#valueGoods(e.valueUsd), true);
+      return;
+    }
+    // the person at the door: between the courier and the building
+    const b = run.building;
+    const them = b ? new THREE.Vector3(b.npc.x, 0, b.npc.z) : at.clone().add(new THREE.Vector3(0, 0, 1.5));
+    let delay = 0;
+    if (e.direction === 'out' && (give.length || e.valueUsd > 0)) {
+      this.#dropFrame(run);
+      delay = ex.send(at, them, give.length ? give : this.#valueGoods(e.valueUsd), false) * 0.6;
+    }
+    if (get.length) {
+      const back = ex.send(them, at, get, true, delay + 0.3);
+      // an NFT got: the courier carries it home over its head
+      const nft = get.find((g) => g.isNft);
+      if (nft) setTimeout(() => this.#carryFrame(run, nft), back * 1000);
+    }
+  }
+
+  /** Goods for a value with no token named. */
+  #valueGoods(usd: number): Goods[] {
+    return [{ symbol: '', quantity: 0, usd, isNft: false }];
+  }
+
+  /** Where a wallet's hall (or tower) takes goods: its door. */
+  #walletAt(w: WalletPlacement | undefined): THREE.Vector3 | null {
+    return w ? new THREE.Vector3(w.door.x, 0, w.door.z) : null;
+  }
+
+  /** A courier carries an NFT home: the framed picture over its head. */
+  #carryFrame(run: Run, g: Goods): void {
+    if (!this.#exchange || !this.#runs.includes(run) || run.frame) return;
+    const frame = this.#exchange.frame(g);
+    // held in its hand when it has the `carry` clip (the frame's origin is the handle's grip), else over its head
+    let hand: THREE.Object3D | undefined;
+    run.figure.object.traverse((o) => {
+      if (!hand && ((o.userData.name as string | undefined) ?? o.name) === 'hand') hand = o;
+    });
+    if (hand && run.figure.has('carry')) {
+      const s = hand.getWorldScale(new THREE.Vector3()).x / run.figure.object.getWorldScale(new THREE.Vector3()).x;
+      frame.scale.setScalar(CARRY_FRAME_SCALE / s);
+      hand.add(frame);
+    } else {
+      frame.position.set(0, 2.6, 0);
+      frame.scale.setScalar(1.6);
+      run.figure.object.add(frame);
+    }
+    run.frame = frame;
+  }
+
+  #dropFrame(run: Run): void {
+    run.frame?.removeFromParent();
+    run.frame = null;
+  }
+
+  /** Stars burst where goods land. */
+  #burst(at: THREE.Vector3): void {
+    const loaded = this.#loaded.get('fx.sparkle.burst');
+    const pop = loaded?.clips.find((c) => c.name === 'pop');
+    if (!loaded || !pop) return;
+    const figure = new Figure(this.#make('fx.sparkle.burst'), [pop], ['pop']);
+    figure.object.position.copy(at).setY(at.y + 1.2);
+    figure.object.scale.setScalar(BURST_SCALE);
+    this.#scene.add(figure.object);
+    figure.react('pop', false);
+    this.#bursts.push({ figure, until: this.#time + pop.duration });
+  }
+
+  /** A speech bubble over someone's head (it replaces their last); the line said, or null when they keep quiet. */
+  #say(obj: THREE.Object3D, who: Person): string | null {
+    const line = this.#opts.chatter?.(who);
+    if (!line) return null;
+    this.#bubbles = this.#bubbles.filter((b) => (b.obj === obj ? (b.el.remove(), false) : true));
+    const bubble = el('div', 'speech-bubble');
+    bubble.textContent = line;
+    this.#bubbleLayer.append(bubble);
+    this.#bubbles.push({ el: bubble, obj, until: this.#time + BUBBLE_TIME });
+    return line;
+  }
+
+  /** Someone in the street speaks up now and then; the bubbles follow their heads and fade. */
+  #chatter(dt: number): void {
+    this.#nextChatter -= dt;
+    if (this.#nextChatter <= 0 && this.#bubbles.length < 2) {
+      this.#nextChatter = CHATTER_EVERY + Math.random() * 3;
+      const one = this.#life?.someone(Math.random());
+      if (one) this.#say(one.obj, one.who);
+    }
+    this.#bubbles = this.#bubbles.filter((b) => {
+      if (this.#time > b.until || !b.obj.parent) return b.el.remove(), false;
+      const head = b.obj.getWorldPosition(this.#bubbleScratch);
+      head.y += BUBBLE_HEIGHT;
+      const p = this.#toScreen(head);
+      b.el.hidden = !p || !b.obj.visible;
+      if (p) {
+        b.el.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -100%)`;
+        b.el.style.opacity = String(Math.min(1, (b.until - this.#time) / 0.5));
+      }
+      return true;
+    });
+  }
+
+  /** A world point on the page, relative to the view (null: off the camera's sight). */
+  #toScreen(p: THREE.Vector3): { x: number; y: number } | null {
+    const v = this.#screenScratch.copy(p).project(this.#camera);
+    if (v.z > 1) return null;
+    return { x: ((v.x + 1) / 2) * this.element.clientWidth, y: ((1 - v.y) / 2) * this.element.clientHeight };
+  }
+
   #finish(run: Run): void {
+    // home: what it brought goes into its wallet's hall
+    const e = run.errand;
+    const got = e.steps.flatMap((st) => st.get);
+    if (this.#exchange && e.direction !== 'inside' && !e.failed && got.length) {
+      const i = this.#opts.world.walletIds.indexOf(e.wallet);
+      const hall = this.#walletAt(this.#plan.wallets[i]);
+      if (hall) this.#exchange.send(run.figure.object.position.clone(), hall, got, true);
+    }
+    this.#dropFrame(run);
     // its tap target is shared geometry: off the figure before a standin's own geometry is freed
     for (const t of this.#courierTargets) if (t.parent === run.figure.object) t.removeFromParent();
     this.#courierTargets = this.#courierTargets.filter((t) => t.parent !== null);
@@ -1318,8 +1595,6 @@ export class CastleView {
       prev.x = e.clientX;
       prev.y = e.clientY;
       g.moved += Math.hypot(dx, dy);
-      // the player takes the camera back from a followed courier
-      if (g.moved > TAP_SLOP) this.#followKey = null;
       if (this.#pointers.size >= 2) {
         // two fingers: spread to zoom, twist to turn, move up or down together to tilt
         const { pinch, twist, midY } = g;
@@ -1426,7 +1701,7 @@ export class CastleView {
   }
 
   #setZoom(zoom: number): void {
-    this.#followKey = null; // the player takes the camera back
+    this.#followZoomFor = 0; // the player zooms: the follow leaves the zoom alone
     this.#zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
     this.#updateCamera();
   }
@@ -1435,6 +1710,16 @@ export class CastleView {
   #pan(dx: number, dy: number): void {
     const h = this.element.clientHeight || 1;
     const d = panDelta(dx, dy, this.#viewHeight() / h, this.#angles, this.#panScratch);
+    // following a courier: the pan moves the view about it, never so far that it leaves the view
+    if (this.#followKey) {
+      const o = this.#followOffset;
+      o.x += d.x;
+      o.z += d.z;
+      const max = this.#viewHeight() * FOLLOW_SLACK;
+      const len = Math.hypot(o.x, o.z);
+      if (len > max) o.multiplyScalar(max / len);
+      return;
+    }
     // as far as the castle and the town reach (the town grows with its protocols)
     const t = this.#plan.town;
     const moat = this.#plan.moat;
@@ -1449,11 +1734,12 @@ export class CastleView {
     const rect = this.#canvas.getBoundingClientRect();
     this.#pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.#raycaster.setFromCamera(this.#pointer, this.#camera);
-    // build mode: an empty plot, or a building to move (no sheets)
+    // build mode: a marked plot (free, or another building's to swap with), or the building itself (no sheets)
     if (this.#arranging) {
-      const plot = this.#raycaster.intersectObjects(this.#arrangeMarks.children, false).find((h) => h.object.userData.slot !== undefined);
-      if (plot) {
-        this.#opts.onArrangeTap?.({ slot: plot.object.userData.slot as number });
+      const mark = this.#raycaster.intersectObjects(this.#arrangeMarks.children, false).find((h) => h.object.userData.slot !== undefined || h.object.userData.protocolId !== undefined);
+      if (mark) {
+        const d = mark.object.userData;
+        this.#opts.onArrangeTap?.(d.slot !== undefined ? { slot: d.slot as number } : { protocolId: d.protocolId as string });
         return;
       }
       let b: THREE.Object3D | null = this.#raycaster.intersectObjects(this.#buildingRoots, true)[0]?.object ?? null;
@@ -1478,6 +1764,8 @@ export class CastleView {
       if (l) {
         this.#life!.figureOf(l)!.react(TAP_CLIP, false);
         this.#opts.onTapped?.('person');
+        const who = this.#life!.personOf(l);
+        if (who) this.#opts.onSelectPerson?.(who, this.#say(l, who));
         return;
       }
     }
@@ -1487,6 +1775,8 @@ export class CastleView {
       // a person's tap takes over its whole body (and back); a castle piece's plays over its idle
       if (this.#reactions.get(o)?.react(TAP_CLIP, !o.userData.person) && !o.userData.person) this.#shadowsMoveUntil = this.#time + 2;
       this.#opts.onTapped?.(o.userData.person ? 'person' : 'building');
+      const who = o.userData.who as Person | undefined;
+      if (who) this.#opts.onSelectPerson?.(who, this.#say(o, who));
       if (o.userData.walletIndex !== undefined) this.#opts.onSelectWallet?.(o.userData.walletIndex as number);
       else if (o.userData.keep) this.#opts.onSelectKeep?.();
       return;
@@ -1551,25 +1841,44 @@ export class CastleView {
   follow(errand: Errand): void {
     this.#followKey = errand.key;
     this.#followRun = null;
+    this.#followWait = 0;
+    this.#followOffset.set(0, 0, 0);
+    this.#followZoomFor = FOLLOW_ZOOM_TIME;
   }
 
   #updateFollow(dt: number): void {
+    this.#followChip.hidden = !this.#followRun;
     if (!this.#followKey) return;
     if (!this.#followRun) {
       this.#followRun = this.#runs.find((r) => r.errand.key === this.#followKey) ?? null;
+      this.#followWait += dt;
+      // a courier that never sets out (no tower for it): stop waiting
+      if (!this.#followRun && this.#followWait > FOLLOW_WAIT) this.stopFollowing();
       if (!this.#followRun) return;
     }
     if (!this.#runs.includes(this.#followRun)) {
-      this.#followKey = null;
-      this.#followRun = null;
+      this.stopFollowing();
       return;
     }
+    // the courier, plus however far the player has panned (kept small enough that it stays in view)
     const at = this.#followRun.figure.object.position;
     const k = Math.min(1, dt * FOLLOW_RATE);
-    this.#focus.x += (at.x - this.#focus.x) * k;
-    this.#focus.z += (at.z - this.#focus.z) * k;
-    this.#zoom += (FOLLOW_ZOOM - this.#zoom) * k;
+    this.#focus.x += (at.x + this.#followOffset.x - this.#focus.x) * k;
+    this.#focus.z += (at.z + this.#followOffset.z - this.#focus.z) * k;
+    // zoomed in at the start; after that the zoom is the player's
+    if (this.#followZoomFor > 0) {
+      this.#followZoomFor -= dt;
+      this.#zoom += (FOLLOW_ZOOM - this.#zoom) * k;
+    }
     this.#updateCamera();
+  }
+
+  /** The camera goes back to the player. */
+  stopFollowing(): void {
+    this.#followKey = null;
+    this.#followRun = null;
+    this.#followOffset.set(0, 0, 0);
+    this.#followChip.hidden = true;
   }
 
   /** What the hover ring is under (its name; null: nothing), for tests. */
@@ -1607,6 +1916,19 @@ export class CastleView {
   #animate(dt: number): void {
     const now = this.#time;
     this.#life?.update(dt);
+    this.#exchange?.update(dt);
+    this.#chatter(dt);
+    this.#bursts = this.#bursts.filter((b) => {
+      b.figure.update(dt);
+      if (this.#time < b.until) return true;
+      b.figure.object.removeFromParent();
+      return false;
+    });
+    for (const l of this.#arrangeLabels) {
+      const p = this.#toScreen(l.at);
+      l.el.hidden = !p;
+      if (p) l.el.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -50%)`;
+    }
     // the light follows the clock (once a minute is plenty)
     if (now - this.#lightAt > 60) {
       this.#lightAt = now;
@@ -1639,6 +1961,13 @@ export class CastleView {
         run.tolled = true;
         this.#opts.onToll?.(run.errand);
         this.#life?.toll(false);
+        // the toll: a few coins to the toll keeper (or the booth)
+        const keeper = this.#life?.keeperAt ?? new THREE.Vector3(this.#plan.tollbooth.x, 0, this.#plan.tollbooth.z);
+        this.#exchange?.send(run.figure.object.position, keeper, [{ symbol: '', name: 'toll', quantity: 0, usd: run.errand.feeUsd ?? 0.5, isNft: false }], false);
+      }
+      if (s.clip === 'hand-over' && !run.handed) {
+        run.handed = true;
+        this.#handOver(run);
       }
       states.push(s);
       run.figure.object.position.set(s.x, run.script.height, s.z);
@@ -1649,7 +1978,8 @@ export class CastleView {
         this.#life?.toll(true);
       }
       run.figure.object.rotation.y = s.heading;
-      run.figure.play(s.clip);
+      // a courier with a picture walks holding it up (`carry`)
+      run.figure.play(run.frame && s.clip === 'walk' && run.figure.has('carry') ? 'carry' : s.clip);
       run.cargo.visible = s.carrying;
       run.figure.update(dt);
       bridgeDown ||= s.bridgeDown;
@@ -1774,11 +2104,32 @@ function paint(root: THREE.Object3D, material: 'Tint' | 'Trim', color: string, c
   });
 }
 
+/** A picture from elsewhere through our own proxy (api/image.ts): a WebGL texture may then read it. */
+export function proxied(url: string): string {
+  return `/api/image?u=${encodeURIComponent(url)}`;
+}
+
+/** A picture, decoded (rejects when it cannot be read). */
+async function loadImage(src: string): Promise<HTMLImageElement> {
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  return img;
+}
+
 /** Shows a model's tier parts up to its tier (`tier.2`, `tier.4`, `tier.6`; the loader strips the dot, userData keeps it). */
 function showTierParts(root: THREE.Object3D, tier: number): void {
   root.traverse((o) => {
     const m = /^tier\.(\d)$/.exec((o.userData.name as string | undefined) ?? o.name);
     if (m) o.visible = tier >= Number(m[1]);
+  });
+}
+
+/** Shows only the dressing for this focus (`focus.<name>` parts; a model without them is untouched). */
+function showFocusParts(root: THREE.Object3D, focus: string): void {
+  root.traverse((o) => {
+    const m = /^focus\.(\w+)$/.exec((o.userData.name as string | undefined) ?? o.name);
+    if (m) o.visible = m[1] === focus;
   });
 }
 

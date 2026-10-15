@@ -79,7 +79,7 @@ test.describe('phone', () => {
     const overlaps = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
       a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     const others = [];
-    for (const sel of ['.chronicle-btn', '.replay-open', '.arrange-open']) {
+    for (const sel of ['.chronicle-btn', '.replay-open']) {
       const o = view.locator(sel);
       if (await o.count()) others.push((await o.boundingBox())!);
     }

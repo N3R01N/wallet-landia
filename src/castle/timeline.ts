@@ -15,8 +15,13 @@ const TICK_MS = 200;
 /** The slider's steps across the window. */
 const STEPS = 1000;
 
+export interface Timeline {
+  /** Opens the timeline at this transaction: its courier sets out first, then the history plays on from its moment. */
+  startAt(errand: Errand): void;
+}
+
 /** Adds the "⏱ Replay" button and its timeline bar to a scene view. */
-export function attachTimeline(view: CastleView, errands: readonly Errand[]): void {
+export function attachTimeline(view: CastleView, errands: readonly Errand[]): Timeline {
   let clock: ReplayClock<Errand> | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -50,7 +55,7 @@ export function attachTimeline(view: CastleView, errands: readonly Errand[]): vo
     show();
   };
 
-  open.addEventListener('click', () => {
+  const begin = () => {
     clock = new ReplayClock(errands);
     clock.speed = REPLAY_SPEEDS[Number(speed.value)]?.ms ?? REPLAY_SPEEDS[1].ms;
     clock.playing = true;
@@ -61,7 +66,8 @@ export function attachTimeline(view: CastleView, errands: readonly Errand[]): vo
     stop();
     timer = setInterval(tick, TICK_MS);
     show();
-  });
+  };
+  open.addEventListener('click', begin);
   play.addEventListener('click', () => {
     if (!clock) return;
     if (!clock.playing && clock.progress >= 1) clock.seek(clock.from); // at the end: from the start again
@@ -88,4 +94,17 @@ export function attachTimeline(view: CastleView, errands: readonly Errand[]): vo
   });
 
   view.element.append(open, bar);
+  return {
+    startAt(errand) {
+      if (!clock) begin();
+      if (!clock) return;
+      // its courier sets out first; the history plays on from that moment
+      clock.seek(errand.time);
+      if (clock.position === clock.from) clock.seek(errand.time + 1); // the window's start would hand it out again
+      clock.playing = true;
+      view.clearQueue();
+      view.enqueue([errand], true);
+      show();
+    },
+  };
 }

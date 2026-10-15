@@ -13,6 +13,7 @@ const proto = (id: string, category: WorldProtocol['category'], tier: number, us
   visits: 0,
   tvlUsd: usd,
   size: sizeFor(usd),
+  iconUrl: null,
 });
 
 type World = Pick<CastleWorld, 'wallets' | 'tier' | 'protocols'>;
@@ -249,16 +250,17 @@ describe('castle plan, layout 2', () => {
     'castle.storehouse': [3, 3],
   };
   const box = (p: { name: string; x: number; z: number; rot?: number }) => {
-    const [w, d] = SIZES[p.name]!;
+    const [w, d] = SIZES[p.name.replace(/\.t\d$/, '')]!;
     const turned = Math.abs(Math.sin(p.rot ?? 0)) > 0.5;
     const [hx, hz] = turned ? [d / 2, w / 2] : [w / 2, d / 2];
     return { x0: p.x - hx, x1: p.x + hx, z0: p.z - hz, z1: p.z + hz };
   };
   const pieces = (plan: CastlePlan) => [...plan.walls, ...plan.wallets, plan.keep, plan.gatehouse, plan.storehouse!];
 
-  it('a hall per wallet, up to six, each at its wallet’s tier; the keep and the gatehouse; the old towers as fallbacks', () => {
+  it('a hall per wallet, up to six, each its wallet’s tier’s own hall; the keep and the gatehouse; the one hall, then the old towers as fallbacks', () => {
     expect(six.layout).toBe(2);
-    expect(six.wallets.map((w) => w.name)).toEqual(Array(6).fill('castle.hall.wallet'));
+    expect(six.wallets.map((w) => w.name)).toEqual(['t0', 't2', 't4', 't6', 't1', 't6'].map((t) => `castle.hall.wallet.${t}`));
+    expect(six.wallets[0]!.fallbacks?.[0]).toBe('castle.hall.wallet');
     expect(six.wallets.map((w) => w.tier)).toEqual([0, 2, 4, 6, 1, 6]);
     expect(planCastle({ ...DEMO, wallets: 20 }, {}, 2).wallets).toHaveLength(6);
     expect(six.wallets[0]!.fallbacks).toContain('castle.tower.wallet');
@@ -347,7 +349,7 @@ describe('castle plan, layout 2', () => {
 
 describe('paving under the buildings', () => {
   it('every building stands on cobbles, its whole plot covered, no cell twice', () => {
-    const plan = planCastle({ wallets: 1, tier: 0, protocols: [24e9, 6e9, 3e8, 1e6].map((usd, i) => ({ id: `p${i}`, name: `p${i}`, category: 'dex', tier: 0, signature: null, holdings: [], visits: 0, tvlUsd: usd, size: sizeFor(usd) })) }, {}, 2);
+    const plan = planCastle({ wallets: 1, tier: 0, protocols: [24e9, 6e9, 3e8, 1e6].map((usd, i) => ({ id: `p${i}`, name: `p${i}`, category: 'dex', tier: 0, signature: null, holdings: [], visits: 0, tvlUsd: usd, size: sizeFor(usd), iconUrl: null })) }, {}, 2);
     const keys = new Set(plan.ground.map((g) => `${g.x},${g.z}`));
     expect(keys.size).toBe(plan.ground.length);
     for (const b of plan.buildings)

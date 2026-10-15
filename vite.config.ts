@@ -1,4 +1,5 @@
-import type { Plugin } from 'vite';
+import type { Connect, Plugin } from 'vite';
+import imageHandler from './api/image.js';
 import { defineConfig } from 'vitest/config';
 
 /**
@@ -30,8 +31,26 @@ const devSockets: Plugin = {
   transformIndexHtml: (html) => html.replace("connect-src 'self'", "connect-src 'self' ws:"),
 };
 
+/**
+ * /api/image (the picture proxy: protocol icons and NFT pictures, api/image.ts)
+ * on the dev and preview servers too, running the same handler as on Vercel.
+ */
+const imageProxy: Connect.NextHandleFunction = (req, res, next) => {
+  if (!req.url?.startsWith('/api/image')) return next();
+  void imageHandler(new Request(`http://localhost${req.url}`, { method: req.method ?? 'GET' })).then(async (r) => {
+    res.statusCode = r.status;
+    r.headers.forEach((v, k) => res.setHeader(k, v));
+    res.end(Buffer.from(await r.arrayBuffer()));
+  }, next);
+};
+const devImages: Plugin = {
+  name: 'api-image',
+  configureServer: (server) => void server.middlewares.use(imageProxy),
+  configurePreviewServer: (server) => void server.middlewares.use(imageProxy),
+};
+
 export default defineConfig({
-  plugins: [devSockets],
+  plugins: [devSockets, devImages],
   // three.js is most of the castle page's code.
   build: {
     target: 'es2022',

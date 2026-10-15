@@ -1,8 +1,9 @@
 /**
- * Build mode on the scene: "🔨 Arrange" lets the player move the town's
- * buildings. Tap a building, then another (they swap) or an empty plot (it
- * moves there). Reset goes back to the automatic layout; Done ends it. The
- * arrangement is kept in the player's preferences.
+ * Build mode: moving a building. It starts from the building's sheet ("🔨
+ * Move this building"); the scene then marks every place it can go (gold rings
+ * on the free plots, "Move here"; blue rings under the other buildings,
+ * "Swap") and a bar says what is moving, with Cancel and Reset. A tap on a
+ * marked place moves it; the arrangement is kept in the player's preferences.
  */
 
 import { el } from '../util/dom.js';
@@ -15,59 +16,59 @@ export interface ArrangeHost {
   set(arranged: Record<string, number>): void;
 }
 
-/** What a tap means in build mode, given the building chosen so far. */
+/** What a tap means in build mode. */
 export type ArrangeTap = { protocolId: string } | { slot: number };
 
-/** Adds the Arrange button and its bar to a scene view; returns the handler for the view's taps in build mode. */
-export function attachArrange(view: CastleView, host: ArrangeHost): (tap: ArrangeTap) => void {
-  let selected: string | null = null;
-  const open = el('button', { class: 'btn scene-action arrange-open', type: 'button' }, '🔨 Arrange');
-  const hint = el('span', { class: 'arrange-hint' }, '');
-  const reset = el('button', { class: 'btn', type: 'button' }, 'Reset');
-  const done = el('button', { class: 'btn arrange-done', type: 'button' }, 'Done');
-  const bar = el('div', { class: 'arrange-bar', role: 'group', 'aria-label': 'Arrange the town', hidden: '' }, hint, reset, done);
+export interface Arrange {
+  /** Start moving this building. */
+  start(protocolId: string, name: string): void;
+  /** A tap in the scene while moving. */
+  tap(t: ArrangeTap): void;
+}
 
-  const show = () => {
-    hint.textContent = selected ? 'Now tap where it should go: another building (they swap) or an empty plot.' : 'Tap a building to move it.';
-    view.setArranging(true, selected);
-  };
-  open.addEventListener('click', () => {
-    selected = null;
-    bar.hidden = false;
-    open.hidden = true;
-    show();
-  });
-  done.addEventListener('click', () => {
-    selected = null;
+/** Adds build mode's bar to a scene view. */
+export function attachArrange(view: CastleView, host: ArrangeHost): Arrange {
+  let moving: { id: string; name: string } | null = null;
+  const hint = el('span', { class: 'arrange-hint' }, '');
+  const reset = el('button', { class: 'btn', type: 'button', title: 'Every building back where the town puts it' }, 'Reset layout');
+  const done = el('button', { class: 'btn arrange-done', type: 'button' }, 'Cancel');
+  const bar = el('div', { class: 'arrange-bar', role: 'group', 'aria-label': 'Move a building', hidden: '' }, hint, reset, done);
+
+  const end = () => {
+    moving = null;
     bar.hidden = true;
-    open.hidden = false;
     view.setArranging(false, null);
-  });
+  };
+  const show = () => {
+    if (!moving) return end();
+    hint.textContent = `Moving ${moving.name}: tap a gold plot to move it there, or a blue one to swap it with that building.`;
+    bar.hidden = false;
+    view.setArranging(true, moving.id);
+  };
+  done.addEventListener('click', end);
   reset.addEventListener('click', () => {
-    selected = null;
     host.set({});
     view.rearrange({});
-    show();
+    end();
   });
-  view.element.append(open, bar);
+  view.element.append(bar);
 
-  return (tap) => {
-    if ('protocolId' in tap && selected === null) {
-      selected = tap.protocolId;
-      return show();
-    }
-    if ('protocolId' in tap && tap.protocolId === selected) {
-      selected = null;
-      return show();
-    }
-    if (selected === null) return;
-    const current = new Map(view.plan.buildings.map((b) => [b.protocol.id, b.slot] as const));
-    const slot = 'slot' in tap ? tap.slot : current.get(tap.protocolId);
-    if (slot === undefined) return;
-    const arranged = moveToSlot(current, selected, slot);
-    selected = null;
-    host.set(arranged);
-    view.rearrange(arranged);
-    show();
+  return {
+    start(id, name) {
+      moving = { id, name };
+      show();
+    },
+    tap(t) {
+      if (!moving) return;
+      // the building being moved: cancel
+      if ('protocolId' in t && t.protocolId === moving.id) return end();
+      const current = new Map(view.plan.buildings.map((b) => [b.protocol.id, b.slot] as const));
+      const slot = 'slot' in t ? t.slot : current.get(t.protocolId);
+      if (slot === undefined) return;
+      const arranged = moveToSlot(current, moving.id, slot);
+      host.set(arranged);
+      view.rearrange(arranged);
+      end();
+    },
   };
 }

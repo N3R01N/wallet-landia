@@ -9,7 +9,7 @@
 
 import { el, fmtDate } from '../util/dom.js';
 import type { BlockBeat } from '../data/rpc.js';
-import type { PriceMove } from '../domain/risk.js';
+import type { PriceMood, PriceMove } from '../domain/risk.js';
 import { factsTable } from './sheets.js';
 
 /** How many recent blocks the road gauge averages. */
@@ -29,7 +29,32 @@ const ROAD_NOTE: Record<RoadLevel, string> = {
   crowded: 'The road is packed: blocks are fuller than the chain aims for, so the toll climbs with each one.',
 };
 /** The price's arrow: up to two for a big move, a dash for a small one. */
-const ARROW: Record<PriceMove['mood'], string> = { boom: '▲▲', up: '▲', flat: '▬', down: '▼', crash: '▼▼' };
+const ARROW: Record<PriceMove['mood'], string> = { boom: '▲▲', up: '▲', flat: '→', down: '▼', crash: '▼▼' };
+
+/** The chip's arrow, drawn (a font's ▬ or · read as a grey box): up or down, doubled for a big move, sideways when flat, a dash with no earlier visit. */
+function arrowIcon(mood: PriceMove['mood'] | null): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  const wide = mood === 'boom' || mood === 'crash';
+  svg.setAttribute('viewBox', `0 0 ${wide ? 22 : 12} 12`);
+  svg.setAttribute('width', String(wide ? 18 : 10));
+  svg.setAttribute('height', '10');
+  const shape = (d: string) => {
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('fill', 'currentColor');
+    svg.append(path);
+  };
+  const up = (x: number) => shape(`M${x} 11 L${x + 5} 1 L${x + 10} 11 Z`);
+  const down = (x: number) => shape(`M${x} 1 L${x + 5} 11 L${x + 10} 1 Z`);
+  if (mood === 'up' || mood === 'boom') up(1);
+  if (mood === 'boom') up(11);
+  if (mood === 'down' || mood === 'crash') down(1);
+  if (mood === 'crash') down(11);
+  if (mood === 'flat') shape('M1 4.5 H6 V1.5 L11 6 L6 10.5 V7.5 H1 Z');
+  if (mood === null) shape('M2 5 H10 V7 H2 Z');
+  return svg;
+}
 const MOOD_WORD: Record<PriceMove['mood'], string> = { boom: 'Up a lot', up: 'Up a little', flat: 'About the same', down: 'Down a little', crash: 'Down a lot' };
 
 export class Conditions {
@@ -55,6 +80,17 @@ export class Conditions {
     this.#draw();
   }
 
+  /** How ETH moved since the last visit (null: no earlier visit). */
+  get mood(): PriceMood | null {
+    return this.#price?.move?.mood ?? null;
+  }
+
+  /** The road now (null: no block yet). */
+  get road(): RoadLevel | null {
+    const full = this.fullness;
+    return full === null ? null : roadLevel(full);
+  }
+
   /** The recent blocks' average fullness (null: no block yet). */
   get fullness(): number | null {
     if (!this.#beats.length) return null;
@@ -67,7 +103,8 @@ export class Conditions {
     const steps = level === null ? 0 : level === 'quiet' ? 1 : level === 'busy' ? 2 : 3;
     const gauge = el('span', { class: `road-gauge ${level ?? 'unknown'}`, 'aria-hidden': 'true' }, ...[1, 2, 3].map((i) => el('i', { class: i <= steps ? 'on' : '' })));
     const mood = this.#price?.move?.mood ?? null;
-    const arrow = el('span', { class: `price-arrow ${mood ?? 'none'}`, 'aria-hidden': 'true' }, mood ? ARROW[mood] : '·');
+    const arrow = el('span', { class: `price-arrow ${mood ?? 'none'}`, 'aria-hidden': 'true' });
+    arrow.append(arrowIcon(mood));
     this.chip.replaceChildren(el('span', { class: 'chip-label' }, '⛽'), gauge, el('span', { class: 'chip-label' }, 'Ξ'), arrow);
     const words = [level ? `Road: ${ROAD_WORD[level]}` : 'Road: waiting for a block', mood ? `ETH since your last visit: ${MOOD_WORD[mood]}` : 'ETH: no earlier visit to compare'];
     this.chip.setAttribute('aria-label', `Market and road. ${words.join('. ')}.`);

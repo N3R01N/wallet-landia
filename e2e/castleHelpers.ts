@@ -4,6 +4,8 @@ interface Hook {
   castleView?: {
     screenPoint(id: string): { x: number; y: number } | null;
     courierPoint(): { x: number; y: number } | null;
+    personPoint(): { x: number; y: number } | null;
+    focusPerson(): boolean;
     buildingIds(): string[];
     plan: { buildings: { protocol: { id: string; name: string } }[] };
     state(): { bridgeAngle: number; barrierAngle: number; courier: { x: number; z: number } | null; couriers: number; queued: number; zoom: number; yaw: number; pitch: number; ringing: boolean; upcoming: string[]; lods: number; far: boolean };
@@ -35,5 +37,15 @@ export async function tapCourier(page: Page): Promise<void> {
   await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
   await expect.poll(() => page.evaluate(() => (window as unknown as Hook).castleView?.courierPoint() ?? null), { timeout: 20_000 }).not.toBeNull();
   const pt = await page.evaluate(() => (window as unknown as Hook).castleView!.courierPoint());
+  await page.mouse.click(pt!.x, pt!.y);
+}
+
+/** Taps a townsperson out walking (waits for one in view). */
+export async function tapPerson(page: Page): Promise<void> {
+  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as Hook).castleView!.focusPerson())).toBe(true);
+  await page.waitForTimeout(2000); // the camera eases there
+  await expect.poll(() => page.evaluate(() => (window as unknown as Hook).castleView?.personPoint() ?? null), { timeout: 20_000 }).not.toBeNull();
+  const pt = await page.evaluate(() => (window as unknown as Hook).castleView!.personPoint());
   await page.mouse.click(pt!.x, pt!.y);
 }

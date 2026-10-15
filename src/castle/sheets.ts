@@ -11,6 +11,7 @@ import { verbText } from '../domain/mappers.js';
 import { EXPLORERS, VERB_EXPLAIN } from '../domain/verbs.js';
 import type { Goods, Hero, PositionKind } from '../domain/model.js';
 import { TIER_NAMES } from './assets/manifest.js';
+import { FOCUS_WORD, hallName, nextHall, walletFocus } from './world/halls.js';
 import type { Errand, ErrandStep, WorldProtocol } from './world/world.js';
 
 /** What each building category stands for, in plain words. */
@@ -34,13 +35,18 @@ const KIND_WORD: Record<PositionKind, string> = {
   other: 'held',
 };
 
-export function protocolSheet(p: WorldProtocol): HTMLElement {
+export function protocolSheet(p: WorldProtocol, onMove?: () => void): HTMLElement {
   const out = el(
     'div',
     { class: 'sheet-content' },
     el('p', {}, CATEGORY_NOTE[p.category]),
     el('p', { class: 'muted' }, `Tier ${p.tier} · ${TIER_NAMES[p.tier] ?? '?'} · ${p.visits} visit${p.visits === 1 ? '' : 's'} in the recent history`),
   );
+  if (onMove) {
+    const move = el('button', { class: 'btn move-building', type: 'button', title: 'Move it to another plot, or swap it with another building' }, '🔨 Move this building');
+    move.addEventListener('click', onMove);
+    out.append(el('p', {}, move));
+  }
   if (p.holdings.length === 0) {
     out.append(el('p', { class: 'muted' }, 'Your guild keeps nothing here now: its couriers only pass through.'));
     return out;
@@ -176,6 +182,7 @@ export interface WalletSheetData {
 /** A wallet's tower or hall: what it is worth, what it holds and keeps where, what it did lately. */
 export function walletSheet(d: WalletSheetData, openErrand: (e: Errand) => void, openSettings: () => void): HTMLElement {
   const h = d.hero;
+  const next = nextHall(h.netWorth, h.tier);
   const out = el(
     'div',
     { class: 'sheet-content wallet-sheet' },
@@ -188,6 +195,8 @@ export function walletSheet(d: WalletSheetData, openErrand: (e: Errand) => void,
     factsTable([
       ['Worth', approxUsd(h.netWorth)],
       ['Tier', `${h.tier} · ${TIER_NAMES[h.tier] ?? '?'}`],
+      ['Hall', `${hallName(h.tier)} · mostly ${FOCUS_WORD[walletFocus(h)]}`],
+      ['Next hall', next ? `${next.name}: ${approxUsd(next.needUsd)} more` : 'None: a palace spire is the top'],
       ['Tokens and positions', approxUsd(h.tokenWorth)],
       h.nftWorth > 0 ? ['NFTs (floor)', approxUsd(h.nftWorth)] : null,
       ['Last active', h.lastActiveAt ? fmtDate(h.lastActiveAt) : '—'],
@@ -272,5 +281,23 @@ export function guildSheet(d: GuildSheetData, openWallet: (index: number) => voi
   const badges = el('button', { class: 'btn', type: 'button' }, 'Badges and quests');
   badges.addEventListener('click', openBadges);
   out.append(el('p', {}, badges));
+  return out;
+}
+
+/** A townsperson's sheet: an NPC (not a player), whose building, and what they just said. */
+export function personSheet(who: { role: string; building: string | null }, line: string | null, openBuilding?: () => void): HTMLElement {
+  const out = el(
+    'div',
+    { class: 'sheet-content person-sheet' },
+    el('p', {}, el('span', { class: 'npc-tag' }, 'NPC'), ' A townsperson of the game, not a player or a wallet.'),
+    el('p', {}, who.building ? `Belongs to ${who.building}.` : 'A villager: belongs to no building.'),
+  );
+  if (line) out.append(el('blockquote', { class: 'person-line' }, `“${line}”`));
+  if (openBuilding && who.building) {
+    const go = el('button', { class: 'btn', type: 'button' }, `Open ${who.building}`);
+    go.addEventListener('click', openBuilding);
+    out.append(el('p', {}, go));
+  }
+  out.append(el('p', { class: 'muted' }, 'Their talk follows the chain: the ETH price since your last visit, how busy the road is, and their own trade. Tap again to hear more.'));
   return out;
 }

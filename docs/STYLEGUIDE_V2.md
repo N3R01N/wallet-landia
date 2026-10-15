@@ -100,6 +100,7 @@ Tier and size are **separate axes**: size comes from the class (§3), tier from 
 - **Material ladder**: timber and thatch → stone and slate → dressed stone with metal trim → marble, gold and glow.
 - **Silhouette milestones** at t2, t4 and t6 (a tower, then a spire or dome, then a crown or gilded roof); otherwise +10–20% height and more ornament.
 - Life at high tiers: flags, smoke, glowing windows.
+- **Exception: the wallet halls** have one model per tier, each its own building (lean-to → palace spire), each with three `focus.*` dressing sets (tokens, DeFi, NFTs) the game picks by what the wallet mostly holds (`docs/batches/17-wallet-halls.md`): they are the player's own buildings, so tier and holdings show in the building itself.
 - **Tier parts** (one model for all tiers): the extra pieces of tiers 2, 4 and 6 are nodes named `tier.2`, `tier.4` and `tier.6` under `body`. The game shows `tier.N` when the tier is at least N, and paints `Trim` in the tier colour. Each part must look right with and without the parts above it, and must not overlap the base model.
 
 ## 8. Technical

@@ -12,13 +12,15 @@ import { inject } from '@vercel/analytics';
 import { el, shortAddr } from '../util/dom.js';
 import { Shell } from './shell.js';
 import { TAB_LABEL, type SheetState, type TabId } from './shellState.js';
-import { CastleView } from './scene/castleView.js';
+import { CastleView, proxied } from './scene/castleView.js';
 import { assetPath } from './assets/manifest.js';
 import { artTheme, loadCastleTheme, themeChain, themeFileUrl, themeFromUrl } from './assets/theme.js';
 import { newErrands, previewWorld, worldFromGuild, type CastleWorld } from './world/world.js';
 import { lightAt, weatherFor, type Weather } from './world/sky.js';
 import { priceMove } from '../domain/risk.js';
-import { chronicleSheet, errandSheet, guildSheet, protocolSheet, walletSheet } from './sheets.js';
+import { chronicleSheet, errandSheet, guildSheet, personSheet, protocolSheet, walletSheet } from './sheets.js';
+import { pickLine } from './world/chatter.js';
+import type { Person } from './scene/life.js';
 import { Conditions } from './conditions.js';
 import { logoPath } from './world/logos.js';
 import { buildGuild } from '../domain/mappers.js';
@@ -28,8 +30,8 @@ import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { guildTab, historyRows, modeText, walletDisplayName } from './guildTab.js';
 import type { LedgerStatus } from '../data/ledger.js';
 import { decodeShare } from './share.js';
-import { attachTimeline } from './timeline.js';
-import { attachArrange, type ArrangeTap } from './arrange.js';
+import { attachTimeline, type Timeline } from './timeline.js';
+import { attachArrange, type Arrange, type ArrangeTap } from './arrange.js';
 import { Tour } from './tour.js';
 import { tourSteps } from './tourSteps.js';
 import { LoadingScreen } from './loadingScreen.js';
@@ -50,6 +52,9 @@ const CHRONICLE_SHEET = 'chronicle';
 const WALLET_SHEET = 'wallet:';
 const KEEP_SHEET = 'keep';
 const CONDITIONS_SHEET = 'conditions';
+const PERSON_SHEET = 'person';
+/** The townsperson last tapped (the person sheet's subject). */
+let personNow: { who: Person; line: string | null } | null = null;
 
 /** The theme's manifest, read once: its version keeps players' copies of the models fresh. */
 // `?theme=` picks another theme (a style pilot extends the default; what it lacks comes from there)
@@ -65,6 +70,10 @@ let themeNow: CastleTheme | null = null;
 let themeLoaded: CastleTheme | null = null;
 
 let world: CastleWorld | null = null;
+/** The replay timeline of the scene shown. */
+let timelineNow: Timeline | null = null;
+/** Build mode on the scene shown (your own castle only). */
+let arrangeNow: Arrange | null = null;
 let view: CastleView | null = null;
 let mode: Mode | null = null;
 let budget: BudgetSnapshot | null = null;
@@ -104,10 +113,10 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
     // The castle and the town are one scene; the camera starts on the chosen part.
     // Your own castle keeps your arrangement (build mode); a visited one is shown as it comes.
     const own = !shown?.visiting;
-    let arrangeTap: ((tap: ArrangeTap) => void) | null = null;
+    arrangeNow = null;
     view = new CastleView({
       ...(own ? { arranged: prefs.castleArrangement } : {}),
-      onArrangeTap: (tap) => arrangeTap?.(tap),
+      onArrangeTap: (tap: ArrangeTap) => arrangeNow?.tap(tap),
       world,
       focus: tab,
       theme,
@@ -123,6 +132,14 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       onSelectWallet: (i) => open({ id: WALLET_SHEET + i, title: walletName(i) }),
       onSelectKeep: () => open({ id: KEEP_SHEET, title: shown?.label ?? 'Your guild' }),
       onTapped: (what) => sound.tap(what),
+      chatter: (who) => pickLine({ mood: pinnedMood ?? conditions.mood, road: conditions.road, trade: who.trade }, Math.random()),
+      onSelectPerson: (who, line) => {
+        personNow = { who, line };
+        // a fresh sheet each tap (its line changes): the same id would keep the old one
+        open({ id: `${PERSON_SHEET}:${Date.now()}`, title: `${who.role} · NPC` });
+      },
+      onCoin: (i, n, incoming) => sound.coinTink(i, n, incoming),
+      onNft: (landed) => sound.nftShimmer(landed),
       onReady: () => loading.report('welcome'),
       onSelectErrand: (e) => open({ id: ERRAND_SHEET + e.key, title: e.label || 'A transaction' }),
       onToll: (e) => sound.tollNow(Math.min(3, e.tier / 2)),
@@ -134,9 +151,9 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
     const chronicle = el('button', { class: 'btn scene-action chronicle-btn', type: 'button', 'aria-label': 'Chronicle: recent transactions' }, '📜 Chronicle');
     chronicle.addEventListener('click', () => open({ id: CHRONICLE_SHEET, title: 'Chronicle' }));
     view.element.append(chronicle);
-    attachTimeline(view, world.errands);
+    timelineNow = attachTimeline(view, world.errands);
     if (own)
-      arrangeTap = attachArrange(view, {
+      arrangeNow = attachArrange(view, {
         get: () => prefs.castleArrangement,
         set: (a) => {
           prefs.castleArrangement = a;
@@ -216,8 +233,9 @@ function renderSheet(sheet: SheetState): HTMLElement {
     if (e)
       return errandSheet(e, e.protocolId ? (world?.protocols.find((p) => p.id === e.protocolId)?.name ?? null) : null, () => {
         // its courier goes next; the sheet closes so the scene shows it
-        view?.enqueue([e]);
-        // the camera goes with it
+        // the timeline plays from where it happened, and the camera goes with its courier
+        if (timelineNow) timelineNow.startAt(e);
+        else view?.enqueue([e]);
         view?.follow(e);
         shell.close();
       });
@@ -228,6 +246,10 @@ function renderSheet(sheet: SheetState): HTMLElement {
     return castle ? castleBadgeSheet(castle, themeNow) : badgeSheet(id, player.profile, themeNow);
   }
   if (sheet.id === CONDITIONS_SHEET) return conditions.sheet();
+  if (sheet.id.startsWith(PERSON_SHEET + ':') && personNow) {
+    const b = personNow.who.building ? world?.protocols.find((p) => p.name === personNow!.who.building) : undefined;
+    return personSheet(personNow.who, personNow.line, b ? () => shell.open({ id: SHEET_PREFIX + b.id, title: b.name }) : undefined);
+  }
   if (sheet.id.startsWith(WALLET_SHEET)) {
     const i = Number(sheet.id.slice(WALLET_SHEET.length));
     const hero = guildNow?.heroes[i];
@@ -257,7 +279,12 @@ function renderSheet(sheet: SheetState): HTMLElement {
   }
   const id = sheet.id.startsWith(SHEET_PREFIX) ? sheet.id.slice(SHEET_PREFIX.length) : null;
   const p = id ? world?.protocols.find((x) => x.id === id) : undefined;
-  return p ? protocolSheet(p) : el('div', { class: 'sheet-content' }, el('p', {}, 'Details arrive here.'));
+  // your own town: the building can be moved from its sheet (build mode)
+  const move = p && arrangeNow && !shown?.visiting ? () => {
+    shell.close();
+    arrangeNow?.start(p.id, p.name);
+  } : undefined;
+  return p ? protocolSheet(p, move) : el('div', { class: 'sheet-content' }, el('p', {}, 'Details arrive here.'));
 }
 
 /** Sound: off until the player turns it on (the same setting as the town). */
@@ -361,13 +388,16 @@ function walletName(i: number): string {
   return walletDisplayName(prefs, h.address);
 }
 
-/** A protocol's logo picture (from the theme that has the logos), for its sheet's title. */
+/** A protocol's logo picture (the bundled one, else the icon Zerion gives it), for its sheet's title. */
 function protocolLogo(id: string): string | undefined {
   const path = logoPath(id);
   const t = themeLoaded;
-  if (!path || !t) return undefined;
-  const chain = themeChain(t);
-  return themeFileUrl(chain[chain.length - 1]!, path);
+  if (path && t) {
+    const chain = themeChain(t);
+    return themeFileUrl(chain[chain.length - 1]!, path);
+  }
+  const icon = world?.protocols.find((p) => p.id === id)?.iconUrl;
+  return icon ? proxied(icon) : undefined;
 }
 
 function worldOf(town: Shown): CastleWorld {

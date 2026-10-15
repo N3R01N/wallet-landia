@@ -40,6 +40,15 @@ export function allowedImageUrl(raw: string | null): string | null {
   return IMAGE_HOSTS.includes(u.hostname) ? u.href : null;
 }
 
+/** A raster picture's type from its first bytes (PNG, JPEG, GIF, WebP), else null (never SVG: it can carry script). Pure. */
+export function sniffImage(b: Uint8Array): string | null {
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'image/gif';
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  return null;
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'GET') return new Response('Only GET', { status: 405, headers: { allow: 'GET' } });
   const target = allowedImageUrl(new URL(req.url).searchParams.get('u'));
@@ -52,12 +61,15 @@ export default async function handler(req: Request): Promise<Response> {
   } catch {
     return new Response('The picture could not be fetched', { status: 502, headers: { 'cache-control': 'no-store' } });
   }
-  const type = upstream.headers.get('content-type') ?? '';
-  if (!upstream.ok || !/^image\//.test(type)) return new Response('Not a picture', { status: 404, headers: { 'cache-control': 'no-store' } });
+  const said = upstream.headers.get('content-type') ?? '';
+  // some hosts (S3) serve pictures as application/octet-stream: those are judged by their first bytes
+  if (!upstream.ok || !(/^image\//.test(said) || /^(application\/octet-stream|binary\/octet-stream)?(;|$)/.test(said))) return new Response('Not a picture', { status: 404, headers: { 'cache-control': 'no-store' } });
   const length = Number(upstream.headers.get('content-length') ?? '0');
   if (length > MAX_BYTES) return new Response('Too large', { status: 413 });
   const body = await upstream.arrayBuffer();
   if (body.byteLength > MAX_BYTES) return new Response('Too large', { status: 413 });
+  const type = /^image\//.test(said) ? said : sniffImage(new Uint8Array(body, 0, Math.min(16, body.byteLength)));
+  if (type === null) return new Response('Not a picture', { status: 404, headers: { 'cache-control': 'no-store' } });
   return new Response(body, {
     headers: { 'content-type': type, 'cache-control': 'public, max-age=604800', 'x-content-type-options': 'nosniff' },
   });

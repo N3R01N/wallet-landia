@@ -92,6 +92,10 @@ const KEEP = tiered('castle.keep', [0, 3, 6], (t) => ({
   note: 'The main keep. Gate arch on the front (+Z). Tier shows in the roof and trim.',
 }));
 
+/** The wallet halls by tier (docs/batches/17-wallet-halls.md): what each is and its height to the top (m). */
+export const HALL_KIND = ['lean-to', 'cottage', 'townhouse', 'stone hall', 'tower house', 'great tower', 'palace spire'] as const;
+const HALL_HEIGHT = [4.4, 5.4, 6.6, 7.6, 9, 10.5, 12] as const;
+
 const WING_CATEGORIES = ['lending', 'staking', 'dex', 'nft', 'governance', 'other'] as const;
 
 const CASTLE: AssetSpec[] = [
@@ -119,6 +123,15 @@ const CASTLE: AssetSpec[] = [
   // the v2 castle (castle layout 2, docs/batches/01-castle-core.md): one model each, tiers as `tier.N` parts
   { name: 'castle.keep', kind: 'model', required: false, size: [8, 5.5, 13], clips: ['idle', 'tap'], standin: { shape: 'box', color: '#8a8478' }, note: 'v2 keep against the back wall; tiers as tier.2/4/6 parts.' },
   { name: 'castle.hall.wallet', kind: 'model', required: false, size: [4, 4, 7], clips: ['idle', 'tap'], attach: ['door'], standin: { shape: 'box', color: '#a8a193' }, note: 'v2: a wallet’s hall built into the curtain wall; its crest on the Tint banners; tiers as tier.2/4/6 parts.' },
+  // one hall per wealth tier, each its own building (docs/batches/17-wallet-halls.md); the same slot and wall line
+  ...tiered('castle.hall.wallet', [], (t) => ({
+    kind: 'model',
+    size: [4, 4, HALL_HEIGHT[t]!],
+    clips: ['idle', 'tap'],
+    attach: ['door'],
+    standin: { shape: 'box', color: tierColor(t) },
+    note: `v2: a wallet's hall at tier ${t} (${HALL_KIND[t]}); crest on Tint, tier colour on Trim.`,
+  })),
   { name: 'castle.storehouse', kind: 'model', required: true, size: [2, 2, 2], standin: { shape: 'box', color: '#b9925a' }, note: 'Crates and sacks. Holds tokens with no protocol.' },
   {
     name: 'castle.banner',
@@ -486,6 +499,10 @@ const LIFE: AssetSpec[] = [
   { name: 'animal.dog', kind: 'model', required: false, size: [0.35, 0.8, 0.6], clips: ['idle', 'walk'], standin: { shape: 'capsule', color: '#8a6a4a' }, note: 'Dog.' },
   { name: 'animal.duck', kind: 'model', required: false, size: [0.3, 0.45, 0.3], clips: ['idle', 'swim'], standin: { shape: 'sphere', color: '#c9b48a' }, note: 'Duck on the moat; waterline at y = 0.' },
   { name: 'animal.horse', kind: 'model', required: false, size: [0.6, 2.2, 1.7], clips: ['idle', 'walk'], standin: { shape: 'capsule', color: '#6b4a2b' }, note: 'Horse in the paddock.' },
+  // batch 16 (docs/batches/16-exchange.md): goods changing hands
+  { name: 'fx.coin', kind: 'model', required: false, size: [0.22, 0.05, 0.22], standin: { shape: 'cylinder', color: '#f2c14e' }, note: 'A flying coin: Logo faces (the token), Trim rim (silver for stablecoins).' },
+  { name: 'fx.nft.frame', kind: 'model', required: false, size: [0.5, 0.06, 0.6], standin: { shape: 'box', color: '#d9a93a' }, note: 'A carried NFT picture: Picture face (the NFT), origin at the handle grip.' },
+  { name: 'fx.sparkle.burst', kind: 'model', required: false, size: [0.6, 0.6, 0.6], clips: ['pop'], standin: { shape: 'sphere', color: '#ffe08a' }, note: 'Stars burst where goods land; ends invisible.' },
   // batch 15 (docs/batches/15-life.md)
   { name: 'person.tollkeeper', kind: 'model', required: false, size: [0.6, 0.4, 1.75], clips: ['idle', 'toll', 'tap', 'refuse'], standin: { shape: 'capsule', color: '#8a6a4a', offset: [0, 0.85, 0] }, note: 'The toll keeper at the booth.' },
   { name: 'animal.bird', kind: 'model', required: false, size: [0.35, 0.3, 0.15], clips: ['fly', 'glide', 'idle'], standin: { shape: 'sphere', color: '#f5f2ea' }, note: 'A bird; flocks over the town.' },

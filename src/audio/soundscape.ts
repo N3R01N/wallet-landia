@@ -274,6 +274,39 @@ export class Soundscape {
     this.played.tap = (this.played.tap ?? 0) + 1;
   }
 
+  /**
+   * One coin of a stream landing (a collecting game's "tink"): the pitch climbs
+   * through the stream when the guild receives, falls when it pays; the last
+   * one rings a little longer. Silent while sound is off.
+   */
+  coinTink(index: number, of: number, incoming: boolean): void {
+    if (!this.#on || !this.#ctx || !this.#master) return;
+    const t = this.#ctx.currentTime;
+    const step = of > 1 ? index / (of - 1) : 1;
+    // a major-pentatonic climb (or fall) over an octave
+    const scale = [0, 2, 4, 7, 9, 12];
+    const semis = scale[Math.round(step * (scale.length - 1))]!;
+    const base = incoming ? 1318.5 : 987.8;
+    const f = base * 2 ** ((incoming ? semis : -semis * 0.6) / 12);
+    const last = index === of - 1;
+    this.#tone(t, f, incoming ? 0.05 : 0.04, last ? 0.45 : 0.14, 'triangle');
+    this.#tone(t, f * 2.4, 0.012, last ? 0.25 : 0.07, 'sine');
+    if (last && incoming) this.#tone(t + 0.06, f * 1.5, 0.035, 0.5, 'sine');
+    this.played.coin = (this.played.coin ?? 0) + 1;
+  }
+
+  /** An NFT set out (a soft rising whoosh) or landed (a shimmering bell chord). Silent while sound is off. */
+  nftShimmer(landed: boolean): void {
+    if (!this.#on || !this.#ctx || !this.#master) return;
+    const t = this.#ctx.currentTime;
+    if (!landed) {
+      this.#noiseBurst(t, 'bandpass', 1800, 0.08, 0.35);
+      return;
+    }
+    [1046.5, 1318.5, 1568, 2093].forEach((f, i) => this.#tone(t + i * 0.035, f, 0.045, 1.1 - i * 0.15, 'sine'));
+    this.played.nft = (this.played.nft ?? 0) + 1;
+  }
+
   /** A medal: a short fanfare. */
   fanfare(): void {
     const ctx = this.#ctx;

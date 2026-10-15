@@ -8,6 +8,7 @@
 import type { ProtocolCategory } from '../../domain/catalog.js';
 import type { Goods, Guild, Journey, PositionKind, Verb } from '../../domain/model.js';
 import { tierOf } from '../../domain/tiers.js';
+import { walletFocus, type WalletFocus } from './halls.js';
 import { ethPriceFrom } from '../../domain/risk.js';
 import { SIZE_REFERENCE_USD, sizeFor, tvlOf } from './size.js';
 import { SIGNATURE_PROTOCOLS, protocolFamily } from '../assets/manifest.js';
@@ -49,6 +50,8 @@ export interface WorldProtocol {
   tvlUsd: number | null;
   /** How big its building stands (size.ts: 1 = a 2 × 2 m house). */
   size: number;
+  /** The protocol's icon as Zerion gives it (for a logo when the bundled snapshot has none). */
+  iconUrl: string | null;
 }
 
 export interface Holding {
@@ -116,6 +119,8 @@ export interface CastleWorld {
   walletIds: string[];
   /** Each wallet's own value tier (its tower), in the same order. */
   walletTiers: number[];
+  /** What each wallet mostly holds (its hall's dressing), in the same order. */
+  walletFocus?: WalletFocus[];
   /** The guild's value tier: the keep. */
   tier: number;
   /** Buildings in town, most important first (nearest the gate). */
@@ -180,6 +185,7 @@ export function worldFromGuild(guild: Guild): CastleWorld {
         tvlUsd,
         // unknown to the snapshot: as big as what the guild keeps there, at least a house
         size: sizeFor(tvlUsd ?? Math.max(sumHeld(p.id), SIZE_REFERENCE_USD)),
+        iconUrl: [...group].map((m) => guild.protocols.get(m)?.iconUrl ?? null).find((u) => u) ?? null,
       };
     });
 
@@ -206,6 +212,7 @@ export function worldFromGuild(guild: Guild): CastleWorld {
     wallets: guild.heroes.length,
     walletIds,
     walletTiers: guild.heroes.map((h) => h.tier),
+    walletFocus: guild.heroes.map(walletFocus),
     tier: tierOf(worth),
     protocols,
     errands,
@@ -302,13 +309,13 @@ export function previewWorld(world: CastleWorld, spec: string): CastleWorld {
         const at = Number.isFinite(usd) && usd > 0 ? usd : SIZE_REFERENCE_USD;
         // a real protocol's id, for its logo and colour on the category building (no landmark: signature null)
         const id = borrow || PREVIEW_LOGOS[head]!;
-        return { id: i === 0 || !protocolsSeen.has(id) ? (protocolsSeen.add(id), id) : `${id}-${i}`, name: `${head} ($${Math.round(at).toLocaleString('en-US')})`, category: head as BuildingCategory, tier: 0, signature: null, holdings: [], visits: 0, tvlUsd: at, size: sizeFor(at) };
+        return { id: i === 0 || !protocolsSeen.has(id) ? (protocolsSeen.add(id), id) : `${id}-${i}`, name: `${head} ($${Math.round(at).toLocaleString('en-US')})`, category: head as BuildingCategory, tier: 0, signature: null, holdings: [], visits: 0, tvlUsd: at, size: sizeFor(at), iconUrl: null };
       }
       const family = protocolFamily(head);
       const category = SIGNATURE_PROTOCOLS[family];
       if (!category) return null;
       const tvlUsd = Number.isFinite(usd) && usd > 0 ? usd : tvlOf(head);
-      return { id: head, name: head, category: category as BuildingCategory, tier: 0, signature: family, holdings: [], visits: 0, tvlUsd, size: sizeFor(tvlUsd ?? SIZE_REFERENCE_USD) };
+      return { id: head, name: head, category: category as BuildingCategory, tier: 0, signature: family, holdings: [], visits: 0, tvlUsd, size: sizeFor(tvlUsd ?? SIZE_REFERENCE_USD), iconUrl: null };
     })
     .filter((p): p is WorldProtocol => p !== null);
   return protocols.length ? { ...world, protocols, errands: [] } : world;

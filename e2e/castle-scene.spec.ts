@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { sceneState, tapBuilding, tapCourier } from './castleHelpers.js';
+import { sceneState, tapBuilding, tapCourier, tapPerson } from './castleHelpers.js';
 
 /** The castle and the town in 3D, from the session's wallets (captured or demo): couriers' errands play out, the view zooms, a building can be tapped. */
 
@@ -124,34 +124,48 @@ test('the replay timeline plays the history (couriers set out), pauses, seeks, a
   await expect(page.locator('.replay-open')).toBeVisible();
 });
 
-test('build mode: swap two buildings; the arrangement is kept across a reload; Reset brings the automatic layout back', async ({ page }) => {
-  test.setTimeout(60_000);
+test('build mode: a building moves from its sheet; the places it can go are marked; a swap is kept across a reload; Reset brings the automatic layout back', async ({ page }) => {
+  test.setTimeout(120_000);
   type Hook = { castleView: { slots(): Record<string, number>; buildingIds(): string[] } };
   await page.goto('/');
   await page.locator('.tab', { hasText: 'Town' }).click();
-  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
+  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 60_000 });
   const [a, b] = await page.evaluate(() => (window as unknown as Hook).castleView.buildingIds().slice(0, 2));
   const before = await page.evaluate(() => (window as unknown as Hook).castleView.slots());
 
-  await page.locator('.arrange-open').click();
-  await expect(page.locator('.castle-view')).toHaveAttribute('data-arranging', 'true');
+  // no Arrange button in the scene: it starts from the building's sheet
+  await expect(page.locator('.arrange-open')).toHaveCount(0);
   await tapBuilding(page, 0);
-  await expect(page.locator('.arrange-hint')).toContainText('Now tap where it should go');
+  await page.locator('.sheet .move-building').click();
+  await expect(page.locator('.castle-view')).toHaveAttribute('data-arranging', 'true');
+  await expect(page.locator('.arrange-hint')).toContainText('Moving');
+  await expect(page.locator('.arrange-label.swap').first()).toBeAttached();
   await tapBuilding(page, 1);
   const after = await page.evaluate(() => (window as unknown as Hook).castleView.slots());
   expect(after[a!]).toBe(before[b!]);
   expect(after[b!]).toBe(before[a!]);
-  // no sheet opens in build mode
-  await expect(page.locator('.sheet')).toBeHidden();
+  await expect(page.locator('.castle-view')).toHaveAttribute('data-arranging', 'false');
 
   await page.reload();
   await page.locator('.tab', { hasText: 'Town' }).click();
-  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
+  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 60_000 });
   expect(await page.evaluate(() => (window as unknown as Hook).castleView.slots())).toEqual(after);
 
-  await page.locator('.arrange-open').click();
+  await tapBuilding(page, 0);
+  await page.locator('.sheet .move-building').click();
   await page.locator('.arrange-bar .btn', { hasText: 'Reset' }).click();
   expect(await page.evaluate(() => (window as unknown as Hook).castleView.slots())).toEqual(before);
-  await page.locator('.arrange-done').click();
   await expect(page.locator('.castle-view')).toHaveAttribute('data-arranging', 'false');
+});
+
+test('a townsperson says they are an NPC and whose they are, and speaks in a bubble', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto('/');
+  await tapPerson(page);
+  if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
+  const sheet = page.locator('.sheet');
+  await expect(sheet.locator('.npc-tag')).toBeVisible();
+  await expect(sheet).toContainText(/Belongs to|belongs to no building/);
+  await expect(sheet.locator('.person-line')).toBeVisible();
+  await expect(page.locator('.speech-bubble').first()).toBeVisible();
 });

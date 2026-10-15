@@ -24,8 +24,10 @@ Rules: `docs/STYLEGUIDE_V2.md`, especially §10 (lessons).
 | 11 | Townsfolk: the base helper and one per category | [11](11-townsfolk.md) | blender-f3 | checked; waiting for the user's look |
 | 12 | Cargo (t0–t6), animals, props, trees, rocks, hill | [12](12-life-and-props.md) | blender-f3 | checked; waiting for the user's look |
 | 13 | 2D art: icons, badges, ranks, app icons, effects | [13](13-2d-art.md) | blender-e2 | ✅ approved, committed |
-| 14 | The world and the sky: mountains, forests, fields, farm, windmill, river, bridge, lake, ruin, camp, meadows, clouds | [14](14-world-and-sky.md) | blender-e2 | in progress (the game lays them out as they arrive) |
-| 15 | Life: toll keeper, walk clips for the townsfolk, birds, crows, sheep, cows, deer, fish, butterflies | [15](15-life.md) | blender-3e | after its fix round (basket, gatehouse roofs, staking doors) |
+| 14 | The world and the sky: mountains, forests, fields, farm, windmill, river, bridge, lake, ruin, camp, meadows, clouds | [14](14-world-and-sky.md) | blender-e2 | checked in the game (2026-10-15); river joins fixed with batch 16; waiting for the user's look |
+| 15 | Life: toll keeper, walk clips for the townsfolk, birds, crows, sheep, cows, deer, fish, butterflies | [15](15-life.md) | blender-3e | checked in the game with its fix round (2026-10-15: basket and vessels, gatehouse caps, door sweeps); waiting for the user's look |
+| 16 | Goods changing hands: coin, NFT frame, sparkle burst, the courier's carry clip | [16](16-exchange.md) | blender-e2 | checked in the game with the river join fix (2026-10-15); waiting for the user's look |
+| 17 | Wallet halls by worth (t0–t6: lean-to, cottage, townhouse, stone hall, tower house, great tower, palace spire) and by what the wallet holds (tokens, DeFi, NFTs dressing) | [17](17-wallet-halls.md) | blender-e2, then blender-3e | in progress: e2 builds t0, t3, t6 first; after the range check e2 does t4, t5 and 3e does t1, t2 |
 
 The landmark classes come from each protocol's value on Ethereum (`src/castle/world/tvl.json`), so a protocol may change class when the snapshot is renewed. Batch 3 (castle wings) was dropped: castle layout 2 has none.
 

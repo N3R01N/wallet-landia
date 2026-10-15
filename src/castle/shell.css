@@ -1570,18 +1570,20 @@ h1 {
 }
 
 .price-arrow {
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: -1px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .price-arrow.boom,
 .price-arrow.up {
   color: #7fd17a;
 }
-.price-arrow.flat,
+.price-arrow.flat {
+  color: #f0c95a;
+}
 .price-arrow.none {
   color: #e8dcc0;
+  opacity: 0.6;
 }
 .price-arrow.down,
 .price-arrow.crash {
@@ -1697,4 +1699,136 @@ h1 {
 .sound-choice.on {
   background: var(--gold);
   color: #2b2433;
+}
+
+/* ---------- goods changing hands (scene/exchange.ts) ---------- */
+
+.exchange-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 2;
+}
+
+.exchange-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  background: rgba(43, 36, 51, 0.55);
+  will-change: transform, opacity;
+}
+
+.exchange-label.in {
+  color: #9dff8a;
+}
+
+.exchange-label.out {
+  color: #ffd45a;
+}
+
+/* build mode: labels over the places a building can go */
+.arrange-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 2;
+}
+
+.arrange-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 3px 9px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.arrange-label.move {
+  background: #e7c46b;
+  color: #2b2433;
+}
+
+.arrange-label.swap {
+  background: #6fb8ff;
+  color: #10233a;
+}
+
+.castle-view .follow-chip {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  z-index: 3;
+  min-height: 36px;
+  background: rgba(43, 36, 51, 0.85);
+  color: #f3ead6;
+  border: 1px solid #c9a24a;
+}
+
+/* townsfolk's speech bubbles (castleView #say) */
+.speech-bubbles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 2;
+}
+
+.speech-bubble {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 180px;
+  padding: 5px 10px;
+  margin-top: -8px;
+  border-radius: 12px;
+  background: #fffaf0;
+  color: #2b2433;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  will-change: transform, opacity;
+}
+
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-bottom: 0;
+  border-top-color: #fffaf0;
+}
+
+.npc-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-right: 4px;
+  border-radius: 6px;
+  background: var(--accent, #c9a227);
+  color: #2b2433;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.person-line {
+  margin: 0.5em 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent, #c9a227);
+  font-style: italic;
 }

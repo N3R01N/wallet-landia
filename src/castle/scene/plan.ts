@@ -20,6 +20,7 @@
 
 import type { CastleWorld, WorldProtocol } from '../world/world.js';
 import { sizeClassOf } from '../assets/manifest.js';
+import type { WalletFocus } from '../world/halls.js';
 
 export interface Placement {
   /** The asset name (manifest.ts). */
@@ -62,6 +63,8 @@ export interface Waypoint {
 /** A wallet's place in the castle: its tower (layout 1) or hall (layout 2), and where a courier stops at it. */
 export interface WalletPlacement extends Placement {
   door: { x: number; z: number };
+  /** What the wallet mostly holds: its hall's dressing (`focus.<it>` parts). */
+  focus?: WalletFocus;
 }
 
 export interface CastlePlan {
@@ -81,13 +84,15 @@ export interface CastlePlan {
   bridge: Placement;
   tollbooth: Placement;
   barrier: Placement;
+  /** Where a courier stops to pay the toll. */
+  tollStop: { x: number; z: number };
   tower: Placement;
   road: Placement[];
   /** Glow overlays, one per road tile. */
   lit: Placement[];
   buildings: BuildingPlacement[];
   /** Plots with no building (where one can be moved in build mode). */
-  freeSlots: { slot: number; x: number; z: number }[];
+  freeSlots: { slot: number; x: number; z: number; half: number }[];
   /** The avenue: the plaza it goes round (z range), and where it ends. */
   avenue: Avenue;
   /** The courier's way out to the first building (routeTo for any other). */
@@ -245,7 +250,7 @@ export function moveToSlot(current: ReadonlyMap<string, number>, protocolId: str
 }
 
 export function planCastle(
-  world: Pick<CastleWorld, 'wallets' | 'tier' | 'protocols'> & Partial<Pick<CastleWorld, 'walletTiers'>>,
+  world: Pick<CastleWorld, 'wallets' | 'tier' | 'protocols'> & Partial<Pick<CastleWorld, 'walletTiers' | 'walletFocus'>>,
   arranged: Readonly<Record<string, number>> = {},
   layout: CastleLayout = 1,
 ): CastlePlan {
@@ -363,11 +368,12 @@ export function planCastle(
     bridge,
     tollbooth,
     barrier,
+    tollStop: { ...TOLL_STOP },
     tower,
     road,
     lit,
     buildings,
-    freeSlots: plots.list.map((p, slot) => ({ slot, x: p.x, z: p.z })).filter((p) => !inSlot.has(p.slot)),
+    freeSlots: plots.list.map((p, slot) => ({ slot, x: p.x, z: p.z, half: p.half })).filter((p) => !inSlot.has(p.slot)),
     avenue,
     courierRoute,
     scenery: planScenery(town, moat),
@@ -381,7 +387,7 @@ export function planCastle(
 type CastlePieces = Pick<CastlePlan, 'walls' | 'wallets' | 'wings' | 'keep' | 'gatehouse' | 'storehouse'>;
 
 /** Layout 1: walls on the island's back and sides, a tower per wallet on them, a wing per category, the keep in the middle. */
-function castleV1(world: Pick<CastleWorld, 'wallets' | 'protocols'> & Partial<Pick<CastleWorld, 'walletTiers'>>, tier: number): CastlePieces {
+function castleV1(world: Pick<CastleWorld, 'wallets' | 'protocols'> & Partial<Pick<CastleWorld, 'walletTiers' | 'walletFocus'>>, tier: number): CastlePieces {
   const walls: Placement[] = [];
   for (let x = ISLAND.x0 + 0.5; x < ISLAND.x1; x += 1) walls.push({ name: 'castle.wall.segment', x, z: ISLAND.z0 + 0.5 });
   for (let z = ISLAND.z0 + 0.5; z < ISLAND.z1; z += 1) {
@@ -422,12 +428,14 @@ function castleV1(world: Pick<CastleWorld, 'wallets' | 'protocols'> & Partial<Pi
  * stands, so pieces meet only segments. Tiers show through the models' tier
  * parts: the keep's the guild's, each hall its wallet's.
  */
-function castleV2(world: Pick<CastleWorld, 'wallets'> & Partial<Pick<CastleWorld, 'walletTiers'>>, tier: number): CastlePieces {
+function castleV2(world: Pick<CastleWorld, 'wallets'> & Partial<Pick<CastleWorld, 'walletTiers' | 'walletFocus'>>, tier: number): CastlePieces {
   const I = ISLAND_V2;
   const c = V2.corner;
   const wallets: WalletPlacement[] = HALL_SLOTS.slice(0, Math.max(0, world.wallets)).map((slot, i) => {
     const t = clampTier(world.walletTiers?.[i] ?? 0);
-    return { name: 'castle.hall.wallet', fallbacks: [`castle.tower.wallet.t${t}`, 'castle.tower.wallet'], x: slot.x, z: slot.z, rot: slot.rot, tier: t, door: { ...slot.door } };
+    // its tier's own hall (docs/batches/17-wallet-halls.md), else the one hall with tier parts
+    const focus = world.walletFocus?.[i];
+    return { name: `castle.hall.wallet.t${t}`, fallbacks: ['castle.hall.wallet', `castle.tower.wallet.t${t}`, 'castle.tower.wallet'], x: slot.x, z: slot.z, rot: slot.rot, tier: t, door: { ...slot.door }, ...(focus ? { focus } : {}) };
   });
   // What stands in each wall, as spans along it: the gatehouse, the keep, the halls in use.
   const front: [number, number][] = [[-V2.gateHalf, V2.gateHalf]];
@@ -571,7 +579,7 @@ export const GATE_AT = { x: 0, z: ISLAND.z1 - 1 } as const;
  * the town, to the plaza's near side.
  */
 export function routeTo(avenue: Avenue, building: BuildingPlacement | null): Waypoint[] {
-  const start: Waypoint[] = [{ ...GATE_AT }, { x: 0, z: TOLL_Z - 0.7, stop: 'toll' }];
+  const start: Waypoint[] = [{ ...GATE_AT }, { ...TOLL_STOP, stop: 'toll' }];
   // someone outside the town (a protocol without a building, another person): up the avenue and out at its far end
   const roundTower: Waypoint[] = [
     { x: 0, z: avenue.plazaStart },
@@ -697,6 +705,8 @@ function planWorld(town: { x0: number; x1: number; z1: number }, MOAT: Rect, jit
 
 /** The toll line: the booth beside the road, the barrier across it. */
 export const TOLL_Z = 2.5;
+/** Where a courier stops at the barrier to pay. */
+export const TOLL_STOP = { x: 0, z: TOLL_Z - 0.7 } as const;
 /** The barrier's post, left of the road; its 2 m arm reaches across. */
 export const BARRIER_POST_X = -1.1;
 /** Where a building's person stands to meet a visitor: this share of the way from the door point back to the front wall… */
