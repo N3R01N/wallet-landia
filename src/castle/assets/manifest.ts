@@ -212,6 +212,46 @@ const BUILDINGS: AssetSpec[] = BUILDING_CATEGORIES.flatMap(({ cat, note }) =>
   })),
 );
 
+/** The size classes (docs/STYLEGUIDE_V2.md §3), by the footprint's side in metres. */
+export const SIZE_CLASSES = [
+  { id: 'xs', footprint: 2, height: [3, 4] },
+  { id: 's', footprint: 3, height: [5, 7] },
+  { id: 'm', footprint: 5, height: [8, 11] },
+  { id: 'l', footprint: 8, height: [12, 16] },
+  { id: 'xl', footprint: 12, height: [18, 24] },
+] as const;
+export type SizeClass = (typeof SIZE_CLASSES)[number]['id'];
+
+/** A footprint's size class: the nearest class (in log terms: 2.6 m is still XS, 2.8 m S). */
+export function sizeClassOf(footprint: number): SizeClass {
+  let best: SizeClass = 'xs';
+  let gap = Infinity;
+  for (const c of SIZE_CLASSES) {
+    const g = Math.abs(Math.log(footprint / c.footprint));
+    if (g < gap) {
+      gap = g;
+      best = c.id;
+    }
+  }
+  return best;
+}
+
+/** v2: one category building per size class, its tiers as `tier.N` parts (docs/STYLEGUIDE_V2.md §7). */
+const BUILDINGS_V2: AssetSpec[] = BUILDING_CATEGORIES.flatMap(({ cat, note }) =>
+  SIZE_CLASSES.map(
+    (c): AssetSpec => ({
+      name: `building.category.${cat}.${c.id}`,
+      kind: 'model',
+      required: false,
+      size: [c.footprint, c.footprint, c.height[1]],
+      clips: ['idle', 'tap'],
+      attach: ['door', 'sign'],
+      standin: { shape: 'box', color: '#a8a193' },
+      note: `${note} Size class ${c.id.toUpperCase()}; tiers as tier.2/4/6 parts.`,
+    }),
+  ),
+);
+
 const DORMANT: AssetSpec = {
   name: 'building.dormant',
   kind: 'model',
@@ -464,6 +504,7 @@ export const ASSETS: readonly AssetSpec[] = [
   ...MOAT_AND_BRIDGE,
   ...TOWN,
   ...BUILDINGS,
+  ...BUILDINGS_V2,
   ...SIGNATURES,
   DORMANT,
   ...PEOPLE,

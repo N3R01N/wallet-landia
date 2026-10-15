@@ -13,7 +13,7 @@
 
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { assetPath, brandColor, findAsset, tierColor } from '../assets/manifest.js';
+import { SIZE_CLASSES, assetPath, brandColor, findAsset, sizeClassOf, tierColor } from '../assets/manifest.js';
 import { ModelLibrary, disposeTree, type Loaded } from '../assets/models.js';
 import { artTheme, themeFileUrl, type CastleTheme } from '../assets/theme.js';
 import { crestColors } from '../../util/rng.js';
@@ -726,11 +726,15 @@ export class CastleView {
         if (tap) {
           this.#reactions.set(obj, moving);
           obj.userData.reacts = true;
+          // a skinned model (an animal) plays its tap instead of its idle, as a person does
+          obj.traverse((o) => {
+            if ((o as THREE.SkinnedMesh).isSkinnedMesh) obj.userData.person = true;
+          });
         }
       }
       if ('protocol' in p) {
         // a protocol's building fills its plot, whatever size the model was made at (a 2 m house or a 12 m landmark)
-        obj.scale.setScalar(fitScale(obj, (p as BuildingPlacement).half));
+        obj.scale.setScalar(plan.layout === 2 ? classScale(obj, (p as BuildingPlacement).half) : fitScale(obj, (p as BuildingPlacement).half));
       } else if (p.scale !== undefined) obj.scale.setScalar(p.scale);
       obj.position.set(p.x, 0, p.z);
       obj.rotation.y = p.rot ?? 0;
@@ -786,10 +790,16 @@ export class CastleView {
     // Each building's person waits inside, to come out when a courier calls.
     for (const b of plan.buildings) {
       const name = this.#loaded.get(`person.npc.${b.protocol.category}`) ? `person.npc.${b.protocol.category}` : 'person.npc.base';
-      const npc = new Figure(this.#make(name), this.#loaded.get(name)?.clips ?? [], ['emerge', 'receive', 'return']);
+      const npc = new Figure(this.#make(name), this.#loaded.get(name)?.clips ?? [], ['emerge', 'receive', 'return', TAP_CLIP]);
       npc.object.position.set(b.npc.x, 0, b.npc.z);
       npc.object.rotation.y = b.rot ?? 0; // faces out of its door, towards the visitor
       npc.object.visible = false;
+      // the protocol's colour on its person's Tint cloth (an apron, a sash); a tap while it is out gets a reaction
+      const brand = brandColor(b.protocol.id);
+      if (brand) paint(npc.object, 'Tint', brand, this.#painted);
+      npc.object.userData.reacts = true;
+      npc.object.userData.person = true;
+      this.#reactions.set(npc.object, npc);
       this.#layout.add(npc.object);
       this.#figures.push(npc);
       this.#npcs.set(b.protocol.id, npc);
@@ -1255,11 +1265,12 @@ export class CastleView {
       return;
     }
     // the nearest building or castle piece that reacts to a tap
-    const hit = this.#raycaster.intersectObjects([...this.#buildingRoots, ...[...this.#reactions.keys()].filter((r) => !r.userData.building)], true)[0];
+    const hit = this.#raycaster.intersectObjects([...this.#buildingRoots, ...[...this.#reactions.keys()].filter((r) => !r.userData.building && r.visible)], true)[0];
     let o: THREE.Object3D | null = hit?.object ?? null;
     while (o && !o.userData.building && !o.userData.reacts) o = o.parent;
     if (o && !o.userData.building) {
-      if (this.#reactions.get(o)?.react(TAP_CLIP, true)) this.#shadowsMoveUntil = this.#time + 2;
+      // a person's tap takes over its whole body (and back); a castle piece's plays over its idle
+      if (this.#reactions.get(o)?.react(TAP_CLIP, !o.userData.person) && !o.userData.person) this.#shadowsMoveUntil = this.#time + 2;
       return;
     }
     if (o) {
@@ -1411,6 +1422,19 @@ function ownMaterials(root: THREE.Object3D): THREE.Material[] {
  * width is measured from its shape at rest (overhangs included), so a model
  * made at any size fits.
  */
+/**
+ * A v2 building's scale for its plot: made at its size class's true size (docs/STYLEGUIDE_V2.md §3), it
+ * grows or shrinks only by the plot's share of that class (about ±25%), so steps, jetties and crates
+ * in front never shrink the building. A model far smaller than its class (a first-themes 2 m house
+ * standing in) is fitted by its bounds instead.
+ */
+function classScale(model: THREE.Object3D, half: number): number {
+  const footprint = SIZE_CLASSES.find((c) => c.id === sizeClassOf(2 * half))!.footprint;
+  const box = new THREE.Box3().setFromObject(model);
+  const own = Math.max(Math.abs(box.min.x), Math.abs(box.max.x), Math.abs(box.min.z), Math.abs(box.max.z));
+  return own < 0.35 * footprint ? fitScale(model, half) : (2 * half) / footprint;
+}
+
 function fitScale(model: THREE.Object3D, half: number): number {
   const box = new THREE.Box3().setFromObject(model);
   const own = Math.max(Math.abs(box.min.x), Math.abs(box.max.x), Math.abs(box.min.z), Math.abs(box.max.z));

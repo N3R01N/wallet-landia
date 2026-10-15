@@ -23,3 +23,22 @@ describe('sizes by value', () => {
     expect(tvlOf('no-such-protocol-xyz')).toBeNull();
   });
 });
+
+describe('size classes', () => {
+  it('a footprint takes the nearest class, by ratio', async () => {
+    const { sizeClassOf } = await import('../src/castle/assets/manifest.js');
+    expect([1.2, 2, 2.4, 3, 4, 5, 6.5, 8, 10, 12, 16].map(sizeClassOf)).toEqual(['xs', 'xs', 'xs', 's', 'm', 'm', 'l', 'l', 'xl', 'xl', 'xl']);
+  });
+});
+
+describe('preview towns', () => {
+  it('?preview= puts landmarks at their real value, and categories at a given value, into town', async () => {
+    const { previewWorld } = await import('../src/castle/world/world.js');
+    const base = { wallets: 1, walletIds: ['0x1'], walletTiers: [0], tier: 0, protocols: [], errands: [], ethUsd: null } as unknown as Parameters<typeof previewWorld>[0];
+    const w = previewWorld(base, 'lido, lending:5e6, nonsense');
+    expect(w.protocols.map((p) => [p.signature, p.category])).toEqual([['lido', 'staking'], [null, 'lending']]);
+    expect(w.protocols[0]!.size).toBeCloseTo(sizeFor(tvlOf('lido')!), 3);
+    expect(w.protocols[1]!.size).toBeCloseTo(sizeFor(5e6), 3);
+    expect(previewWorld(base, 'nonsense')).toBe(base);
+  });
+});

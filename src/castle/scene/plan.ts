@@ -19,6 +19,7 @@
  */
 
 import type { CastleWorld, WorldProtocol } from '../world/world.js';
+import { sizeClassOf } from '../assets/manifest.js';
 
 export interface Placement {
   /** The asset name (manifest.ts). */
@@ -278,11 +279,13 @@ export function planCastle(
   for (const [slot, protocol] of inSlot) {
     const plot = plots.list[slot]!;
     const cat = protocol.category in WING_FOR ? protocol.category : 'other';
-    const category = `building.category.${cat}.t${clampTier(protocol.tier)}`;
+    // its category's building: the v2 one of its size class (tiers as parts), else the first themes' tier model
+    const byTier = `building.category.${cat}.t${clampTier(protocol.tier)}`;
+    const byClass = `building.category.${cat}.${sizeClassOf(2 * plot.half)}`;
     buildings.push({
       // a signature building when the protocol has one, else (and while its model is missing) its category's
-      name: protocol.signature ? `building.protocol.${protocol.signature}` : category,
-      ...(protocol.signature ? { fallbacks: [category] } : {}),
+      name: protocol.signature ? `building.protocol.${protocol.signature}` : byClass,
+      fallbacks: protocol.signature ? [byClass, byTier] : [byTier],
       x: plot.x,
       z: plot.z,
       rot: plot.face,

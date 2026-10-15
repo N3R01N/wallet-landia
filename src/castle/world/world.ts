@@ -238,3 +238,49 @@ export function newErrands(prev: CastleWorld | null, next: CastleWorld): Errand[
   const seen = new Set(prev?.errands.map((e) => e.key) ?? []);
   return next.errands.filter((e) => !seen.has(e.key));
 }
+
+/**
+ * A preview town (`?preview=` in the page URL, for looking at models): the
+ * guild's castle with these buildings in town instead of its own. An entry is
+ * a protocol with a landmark (`lido`: at its real value), or a category at a
+ * value (`lending:5e6`: a $5M lending protocol, its category building, with a
+ * real protocol's logo and colour: `lending:5e6:morpho` names which one).
+ */
+/** A protocol of each category whose logo a preview's category building shows (each has a logo in logos.json). */
+const PREVIEW_LOGOS: Record<string, string> = {
+  lending: 'morpho',
+  dex: 'uniswap',
+  staking: 'lido',
+  nft: 'sudoswap',
+  governance: 'compound',
+  bridge: 'across',
+  other: 'defi-saver',
+};
+
+export function previewWorld(world: CastleWorld, spec: string): CastleWorld {
+  const categories = new Set<string>(Object.keys(PREVIEW_LOGOS));
+  const protocolsSeen = new Set<string>();
+  const protocols = spec
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, MAX_BUILDINGS)
+    .map((entry, i): WorldProtocol | null => {
+      const [head, value, borrow] = entry.split(':');
+      if (!head) return null;
+      const usd = Number(value);
+      if (categories.has(head)) {
+        const at = Number.isFinite(usd) && usd > 0 ? usd : SIZE_REFERENCE_USD;
+        // a real protocol's id, for its logo and colour on the category building (no landmark: signature null)
+        const id = borrow || PREVIEW_LOGOS[head]!;
+        return { id: i === 0 || !protocolsSeen.has(id) ? (protocolsSeen.add(id), id) : `${id}-${i}`, name: `${head} ($${Math.round(at).toLocaleString('en-US')})`, category: head as BuildingCategory, tier: 0, signature: null, holdings: [], visits: 0, tvlUsd: at, size: sizeFor(at) };
+      }
+      const family = protocolFamily(head);
+      const category = SIGNATURE_PROTOCOLS[family];
+      if (!category) return null;
+      const tvlUsd = Number.isFinite(usd) && usd > 0 ? usd : tvlOf(head);
+      return { id: head, name: head, category: category as BuildingCategory, tier: 0, signature: family, holdings: [], visits: 0, tvlUsd, size: sizeFor(tvlUsd ?? SIZE_REFERENCE_USD) };
+    })
+    .filter((p): p is WorldProtocol => p !== null);
+  return protocols.length ? { ...world, protocols, errands: [] } : world;
+}

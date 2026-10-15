@@ -15,7 +15,7 @@ import { TAB_LABEL, type SheetState, type TabId } from './shellState.js';
 import { CastleView } from './scene/castleView.js';
 import { assetPath } from './assets/manifest.js';
 import { artTheme, loadCastleTheme, themeFileUrl, themeFromUrl } from './assets/theme.js';
-import { newErrands, worldFromGuild, type CastleWorld } from './world/world.js';
+import { newErrands, previewWorld, worldFromGuild, type CastleWorld } from './world/world.js';
 import { lightAt, weatherFor, type Weather } from './world/sky.js';
 import { priceMove } from '../domain/risk.js';
 import { chronicleSheet, errandSheet, protocolSheet } from './sheets.js';
@@ -288,7 +288,10 @@ let homeGuild: Guild | null = null;
 function worldOf(town: Shown): CastleWorld {
   const guild = buildGuild(town.raws, prefs.window, { names: town.names });
   if (town.visiting === null) homeGuild = guild;
-  return worldFromGuild(guild);
+  const real = worldFromGuild(guild);
+  // `?preview=lido,spark,lending:5e6` shows those buildings in town instead (for looking at models)
+  const preview = new URLSearchParams(location.search).get('preview');
+  return preview ? previewWorld(real, preview) : real;
 }
 
 /** Each of your wallets' teaching quests. */

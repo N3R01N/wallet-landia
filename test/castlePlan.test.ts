@@ -101,7 +101,10 @@ describe('castle plan', () => {
     expect(plan.buildings).toHaveLength(DEMO.protocols.length);
     const aave = plan.buildings.find((b) => b.protocol.id === 'aave-v3')!;
     const ens = plan.buildings.find((b) => b.protocol.id === 'ens')!;
-    expect(aave.name).toBe('building.category.lending.t3');
+    // the v2 building of its size class (Aave's ~13.7 m plot: XL), the first themes' tier model as the fallback
+    expect(aave.name).toBe('building.category.lending.xl');
+    expect(aave.fallbacks).toEqual(['building.category.lending.t3']);
+    expect(ens.name).toBe('building.category.governance.xs');
     expect(aave.scale).toBeCloseTo(sizeFor(15e9), 2);
     expect(aave.half).toBeGreaterThan(5 * ens.half);
     expect(ens.scale).toBeCloseTo(1, 2);
@@ -132,8 +135,7 @@ describe('castle plan', () => {
   it('a signature building asks for its own model, its category building as the fallback', () => {
     const p = planCastle({ ...DEMO, protocols: [{ ...DEMO.protocols[0]!, signature: 'aave' }] });
     expect(p.buildings[0]!.name).toBe('building.protocol.aave');
-    expect(p.buildings[0]!.fallbacks).toEqual(['building.category.lending.t3']);
-    expect(plan.buildings[0]!.fallbacks).toBeUndefined();
+    expect(p.buildings[0]!.fallbacks).toEqual(['building.category.lending.xl', 'building.category.lending.t3']);
   });
 
   it('every door is reached by a paved way that never crosses a building or the tower', () => {
