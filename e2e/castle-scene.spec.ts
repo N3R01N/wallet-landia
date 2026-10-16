@@ -6,18 +6,36 @@ import { sceneState, showTown, tapBuilding, tapCourier, tapPerson } from './cast
 test.use({ viewport: { width: 1280, height: 800 } });
 
 test('the guild’s transactions play as errands: the drawbridge lowers, the barrier lifts, couriers reach the town; the wheel zooms', async ({ page }) => {
-  test.setTimeout(60_000);
+  // a loaded machine draws few frames, and the scene's clock steps at most 0.1 s a frame: the errand slows down
+  test.setTimeout(120_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
   await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
 
+  // the barrier is up only for a moment: keep the highest of each on every frame, so a slow poll can't miss it
+  await page.evaluate(() => {
+    type State = { bridgeAngle: number; barrierAngle: number; courier: { z: number } | null };
+    const w = window as unknown as { castleView: { state(): State }; peaks: { bridge: number; barrier: number; courierZ: number } };
+    w.peaks = { bridge: -Infinity, barrier: -Infinity, courierZ: -Infinity };
+    const sample = () => {
+      const s = w.castleView.state();
+      w.peaks.bridge = Math.max(w.peaks.bridge, s.bridgeAngle);
+      w.peaks.barrier = Math.max(w.peaks.barrier, s.barrierAngle);
+      if (s.courier) w.peaks.courierZ = Math.max(w.peaks.courierZ, s.courier.z);
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  const peak = (key: 'bridge' | 'barrier' | 'courierZ') =>
+    page.evaluate((k) => (window as unknown as { peaks: Record<string, number> }).peaks[k], key);
+
   // the bridge starts raised (−90°) and lowers as the courier sets out
-  await expect.poll(async () => (await sceneState(page)).bridgeAngle, { timeout: 20_000 }).toBeGreaterThan(-0.2);
+  await expect.poll(() => peak('bridge'), { timeout: 30_000 }).toBeGreaterThan(-0.2);
   // the barrier lifts once the toll is paid (the courier first crosses the courtyard from its hall)
-  await expect.poll(async () => (await sceneState(page)).barrierAngle, { timeout: 40_000 }).toBeGreaterThan(1.2);
+  await expect.poll(() => peak('barrier'), { timeout: 60_000 }).toBeGreaterThan(1.2);
   // the courier gets into the town
-  await expect.poll(async () => (await sceneState(page)).courier?.z ?? -99, { timeout: 20_000 }).toBeGreaterThan(5);
+  await expect.poll(() => peak('courierZ'), { timeout: 30_000 }).toBeGreaterThan(5);
 
   const before = (await sceneState(page)).zoom;
   const box = (await page.locator('.castle-view canvas').boundingBox())!;
