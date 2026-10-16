@@ -27,7 +27,7 @@ import { protocolFamily } from './assets/manifest.js';
 import type { Person } from './scene/life.js';
 import { Conditions } from './conditions.js';
 import { logoPath } from './world/logos.js';
-import { buildGuild } from '../domain/mappers.js';
+import { buildGuild, ethMarketOf } from '../domain/mappers.js';
 import { Session, type Mode, type Shown } from '../data/session.js';
 import { setRealmChains } from '../data/zerion/endpoints.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
@@ -92,7 +92,7 @@ let view: CastleView | null = null;
 let mode: Mode | null = null;
 let budget: BudgetSnapshot | null = null;
 let shown: Shown | null = null;
-/** The market's weather: ETH now against the last visit more than an hour ago (null until known). */
+/** The market's weather: ETH's move over the last 24 hours (null until known). */
 let weather: Weather = weatherFor(null);
 // `?market=boom|up|flat|down|crash` shows that weather (for looking at it), whatever ETH did
 const marketParam = new URLSearchParams(location.search).get('market');
@@ -522,21 +522,17 @@ function redrawForData(): void {
 }
 
 /**
- * "Since you were last here": the ETH price seen on a visit more than an hour
- * ago is the baseline (the town's rule and setting, prefs.eth), once per load,
- * and only at home.
+ * ETH's price and how it moved over the last day (the sky follows it): read
+ * live from Zerion, else from the wallets' own ETH, once per load and only at home.
  */
-function settlePrice(w: CastleWorld): void {
-  if (priceSettled || shown?.visiting || w.ethUsd === null) return;
+async function settlePrice(w: CastleWorld, town: Shown): Promise<void> {
+  if (priceSettled || town.visiting) return;
   priceSettled = true;
-  const eth = prefs.eth;
-  const t = Date.now();
-  if (eth.seen && t - eth.seen.at > 60 * 60_000) eth.prev = eth.seen;
-  eth.seen = { usd: w.ethUsd, at: t };
-  savePrefs(prefs);
-  const move = eth.prev ? priceMove(w.ethUsd, eth.prev) : null;
-  conditions.price(w.ethUsd, move);
-  weather = weatherFor(pinnedMood ?? (move ? move.mood : null));
+  const market = (town.mode === 'live' ? await session.ethMarket() : null) ?? ethMarketOf(town.raws);
+  const move = market === null ? null : priceMove(market.usd, market.pct1d);
+  const usd = market?.usd ?? w.ethUsd;
+  if (usd !== null) conditions.price(usd, move);
+  weather = weatherFor(pinnedMood ?? move?.mood ?? null);
   view?.setWeather(weather);
 }
 
@@ -568,7 +564,7 @@ const session = new Session(prefs, {
     loading.report(tab === 'castle' ? 'castle' : 'welcome');
     world = worldOf(town);
     mode = town.mode;
-    settlePrice(world);
+    void settlePrice(world, town);
     void readCollateral(world, town);
     showTopbar();
     redrawForData();

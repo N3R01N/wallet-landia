@@ -1,6 +1,6 @@
 /**
  * The castle's sky: the light by the player's local hour (day, dusk, night) and
- * the weather from the market (ETH since the last visit: rain when it fell,
+ * the weather from the market (ETH over the last 24 hours: rain when it fell,
  * clear when it rose). Pure numbers; the view applies them.
  */
 
@@ -51,7 +51,7 @@ export interface Weather {
 
 /**
  * The market's mood as weather, so it shows whichever way it went: a big rise
- * is a bright, nearly cloudless day; a rise sunny; flat (or no earlier visit to
+ * is a bright, nearly cloudless day; a rise sunny; flat (or no 24h change to
  * compare) a few clouds; a fall overcast with drizzle; a crash a storm.
  */
 export function weatherFor(mood: PriceMood | null): Weather {

@@ -9,6 +9,7 @@
 
 import type { ZerionClient } from './client.js';
 import type {
+  FungibleResource,
   NftPositionResource,
   PortfolioResource,
   PositionResource,
@@ -85,6 +86,14 @@ export function getNftPositions(
     { currency: client.currency, 'filter[chain_ids]': chainFilter(scope), sort: '-floor_price' },
     { maxPages: 1 },
   );
+}
+
+/** ETH's market: its price now and how it moved over the last day (one request; null when Zerion has no price). */
+export async function getEthMarket(client: ZerionClient): Promise<{ usd: number; pct1d: number } | null> {
+  const f = await client.getOne<FungibleResource>('/fungibles/eth', { currency: client.currency });
+  const usd = f.attributes.market_data.price;
+  const pct1d = f.attributes.market_data.changes?.percent_1d;
+  return usd !== null && usd > 0 && typeof pct1d === 'number' ? { usd, pct1d } : null;
 }
 
 type TxOptions = ChainScope & { pages?: number; since?: number; until?: number; signal?: AbortSignal; spam?: boolean };

@@ -1,6 +1,6 @@
 /**
  * What the townsfolk say (the old town's chatter, kept): about the ETH move
- * since the player's last visit, about the road (how busy the chain is and
+ * over the last 24 hours, about the road (how busy the chain is and
  * what the toll costs), and about their own trade. Short, so a bubble holds it.
  */
 

@@ -16,7 +16,7 @@ import { LiveLoader, remeasureFor } from './live.js';
 import { Backfill } from './backfill.js';
 import type { LedgerStatus } from './ledger.js';
 import { decodeLedgerFile, encodeLedgerFile, LEDGER_FILE_FORMAT, type LedgerFile } from './ledgerFile.js';
-import { realmScope } from './zerion/endpoints.js';
+import { getEthMarket, realmScope } from './zerion/endpoints.js';
 import { walletFingerprints } from './rpc.js';
 import { DailyBudget, type BudgetSnapshot } from './zerion/budget.js';
 import { ZerionError } from './zerion/client.js';
@@ -113,6 +113,13 @@ export class Session {
     this.#cache ??= await openCache();
     if (this.#loader === null) this.#loader = new LiveLoader({ apiKey: key, budget: this.budget, cache: this.#cache });
     return this.#loader;
+  }
+
+  /** ETH's price and 24-hour change, live from Zerion (one request); null with no key, or when the read fails. */
+  async ethMarket(): Promise<{ usd: number; pct1d: number } | null> {
+    const loader = await this.#liveLoader();
+    if (loader === null) return null;
+    return getEthMarket(loader.client).catch(() => null);
   }
 
   /** The key changed: forget the client built with the old one. */

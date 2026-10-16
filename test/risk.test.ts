@@ -23,11 +23,12 @@ describe('harvests and the market', () => {
     expect(harvestOf(stash('a', entry('reward', 2500)))?.size).toBe('lot');
   });
 
-  it('reads how ETH moved since the last visit', () => {
-    expect(priceMove(3300, { usd: 3000, at: 0 })).toMatchObject({ mood: 'boom' });
-    expect(priceMove(3060, { usd: 3000, at: 0 }).mood).toBe('up');
-    expect(priceMove(3010, { usd: 3000, at: 0 }).mood).toBe('flat');
-    expect(priceMove(2900, { usd: 3000, at: 0 }).mood).toBe('down');
-    expect(priceMove(2500, { usd: 3000, at: 0 }).pct).toBeCloseTo(-16.67, 1);
+  it('reads how ETH moved over the last day', () => {
+    expect(priceMove(3300, 10).mood).toBe('boom');
+    expect(priceMove(3300, 10).thenUsd).toBeCloseTo(3000);
+    expect(priceMove(3060, 3).mood).toBe('up');
+    expect(priceMove(3010, 0.3).mood).toBe('flat');
+    expect(priceMove(2900, -3).mood).toBe('down');
+    expect(priceMove(2500, -16.67).mood).toBe('crash');
   });
 });

@@ -70,18 +70,17 @@ export type PriceMood = 'boom' | 'up' | 'flat' | 'down' | 'crash';
 
 export interface PriceMove {
   nowUsd: number;
+  /** The price a day ago (worked back from the change). */
   thenUsd: number;
-  /** Change in percent since then. */
+  /** Change in percent over the last 24 hours. */
   pct: number;
-  /** When the earlier price was seen (ms epoch). */
-  since: number;
   mood: PriceMood;
 }
 
-export function priceMove(nowUsd: number, then: { usd: number; at: number }): PriceMove {
-  const pct = ((nowUsd - then.usd) / then.usd) * 100;
+/** How ETH moved over the last day, from its price now and its 24-hour change in percent. */
+export function priceMove(nowUsd: number, pct: number): PriceMove {
   const mood: PriceMood = pct >= 8 ? 'boom' : pct >= 1.5 ? 'up' : pct > -1.5 ? 'flat' : pct > -8 ? 'down' : 'crash';
-  return { nowUsd, thenUsd: then.usd, pct, since: then.at, mood };
+  return { nowUsd, thenUsd: nowUsd / (1 + pct / 100), pct, mood };
 }
 
 export const MOOD_COLORS: Record<PriceMood, string> = { boom: '#5fe07a', up: '#9fdc6a', flat: '#e8dcc0', down: '#ff9a6a', crash: '#ff4a4a' };

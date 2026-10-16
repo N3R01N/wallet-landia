@@ -7,7 +7,7 @@
  * big move. Tapping it opens a sheet with the numbers.
  */
 
-import { el, fmtDate } from '../util/dom.js';
+import { el } from '../util/dom.js';
 import type { BlockBeat } from '../data/rpc.js';
 import type { PriceMood, PriceMove } from '../domain/risk.js';
 import { factsTable } from './sheets.js';
@@ -31,7 +31,7 @@ const ROAD_NOTE: Record<RoadLevel, string> = {
 /** The price's arrow: up to two for a big move, a dash for a small one. */
 const ARROW: Record<PriceMove['mood'], string> = { boom: '▲▲', up: '▲', flat: '→', down: '▼', crash: '▼▼' };
 
-/** The chip's arrow, drawn (a font's ▬ or · read as a grey box): up or down, doubled for a big move, sideways when flat, a dash with no earlier visit. */
+/** The chip's arrow, drawn (a font's ▬ or · read as a grey box): up or down, doubled for a big move, sideways when flat, a dash when the move is not known. */
 function arrowIcon(mood: PriceMove['mood'] | null): SVGSVGElement {
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg');
@@ -74,13 +74,13 @@ export class Conditions {
     this.#draw();
   }
 
-  /** ETH's price now, and how it moved since the last visit (null: no earlier visit to compare). */
+  /** ETH's price now, and how it moved over the last day (null: no 24-hour change to be had). */
   price(nowUsd: number, move: PriceMove | null): void {
     this.#price = { nowUsd, move };
     this.#draw();
   }
 
-  /** How ETH moved since the last visit (null: no earlier visit). */
+  /** How ETH moved over the last day (null: not known). */
   get mood(): PriceMood | null {
     return this.#price?.move?.mood ?? null;
   }
@@ -106,7 +106,7 @@ export class Conditions {
     const arrow = el('span', { class: `price-arrow ${mood ?? 'none'}`, 'aria-hidden': 'true' });
     arrow.append(arrowIcon(mood));
     this.chip.replaceChildren(el('span', { class: 'chip-label' }, '⛽'), gauge, el('span', { class: 'chip-label' }, 'Ξ'), arrow);
-    const words = [level ? `Road: ${ROAD_WORD[level]}` : 'Road: waiting for a block', mood ? `ETH since your last visit: ${MOOD_WORD[mood]}` : 'ETH: no earlier visit to compare'];
+    const words = [level ? `Road: ${ROAD_WORD[level]}` : 'Road: waiting for a block', mood ? `ETH, last 24h: ${MOOD_WORD[mood]}` : 'ETH: no 24h change to read'];
     this.chip.setAttribute('aria-label', `Market and road. ${words.join('. ')}.`);
     this.chip.title = words.join(' · ');
   }
@@ -137,11 +137,11 @@ export class Conditions {
       out.append(
         factsTable([
           ['ETH now', `$${Math.round(p.nowUsd).toLocaleString('en-US')}`],
-          m ? ['At your last visit', `$${Math.round(m.thenUsd).toLocaleString('en-US')} · ${fmtDate(m.since)}`] : null,
-          m ? ['Change', `${ARROW[m.mood]} ${m.pct >= 0 ? '+' : ''}${m.pct.toFixed(1)}% · ${MOOD_WORD[m.mood]}`] : null,
+          m ? ['A day ago', `$${Math.round(m.thenUsd).toLocaleString('en-US')}`] : null,
+          m ? ['Change (24h)', `${ARROW[m.mood]} ${m.pct >= 0 ? '+' : ''}${m.pct.toFixed(1)}% · ${MOOD_WORD[m.mood]}`] : null,
         ]),
       );
-      out.append(el('p', { class: 'muted' }, p.move ? 'The sky follows it too: sun when it rose, rain when it fell, a storm for a big drop.' : 'Come back later: the next visit compares against today.'));
+      out.append(el('p', { class: 'muted' }, p.move ? 'The sky follows it too: sun when it rose, rain when it fell, a storm for a big drop.' : 'No 24-hour change to read right now.'));
     }
     return out;
   }

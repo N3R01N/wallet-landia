@@ -105,6 +105,22 @@ export interface PositionResource {
   };
 }
 
+// --- fungibles -------------------------------------------------------------
+
+/** `/fungibles/{id}`: a token and its market (only the parts the castle reads). */
+export interface FungibleResource {
+  type: 'fungibles';
+  id: string;
+  attributes: {
+    name: string;
+    symbol: string;
+    market_data: {
+      price: number | null;
+      changes?: { percent_1d?: number | null } | null;
+    };
+  };
+}
+
 // --- transactions ----------------------------------------------------------
 
 export type OperationType =

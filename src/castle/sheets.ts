@@ -340,7 +340,7 @@ export function personSheet(who: { role: string; building: string | null }, line
     go.addEventListener('click', openBuilding);
     out.append(el('p', {}, go));
   }
-  out.append(el('p', { class: 'muted' }, 'Their talk follows the chain: the ETH price since your last visit, how busy the road is, and their own trade. Tap again to hear more.'));
+  out.append(el('p', { class: 'muted' }, 'Their talk follows the chain: how the ETH price moved over the last day, how busy the road is, and their own trade. Tap again to hear more.'));
   return out;
 }
 

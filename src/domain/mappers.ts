@@ -699,6 +699,27 @@ function buildSteps(
   return steps;
 }
 
+/**
+ * ETH's price and 24-hour change from the wallets' own native ETH positions
+ * (as fresh as the last measure), or null: the fallback when Zerion's market
+ * read is not to be had (no key, the fixtures, a failed request).
+ */
+export function ethMarketOf(raws: readonly RawWallet[]): { usd: number; pct1d: number } | null {
+  for (const raw of raws) {
+    for (const p of raw.simple) {
+      const a = p.attributes;
+      const f = a.fungible_info;
+      if (f === undefined || f.symbol.toUpperCase() !== 'ETH') continue;
+      const chainId = p.relationships?.chain?.data.id;
+      const impl = f.implementations?.find((i) => i.chain_id === chainId);
+      if (impl === undefined || (impl.address ?? '') !== '') continue;
+      const pct1d = a.changes?.percent_1d;
+      if (a.price !== undefined && a.price > 0 && typeof pct1d === 'number') return { usd: a.price, pct1d };
+    }
+  }
+  return null;
+}
+
 /** The quest's one line: "Swap 1.2 ETH → 3,000 USDC at Uniswap ($3.0k)". */
 function buildLabel(
   o: { verb: Verb; ins: TransferResource[]; outs: TransferResource[]; protocol: Protocol | null; target: Target; counterparty: string | null; counterpartyHero: string | null; status: string; valueUsd: number },

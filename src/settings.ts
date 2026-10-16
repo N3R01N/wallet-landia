@@ -47,8 +47,6 @@ export interface Prefs {
   tourDone: boolean;
   /** Names the player gave heroes, by lowercase address. */
   names: Record<string, string>;
-  /** ETH prices seen: this session's (`seen`), and the visit before it (`prev`), for "since you were last here". */
-  eth: { seen?: { usd: number; at: number }; prev?: { usd: number; at: number } };
   /** Sound (off until the player turns it on) and its volume 0..1. */
   sound: boolean;
   volume: number;
@@ -95,7 +93,6 @@ const DEFAULTS: Prefs = {
   legendFolded: false,
   tourDone: false,
   names: {},
-  eth: {},
   sound: false,
   volume: 0.6,
   tapSound: 0,

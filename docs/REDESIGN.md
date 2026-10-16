@@ -445,7 +445,7 @@ Next: removing the old views (after deciding what the castle view still lacks fr
 - **Badges:** the five castle badges have rules (towers, keep, wings, crossings) and show with progress.
 - **Guild tab:** also the history file (save, load in another browser) and the Ethereum node.
 - **Sound:** off until switched on (kept, shared with the town): the bell for each block, coins at the toll.
-- **Sky:** day and night by the local hour (`?hour=` pins it); rain and a grey veil when ETH fell since the last visit.
+- **Sky:** day and night by the local hour (`?hour=` pins it); rain and a grey veil when ETH fell over the last 24 hours (Zerion's 24h change for ETH; without a key, the 24h change on the wallets' own ETH).
 - **Installable:** `castle.webmanifest` with the theme's app icons.
 
 ## 14. The old app vs the castle: what to port, what to drop (for decision)
