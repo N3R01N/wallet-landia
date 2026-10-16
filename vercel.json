@@ -23,7 +23,7 @@
       ]
     },
     {
-      "source": "/themes/[^/]+/theme\\.json",
+      "source": "/themes/([^/]+)/theme\\.json",
       "headers": [
         {
           "key": "Cache-Control",
