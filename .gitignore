@@ -15,3 +15,6 @@ dist/
 
 # the design agent's review renders (docs/STYLEGUIDE_V2.md §9): for review, not for the repo
 /docs/art-review/
+
+# test output kept by hand (npm run check > .check.log)
+/.check.log
