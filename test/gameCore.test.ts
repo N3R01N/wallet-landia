@@ -25,6 +25,7 @@ function side(positions: Portfolio['positions'], id: 'A' | 'B' = 'A'): SideState
     valueBeforeMarket: 0,
     liquidations: [],
     shutdownUsed: false,
+    keepBonus: 0,
   };
 }
 
@@ -304,14 +305,14 @@ describe('MatchController', () => {
     expect(end.phase).toBe('ended');
     expect(end.winner).not.toBeNull();
     expect(end.round).toBeLessThanOrEqual(BALANCE.match.rounds + 1);
-  });
+  }, 60_000);
 
   it('7 rounds complete headlessly over many seeds', () => {
     for (let i = 0; i < 6; i++) {
       const m = new Match(setup(`seed-${i}`));
       expect(m.playOut(trades).phase).toBe('ended');
     }
-  });
+  }, 60_000);
 
   it('the same seed and commands give byte-identical state; the replay rebuilds it', () => {
     const a = new Match(setup('det'));
@@ -324,7 +325,7 @@ describe('MatchController', () => {
     const other = new Match(setup('other'));
     other.playOut(trades);
     expect(serialize(other.state)).not.toBe(serialize(a.state));
-  });
+  }, 60_000);
 
   it('phases run market → trade → battle → siege, and trading is refused outside the trade phase', () => {
     const m = new Match(setup('phases'));

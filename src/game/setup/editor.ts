@@ -145,7 +145,7 @@ export interface Preview {
 }
 
 function previewSide(portfolio: Portfolio): SideState {
-  return { id: 'A', portfolio, keepHp: 0, keepHpMax: 0, buildingsOwned: [], isNpc: false, tradeDone: false, valueBeforeMarket: 0, liquidations: [], shutdownUsed: false };
+  return { id: 'A', portfolio, keepHp: 0, keepHpMax: 0, buildingsOwned: [], isNpc: false, tradeDone: false, valueBeforeMarket: 0, liquidations: [], shutdownUsed: false, keepBonus: 0 };
 }
 
 /** What the draft fields at the opening prices against that opponent (the same numbers the match will start with). */

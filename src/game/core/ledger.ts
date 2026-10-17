@@ -91,7 +91,7 @@ export function stableValue(side: SideState, ctx: Pick<LedgerCtx, 'catalog' | 'p
 // ---------- the keep ----------
 
 export function keepMaxFor(side: SideState, ctx: Pick<LedgerCtx, 'catalog' | 'prices' | 'unitValue'>): number {
-  return BALANCE.keep.baseHp + (BALANCE.keep.hpPerStableUnit * stableValue(side, ctx)) / ctx.unitValue;
+  return (BALANCE.keep.baseHp + (BALANCE.keep.hpPerStableUnit * stableValue(side, ctx)) / ctx.unitValue) * (1 + (side.keepBonus ?? 0));
 }
 
 /**
@@ -357,7 +357,7 @@ export function rebalancePools(side: SideState, prices: Readonly<Record<AssetId,
  * under 1, half its debt is repaid by seizing collateral worth that plus the
  * penalty.
  */
-export function liquidate(side: SideState, round: number, day: number, ctx: Pick<LedgerCtx, 'catalog' | 'prices'>): Liquidation[] {
+export function liquidate(side: SideState, round: number, day: number, ctx: Pick<LedgerCtx, 'catalog' | 'prices'>, penaltyCut = 0): Liquidation[] {
   const out: Liquidation[] = [];
   for (const protocol of ['lending', 'vault'] as const) {
     let acc = account(side, protocol, ctx);
@@ -367,7 +367,7 @@ export function liquidate(side: SideState, round: number, day: number, ctx: Pick
       liq ??= { round, day, protocol, repaid: 0, seized: [] };
       const repay = acc.debt * L.liquidationRepay;
       for (const p of side.portfolio.positions) if (p.protocol === protocol && p.kind === 'borrowed') p.qty -= qmul(p.qty, L.liquidationRepay);
-      const seizeShare = Math.min(1, (repay * (1 + L.liquidationPenalty)) / acc.collateral);
+      const seizeShare = Math.min(1, (repay * (1 + Math.max(0, L.liquidationPenalty - penaltyCut))) / acc.collateral);
       for (const p of side.portfolio.positions) {
         if (p.protocol !== protocol || p.kind !== 'supplied' || !ctx.catalog.asset(p.asset).collateral) continue;
         const qty = seizeShare >= 1 ? p.qty : qmul(p.qty, seizeShare);

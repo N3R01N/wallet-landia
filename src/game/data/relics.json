@@ -1,0 +1,29 @@
+{
+  "_note": "NFTs as relics (spec: 'NFTs as relics'). Tier from the collection's floor ÷ UNIT_VALUE; effects scale by the tier's multiplier. Curated collections by id (a sim id or a lower-case contract address); any other collection gets a generic relic by hashing its id.",
+  "tiers": [
+    { "id": "common", "name": "Common", "below": 1, "mult": 1 },
+    { "id": "rare", "name": "Rare", "below": 5, "mult": 1.5 },
+    { "id": "epic", "name": "Epic", "below": 25, "mult": 2 },
+    { "id": "legendary", "name": "Legendary", "below": null, "mult": 3 }
+  ],
+  "curated": {
+    "sim:punks": "punk-siege",
+    "0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb": "punk-siege",
+    "sim:apes": "ape-swarm",
+    "0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d": "ape-swarm",
+    "sim:artblocks": "art-range",
+    "0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270": "art-range"
+  },
+  "relics": {
+    "punk-siege": { "name": "Punk Banner", "effect": "siege", "value": 1, "text": "+{v} Siege to every unit" },
+    "ape-swarm": { "name": "Ape Totem", "effect": "swarm-hp", "value": 0.2, "text": "+{p} HP to Swarm units" },
+    "art-range": { "name": "Generative Lens", "effect": "ranged-range", "value": 1, "text": "+{v} range to Ranged units" },
+    "bull-banner": { "name": "Banner of the Bull", "effect": "bull-atk", "value": 0.05, "text": "+{p} ATK while the market is a Bull" },
+    "bear-pelt": { "name": "Bear Pelt", "effect": "bear-hp", "value": 0.08, "text": "+{p} HP while the market is a Bear" },
+    "masons-seal": { "name": "Mason's Seal", "effect": "keep-max", "value": 0.05, "text": "+{p} keep HP max" },
+    "gas-rebate": { "name": "Gas Rebate", "effect": "gas", "value": 0.25, "text": "−{p} gas per action" },
+    "liquidators-eye": { "name": "Liquidator's Eye", "effect": "liq-eye", "value": 0.02, "text": "Loan warnings a candle earlier; liquidation penalty −{pts} pts" },
+    "war-drum": { "name": "War Drum", "effect": "early-speed", "value": 0.1, "text": "+{p} speed for the first 10 s of battle" }
+  },
+  "generic": ["bull-banner", "bear-pelt", "masons-seal", "gas-rebate", "liquidators-eye", "war-drum"]
+}

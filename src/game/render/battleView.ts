@@ -12,6 +12,8 @@ import type { Stage } from '../../castle/scene/castleView.js';
 import { el } from '../../util/dom.js';
 import { FRAME_EVERY, METRES_PER_SPEED, WALK_CLIP_SPEED, type BattleRun } from '../core/battle.js';
 import { UNIT_TYPES } from '../core/catalog.js';
+import { ABILITY_NAME } from '../core/depth.js';
+import type { FieldMarkers } from './fieldMarkers.js';
 import { BALANCE } from '../config/balance.js';
 import type { Army, SideId } from '../core/types.js';
 import { UnitMesh } from './unitMeshes.js';
@@ -33,6 +35,25 @@ export interface BattleViewOptions {
   overlay: HTMLElement;
   /** A token's label for its banner. */
   symbol: (asset: string) => string;
+  /** The battlefield buildings' rings and banners, to play the captures on. */
+  markers?: FieldMarkers;
+}
+
+/** A moment of the battle shown as a toast: an ability cast, a liquidation blowing up. */
+interface Moment {
+  at: number;
+  text: string;
+  side: SideId;
+  shown: boolean;
+}
+
+/** A building's capture timeline: who was taking it from when, and when it changed hands. */
+interface CaptureStep {
+  at: number;
+  point: string;
+  kind: 'capturing' | 'capture' | 'stop';
+  side: SideId | null;
+  seconds: number;
 }
 
 interface Track {
@@ -50,6 +71,10 @@ export class BattleView {
   readonly #bars: THREE.InstancedMesh;
   readonly #barBack: THREE.InstancedMesh;
   readonly #labels = el('div', { class: 'siege-banners' });
+  readonly #toasts = el('div', { class: 'siege-toasts', 'aria-live': 'polite' });
+  #moments: Moment[] = [];
+  #captures: CaptureStep[] = [];
+  #owners: Record<string, SideId | null> = {};
   #run: BattleRun | null = null;
   #tracks: Track[] = [];
   #time = 0;
@@ -72,7 +97,7 @@ export class BattleView {
       this.#group.add(m);
     }
     this.#barBack.renderOrder = 4;
-    opts.overlay.append(this.#labels);
+    opts.overlay.append(this.#labels, this.#toasts);
   }
 
   /** Loads the meshes for these unit types (a missing model stands in as the Militia). */
@@ -101,7 +126,7 @@ export class BattleView {
   }
 
   /** Plays a run from its start; `onDone` when its last frame is reached. */
-  async play(run: BattleRun, armies: [Army, Army], onDone?: () => void): Promise<void> {
+  async play(run: BattleRun, armies: [Army, Army], onDone?: () => void, owners: Record<string, SideId | null> = {}): Promise<void> {
     await this.prepare(run.entities.map((e) => e.unit));
     this.#run = run;
     this.#time = 0;
@@ -109,13 +134,30 @@ export class BattleView {
     this.#onDone = onDone ?? null;
     this.#tracks = run.entities.map((_, i) => ({ strikes: [], death: Infinity, phase: (i * 0.37) % 1 }));
     const tickDt = 1 / BALANCE.battle.tickHz;
+    this.#moments = [];
+    this.#captures = [];
+    this.#owners = { ...owners };
+    const detonated = new Set<SideId>();
     for (const e of run.events) {
       if (e.t === 'attack') this.#tracks[e.id]?.strikes.push(e.tick * tickDt);
-      if (e.t === 'death') {
+      if (e.t === 'death' || e.t === 'vanish') {
         const track = this.#tracks[e.id];
         if (track) track.death = Math.min(track.death, e.tick * tickDt);
       }
+      if (e.t === 'side-ability') this.#moments.push({ at: e.tick * tickDt, text: `${ABILITY_NAME[e.ability]}!`, side: e.side, shown: false });
+      if (e.t === 'detonate') {
+        const side = run.entities[e.id]?.side;
+        if (side && !detonated.has(side)) {
+          detonated.add(side);
+          this.#moments.push({ at: e.tick * tickDt, text: '💥 Liquidated collateral blows up!', side, shown: false });
+        }
+      }
+      if (e.t === 'capturing') this.#captures.push({ at: e.tick * tickDt, point: e.point, kind: 'capturing', side: e.side, seconds: e.seconds });
+      if (e.t === 'capture') this.#captures.push({ at: e.tick * tickDt, point: e.point, kind: 'capture', side: e.side, seconds: 0 });
+      if (e.t === 'capture-stop') this.#captures.push({ at: e.tick * tickDt, point: e.point, kind: 'stop', side: null, seconds: 0 });
     }
+    this.#toasts.replaceChildren();
+    this.#opts.markers?.setOwners(this.#owners);
     this.#banners = [];
     this.#labels.replaceChildren();
     armies.forEach((army) =>
@@ -146,6 +188,7 @@ export class BattleView {
     this.#bars.count = 0;
     this.#barBack.count = 0;
     this.#labels.replaceChildren();
+    this.#toasts.replaceChildren();
     this.#banners = [];
   }
 
@@ -158,6 +201,7 @@ export class BattleView {
     (this.#barBack.material as THREE.Material).dispose();
     this.#group.removeFromParent();
     this.#labels.remove();
+    this.#toasts.remove();
   }
 
   readonly #m = new THREE.Matrix4();
@@ -190,6 +234,8 @@ export class BattleView {
       const x = fr[b0]! + (fr[b1]! - fr[b0]!) * a;
       const z = fr[b0 + 1]! + (fr[b1 + 1]! - fr[b0 + 1]!) * a;
       const hp = fr[b1 + 2]!;
+      // not on the field (a Flash Loan's units before and after the loan)
+      if (hp < 0 && fr[b0 + 2]! < 0) continue;
       const face = lerpAngle(fr[b0 + 3]!, fr[b1 + 3]!, a);
       const track = this.#tracks[i]!;
       const sinceDeath = t - track.death;
@@ -255,10 +301,36 @@ export class BattleView {
         b.el.textContent = `${b.label} ${sp.alive}`;
       }
     }
+    this.#playCaptures(t);
+    for (const mo of this.#moments) {
+      if (mo.shown || mo.at > t) continue;
+      mo.shown = true;
+      const toast = el('div', { class: `siege-toast siege-toast-${mo.side}` }, mo.text);
+      this.#toasts.append(toast);
+      setTimeout(() => toast.remove(), 2400);
+    }
     if (finished && !this.#done) {
       this.#done = true;
       this.#onDone?.();
     }
+  }
+
+  /** The rings fill as a side takes a building; a taken one turns its colour. */
+  #playCaptures(t: number): void {
+    const markers = this.#opts.markers;
+    if (!markers) return;
+    const owners = { ...this.#owners };
+    const taking = new Map<string, CaptureStep>();
+    for (const c of this.#captures) {
+      if (c.at > t) break;
+      if (c.kind === 'capture') {
+        owners[c.point] = c.side;
+        taking.delete(c.point);
+      } else if (c.kind === 'stop') taking.delete(c.point);
+      else taking.set(c.point, c);
+    }
+    markers.setOwners(owners);
+    for (const [id, c] of taking) if (c.side) markers.progress(id, c.side, (t - c.at) / c.seconds);
   }
 }
 

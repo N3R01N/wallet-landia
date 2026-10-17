@@ -500,3 +500,96 @@
   min-height: 38px;
   font-weight: 700;
 }
+
+/* ---------- depth (M5) ---------- */
+
+.siege-toasts {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.siege-toast {
+  padding: 6px 12px;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  animation: siege-toast 2.4s ease-out forwards;
+}
+
+.siege-toast-A {
+  background: rgba(63, 111, 168, 0.95);
+}
+
+.siege-toast-B {
+  background: rgba(184, 74, 50, 0.95);
+}
+
+@keyframes siege-toast {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  10%,
+  80% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.siege-field,
+.siege-powers {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0;
+  font-size: 0.8rem;
+}
+
+.siege-field-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px;
+  padding: 1px 4px;
+  border-left: 3px solid #b8ab92;
+}
+
+.siege-field-buff {
+  opacity: 0.7;
+}
+
+.siege-owner-yours {
+  border-left-color: #3f6fa8;
+}
+
+.siege-owner-theirs {
+  border-left-color: #b84a32;
+}
+
+.siege-relic {
+  padding: 1px 4px;
+}
+
+.siege-relic.empty {
+  opacity: 0.55;
+}
+
+.siege-tier-rare {
+  color: #2f6aa8;
+}
+
+.siege-tier-epic {
+  color: #7a3fa8;
+}
+
+.siege-tier-legendary {
+  color: #b07a12;
+  font-weight: 700;
+}

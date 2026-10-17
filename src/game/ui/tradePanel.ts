@@ -7,11 +7,11 @@
  */
 
 import { el } from '../../util/dom.js';
-import { BALANCE } from '../config/balance.js';
 import { STAKES_INTO, UNSTAKES_INTO } from '../core/catalog.js';
 import { qmul, qn } from '../core/fixed.js';
 import { account, holding, swapCostRate } from '../core/ledger.js';
 import { available, previewCommand, type Match } from '../core/match.js';
+import { warnAt } from './hud.js';
 import type { AssetId, Command } from '../core/types.js';
 
 type Action = 'swap' | 'stake' | 'unstake' | 'restake' | 'lpAdd' | 'lpRemove' | 'supply' | 'withdraw' | 'borrow' | 'repay' | 'slotRelic';
@@ -149,7 +149,7 @@ export class TradePanel {
     // one tap when a loan is in danger: repay half, or add collateral
     const warnings = (['lending', 'vault'] as const).flatMap((p) => {
       const acc = account(me, p, { catalog: m.catalog, prices: m.state.market.prices });
-      if (acc.debt <= 0 || acc.hf >= BALANCE.ledger.hfWarning) return [];
+      if (acc.debt <= 0 || acc.hf >= warnAt(m)) return [];
       const repay = el('button', { class: 'btn siege-repay', type: 'button' }, 'Repay half');
       repay.addEventListener('click', () => this.#rescue(p, 'repay'));
       const add = el('button', { class: 'btn siege-collateral', type: 'button' }, 'Add collateral');

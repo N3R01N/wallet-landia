@@ -7,7 +7,8 @@
 
 import type { CastlePlan, Placement, Rect } from '../../castle/scene/plan.js';
 import { TOLL_Z } from '../../castle/scene/plan.js';
-import type { BattleMap, LanePoint } from '../core/battle.js';
+import type { BattleMap, CapturePoint, LanePoint } from '../core/battle.js';
+import type { BuildingKind } from '../core/depth.js';
 
 /** Grass between the town's end and the enemy's moat. */
 const GAP = 14;
@@ -80,9 +81,68 @@ export function siegePlan(plan: CastlePlan): SiegePlan {
     { x: sign * flankX, z: zB - 6 },
     { x: sign * 4, z: zB },
   ];
-  const map: BattleMap = { lanes: [flank(-1), centre, flank(1)], gates: { A: gateA, B: gateB } };
+  const lanes: BattleMap['lanes'] = [flank(-1), centre, flank(1)];
+  const map: BattleMap = { lanes, gates: { A: gateA, B: gateB }, points: battlePoints(plan, lanes, zA, zB) };
   const field: Rect = { x0: Math.min(plan.town.x0, enemyMoat.x0), x1: Math.max(plan.town.x1, enemyMoat.x1), z0: plan.moat.z0, z1: enemyMoat.z1 };
   return { mirror, enemy, enemyKeep, enemyMoat, field, map, cleared };
+}
+
+/** A building's kind on the battlefield, from what it is in the town. */
+function kindOf(b: CastlePlan['buildings'][number]): BuildingKind | null {
+  if (/maker|sky/.test(b.protocol.id)) return 'vault';
+  if (b.protocol.category === 'lending') return 'bank';
+  if (b.protocol.category === 'dex') return 'exchange';
+  if (b.protocol.category === 'staking') return 'temple';
+  return null;
+}
+
+/**
+ * The battlefield buildings (spec: "3–5 neutral protocol buildings"): the
+ * bell tower on the plaza as the Oracle Tower, then the town's first Bank,
+ * Exchange, Temple and Vault; fill from the rest when fewer than three. Each
+ * is held at the nearest point of the nearest lane, between the two armies.
+ */
+export function battlePoints(plan: CastlePlan, lanes: BattleMap['lanes'], zA: number, zB: number): CapturePoint[] {
+  const out: CapturePoint[] = [];
+  const nearest = (x: number, z: number) => {
+    let best = { lane: 1, x, z, d: Infinity };
+    lanes.forEach((pts, lane) => {
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1]!;
+        const b = pts[i]!;
+        const dx = b.x - a.x;
+        const dz = b.z - a.z;
+        const len2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2));
+        const px = a.x + dx * t;
+        const pz = a.z + dz * t;
+        const d = Math.hypot(px - x, pz - z);
+        if (d < best.d) best = { lane, x: px, z: pz, d };
+      }
+    });
+    return best;
+  };
+  const add = (id: string, kind: BuildingKind, x: number, z: number) => {
+    const n = nearest(x, z);
+    // between the armies' front lines: a building by the gate is held a little up the street
+    out.push({ id, kind, x: round(n.x), z: round(Math.max(zA + 3, Math.min(zB - 3, n.z))), lane: n.lane });
+  };
+  add('tower', 'oracle', plan.tower.x, plan.tower.z);
+  const kinds = new Set<BuildingKind>();
+  const rest: CastlePlan['buildings'] = [];
+  for (const b of plan.buildings) {
+    const kind = kindOf(b);
+    if (kind && !kinds.has(kind)) {
+      kinds.add(kind);
+      add(b.protocol.id, kind, b.x, b.z);
+    } else rest.push(b);
+  }
+  // fewer than three: the next buildings stand in as Banks and Exchanges
+  for (const b of rest) {
+    if (out.length >= 3) break;
+    add(b.protocol.id, kindOf(b) ?? (out.length % 2 ? 'exchange' : 'bank'), b.x, b.z);
+  }
+  return out.slice(0, 5);
 }
 
 function round(v: number): number {

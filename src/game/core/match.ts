@@ -16,6 +16,7 @@ import { qtyFor } from './fixed.js';
 import { account, applyCommand, gasCost, holding, holdingsOf, liquidate, netValue, payYields, rebalancePools, refreshKeep, slash, type CommandResult, type LedgerCtx } from './ledger.js';
 import { drawNext, eventNum, initialMarket, runMarket } from './market.js';
 import { simulateBattle, type BattleMap, type BattleRun } from './battle.js';
+import { armyMods, canShutdown, homeAt, relicTotal, slottedRelics } from './depth.js';
 import type { BattleResolver } from './quickBattle.js';
 import type { Army, Asset, AssetId, Command, LoggedCommand, MatchState, Portfolio, SideId, SideState, Squad } from './types.js';
 
@@ -71,6 +72,8 @@ export class Match {
       suddenDeath: false,
       winner: null,
       lastBattle: null,
+      buildings: (setup.map?.points ?? []).map((p) => ({ id: p.id, kind: p.kind, owner: null })),
+      shutdowns: [],
     };
     for (const s of sides) {
       refreshKeep(s, this.#ctx());
@@ -83,14 +86,22 @@ export class Match {
     return this.state.sides[id === 'A' ? 0 : 1];
   }
 
-  #ctx(): LedgerCtx {
-    return { catalog: this.catalog, prices: this.state.market.prices, unitValue: this.state.unitValue, round: this.state.round, gasMult: this.state.market.gasMult };
+  /** The ledger's view of the match; for a side, its Gas Rebate relic counts. */
+  #ctx(side?: SideId): LedgerCtx {
+    const s = this.state;
+    const rebate = side ? Math.min(0.9, relicTotal(this.relics(side), 'gas')) : 0;
+    return { catalog: this.catalog, prices: s.market.prices, unitValue: s.unitValue, round: s.round, gasMult: s.market.gasMult * (1 - rebate) };
+  }
+
+  /** A side's slotted relics at today's floors. */
+  relics(side: SideId): ReturnType<typeof slottedRelics> {
+    return slottedRelics(this.side(side), this.state.market.nftFloors, this.state.unitValue);
   }
 
   /** A command from a player or an NPC; only in the Trade phase. */
   command(side: SideId, cmd: Command): CommandResult {
     if (this.state.phase !== 'trade') return { ok: false, reason: `no trading in the ${this.state.phase} phase` };
-    const r = applyCommand(this.side(side), cmd, this.#ctx());
+    const r = applyCommand(this.side(side), cmd, this.#ctx(side));
     if (r.ok) this.log.push({ round: this.state.round, side, cmd: structuredClone(cmd) });
     return r;
   }
@@ -107,12 +118,23 @@ export class Match {
   nextArmies(): [Army, Army] {
     const s = this.state;
     const ctx = { catalog: this.catalog, prices: s.market.prices, unitValue: s.unitValue };
-    return s.sides.map((side) => buildArmy(side, ctx, s.momentum === side.id ? 1 + BALANCE.match.momentumAtk : 1)) as [Army, Army];
+    return s.sides.map((side) => ({
+      ...buildArmy(side, ctx, s.momentum === side.id ? 1 + BALANCE.match.momentumAtk : 1),
+      mods: armyMods(side, this.relics(side.id), s.market.regime),
+    })) as [Army, Army];
   }
 
-  /** The battle's seed, round and map (for simulating it elsewhere). */
-  battleCtx(): { seed: string; round: number; map?: BattleMap } {
-    return { seed: this.state.seed, round: this.state.round, ...(this.#setup.map ? { map: this.#setup.map } : {}) };
+  /** The battle's seed, round and map, who holds the buildings, and where each side is at home (for simulating it elsewhere). */
+  battleCtx(): { seed: string; round: number; map?: BattleMap; owners: Record<string, SideId | null>; home: Record<SideId, string[]> } {
+    const s = this.state;
+    const home = (id: SideId) => s.buildings.filter((b) => homeAt(this.side(id), b.kind)).map((b) => b.id);
+    return {
+      seed: s.seed,
+      round: s.round,
+      ...(this.#setup.map ? { map: this.#setup.map } : {}),
+      owners: Object.fromEntries(s.buildings.map((b) => [b.id, b.owner])),
+      home: { A: home('A'), B: home('B') },
+    };
   }
 
   /**
@@ -170,6 +192,9 @@ export class Match {
     for (const side of s.sides) side.liquidations = [];
     const result = run ?? this.#resolve(this.armies, this.battleCtx());
     this.run = 'frames' in result ? (result as BattleRun) : null;
+    // the buildings' owners carry over into the next battle
+    if (this.run) for (const b of s.buildings) b.owner = this.run.owners[b.id] ?? b.owner;
+    for (const side of s.sides) side.buildingsOwned = s.buildings.filter((b) => b.owner === side.id).map((b) => b.id);
     // the state keeps the outcome only (the frames are the renderer's)
     s.lastBattle = { survivors: result.survivors, seconds: result.seconds };
   }
@@ -181,8 +206,24 @@ export class Match {
     if (!result) return;
     const mult = s.suddenDeath ? BALANCE.match.suddenDeathSiegeMult : 1;
     const [a, b] = s.sides;
-    b.keepHp = Math.max(0, b.keepHp - siegeDamage(result.survivors[0]) * mult);
-    a.keepHp = Math.max(0, a.keepHp - siegeDamage(result.survivors[1]) * mult);
+    const extra = (i: 0 | 1) => this.armies?.[i]?.mods?.siege ?? 0;
+    // Emergency Shutdown: once per match, a keep under 25% with a stable vault is immune for this Siege phase
+    s.shutdowns = [];
+    const immune = (x: SideState) => {
+      if (x.keepHp >= x.keepHpMax * BALANCE.keep.damageStates[2] || !canShutdown(x)) return false;
+      x.shutdownUsed = true;
+      s.shutdowns.push(x.id);
+      return true;
+    };
+    const hitB = siegeDamage(result.survivors[0], extra(0)) * mult;
+    const hitA = siegeDamage(result.survivors[1], extra(1)) * mult;
+    if (hitB > 0 && !immune(b)) b.keepHp = Math.max(0, b.keepHp - hitB);
+    if (hitA > 0 && !immune(a)) a.keepHp = Math.max(0, a.keepHp - hitA);
+    // the round's end: owned Vaults (+5% each) and a Mason's Seal raise the keep's max
+    for (const x of s.sides) {
+      x.keepBonus = 0.05 * s.buildings.filter((bl) => bl.kind === 'vault' && bl.owner === x.id).length + relicTotal(this.relics(x.id), 'keep-max');
+      refreshKeep(x, this.#ctx());
+    }
     if (a.keepHp <= 0 && b.keepHp <= 0) s.winner = 'draw';
     else if (b.keepHp <= 0) s.winner = 'A';
     else if (a.keepHp <= 0) s.winner = 'B';
@@ -216,7 +257,7 @@ export class Match {
     runMarket(s.market, s.seed, s.round, this.catalog, (candle) => {
       for (const side of s.sides) {
         rebalancePools(side, candle.close);
-        liquidate(side, s.round, candle.day, { catalog: this.catalog, prices: candle.close });
+        liquidate(side, s.round, candle.day, { catalog: this.catalog, prices: candle.close }, relicTotal(this.relics(side.id), 'liq-eye'));
       }
     });
     const event = s.market.current;
@@ -257,16 +298,17 @@ function newSide(id: SideId, portfolio: Portfolio, npc: SideState['npc'] | undef
     valueBeforeMarket: 0,
     liquidations: [],
     shutdownUsed: false,
+    keepBonus: 0,
   };
 }
 
-/** Keep damage from a side's survivors: each unit's Siege value (×3 for Siege units), scaled. */
-export function siegeDamage(survivors: readonly Squad[]): number {
+/** Keep damage from a side's survivors: each unit's Siege value (plus a relic's, ×3 for Siege units), scaled. */
+export function siegeDamage(survivors: readonly Squad[], extraSiege = 0): number {
   let total = 0;
   for (const s of survivors) {
     const u = UNIT_TYPES[s.unit];
     if (!u) continue;
-    total += s.count * u.siege * (u.role === 'siege' ? BALANCE.keep.siegeRoleMult : 1);
+    total += s.count * (u.siege + extraSiege) * (u.role === 'siege' ? BALANCE.keep.siegeRoleMult : 1);
   }
   return total * BALANCE.keep.siegeScale;
 }

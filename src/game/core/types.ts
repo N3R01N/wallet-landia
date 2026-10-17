@@ -120,6 +120,8 @@ export interface SideState {
   liquidations: Liquidation[];
   /** Emergency Shutdown already used this match. */
   shutdownUsed: boolean;
+  /** Keep HP max bonus (owned Vaults, a Mason's Seal): +this share. */
+  keepBonus: number;
 }
 
 export interface Liquidation {
@@ -196,6 +198,10 @@ export interface MatchState {
   winner: SideId | 'draw' | null;
   /** The last battle's result. */
   lastBattle: BattleResult | null;
+  /** The battlefield buildings and who holds them (ownership persists from battle to battle). */
+  buildings: { id: string; kind: import('./depth.js').BuildingKind; owner: SideId | null }[];
+  /** Sides whose Emergency Shutdown saved their keep in the last Siege phase. */
+  shutdowns: SideId[];
 }
 
 type Qty = bigint;
@@ -230,6 +236,8 @@ export interface Army {
   squads: Squad[];
   /** ATK multiplier for the whole army (Momentum, buffs). */
   atkMult: number;
+  /** Relics and protocol abilities (core/depth.ts); none: a plain army. */
+  mods?: import('./depth.js').ArmyMods;
 }
 
 export interface BattleResult {

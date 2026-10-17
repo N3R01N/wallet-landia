@@ -14,6 +14,7 @@ import { account, holdingsOf, positionValue } from '../core/ledger.js';
 import { CALM_RUMOR, EVENTS } from '../core/market.js';
 import type { Match } from '../core/match.js';
 import type { AssetId, Regime, SideId } from '../core/types.js';
+import { ABILITY_NAME, BUILDING_BUFF, BUILDING_NAME, abilitiesOf, canShutdown, homeAt, relicOf } from '../core/depth.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const usd = (n: number) => (Math.abs(n) >= 1000 ? `$${Math.round(n).toLocaleString('en-US')}` : `$${n.toFixed(n < 10 ? 2 : 0)}`);
@@ -103,7 +104,7 @@ export function gauges(m: Match, side: SideId = 'A'): HTMLElement | null {
     { class: 'siege-gauges' },
     ...loans.map((a) => {
       const hf = a.hf;
-      const level = hf < 1.05 ? 'danger' : hf < BALANCE.ledger.hfWarning ? 'warn' : 'ok';
+      const level = hf < 1.05 ? 'danger' : hf < warnAt(m, side) ? 'warn' : 'ok';
       const fill = Math.max(0, Math.min(1, (hf - 1) / 1.5));
       return el(
         'div',
@@ -140,4 +141,51 @@ export function portfolio(m: Match, side: SideId = 'A'): HTMLElement {
       );
     });
   return el('table', { class: 'siege-portfolio' }, el('tbody', {}, ...rows));
+}
+
+/** The battlefield buildings: who holds each, what it gives its holder, and where you have home advantage. */
+export function fieldPanel(m: Match, side: SideId = 'A'): HTMLElement | null {
+  const bs = m.state.buildings;
+  if (bs.length === 0) return null;
+  const me = m.side(side);
+  return el(
+    'div',
+    { class: 'siege-field' },
+    el('strong', {}, 'Battlefield'),
+    ...bs.map((b) => {
+      const owner = b.owner === null ? 'neutral' : b.owner === side ? 'yours' : 'theirs';
+      const name = b.id === 'tower' ? '' : ` · ${b.id}`;
+      return el(
+        'div',
+        { class: `siege-field-row siege-owner-${owner}`, title: BUILDING_BUFF[b.kind] },
+        el('span', {}, `${BUILDING_NAME[b.kind]}${name}`),
+        el('span', { class: 'siege-field-buff' }, BUILDING_BUFF[b.kind]),
+        el('span', { class: 'siege-field-owner' }, owner, homeAt(me, b.kind) ? ' · home' : ''),
+      );
+    }),
+  );
+}
+
+/** Your protocol abilities (from your positions) and slotted relics, at today's tiers. */
+export function powersPanel(m: Match, side: SideId = 'A'): HTMLElement | null {
+  const me = m.side(side);
+  const abilities = abilitiesOf(me).map((a) => ABILITY_NAME[a]);
+  if (canShutdown(me)) abilities.push(ABILITY_NAME['emergency-shutdown']);
+  if (abilities.length === 0 && me.portfolio.nfts.length === 0) return null;
+  return el(
+    'div',
+    { class: 'siege-powers' },
+    abilities.length > 0 ? el('div', {}, el('strong', {}, 'Abilities: '), abilities.join(', ')) : null,
+    ...me.portfolio.relics.map((slot, i) => {
+      if (!slot) return el('div', { class: 'siege-relic empty' }, `Relic slot ${i + 1}: empty`);
+      const nft = me.portfolio.nfts.find((n) => n.collection === slot.nft);
+      const r = nft ? relicOf(nft.collection, m.state.market.nftFloors[nft.collection] ?? nft.floor, m.state.unitValue) : null;
+      return r ? el('div', { class: `siege-relic siege-tier-${r.tier}` }, `Relic ${i + 1}: ${r.name} (${r.tierName}) · ${r.text}`) : null;
+    }),
+  );
+}
+
+/** HF under this warns; the Liquidator's Eye warns a candle earlier. */
+export function warnAt(m: Match, side: SideId = 'A'): number {
+  return BALANCE.ledger.hfWarning + (m.relics(side).some((r) => r.effect === 'liq-eye') ? 0.1 : 0);
 }

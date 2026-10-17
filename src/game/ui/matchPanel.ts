@@ -21,7 +21,9 @@ import type { Command, SideId } from '../core/types.js';
 import { BattleView } from '../render/battleView.js';
 import { tradeErrand } from '../render/tradeCouriers.js';
 import { BattleClient } from '../sim/battleClient.js';
-import { gauges, portfolio, regimeBadge, rumorCard, ticker } from './hud.js';
+import { fieldPanel, gauges, portfolio, powersPanel, regimeBadge, rumorCard, ticker } from './hud.js';
+import { FieldMarkers } from '../render/fieldMarkers.js';
+import { weatherFor, type Weather } from '../../castle/world/sky.js';
 import { TradePanel } from './tradePanel.js';
 
 /** The castle view, as far as a match uses it. */
@@ -32,7 +34,14 @@ export interface MatchScene {
   focusAt(x: number, z: number, zoom?: number): void;
   readonly plan: { buildings: BuildingPlacement[] };
   sendNow(errand: Errand): void;
+  setWeather(w: Weather): void;
 }
+
+/** The weather a market event brings over the town (spec: "Battlefield look"). */
+const EVENT_WEATHER: Partial<Record<string, Weather>> = {
+  'black-swan': { rain: 1, gloom: 0.85, clouds: 1, shine: 0 },
+  'bull-run': { rain: 0, gloom: 0, clouds: 0.05, shine: 1 },
+};
 
 export interface MatchPanelOptions {
   match: Match;
@@ -55,6 +64,8 @@ export class MatchPanel {
   readonly #trade: TradePanel;
   #scene: MatchScene | null = null;
   #view: BattleView | null = null;
+  #markers: FieldMarkers | null = null;
+  readonly #props: THREE.Object3D[] = [];
   #busy = false;
   #note = '';
   /** The Trade phase's seconds left, and whether its clock is stopped. */
@@ -64,6 +75,8 @@ export class MatchPanel {
   #day = 7;
   #clock: ReturnType<typeof setInterval> | null = null;
   #showPortfolio = false;
+  /** Who held the buildings as the last battle began (its replay starts from there). */
+  #ownersBefore: Record<string, SideId | null> = {};
 
   constructor(opts: MatchPanelOptions) {
     this.#opts = opts;
@@ -78,12 +91,17 @@ export class MatchPanel {
   /** The castle view the match plays in (again after every rebuild of the view). */
   attach(scene: MatchScene): void {
     this.#view?.dispose();
+    this.#markers?.dispose();
     this.#scene = scene;
     const m = this.match;
+    this.#markers = new FieldMarkers(scene.stage());
+    const points = m.battleCtx().map?.points ?? [];
+    void this.#markers.place(points).then(() => this.#markers?.setOwners(m.battleCtx().owners));
     this.#view = new BattleView({
       stage: scene.stage(),
       overlay: scene.element,
       symbol: (asset) => (m.catalog.has(asset) ? m.catalog.asset(asset).symbol : asset),
+      markers: this.#markers,
     });
     // the meshes load while the player trades
     void this.#view.prepare(['militia', 'paladin.eth', 'archer.oracle']);
@@ -95,6 +113,10 @@ export class MatchPanel {
     this.#stopClock();
     this.#view?.dispose();
     this.#view = null;
+    this.#markers?.dispose();
+    this.#markers = null;
+    this.#clearProps();
+    this.#scene?.setWeather(weatherFor(null));
     this.#client.dispose();
   }
 
@@ -123,7 +145,7 @@ export class MatchPanel {
       button('⏩ Skip', 'siege-skip', () => this.#endMarket());
     }
     if (s.phase === 'trade') {
-      body.push(ticker(m), rumorCard(m), gauges(m));
+      body.push(ticker(m), rumorCard(m), gauges(m), powersPanel(m), fieldPanel(m));
       if (s.market.gasMult > 1) body.push(el('p', { class: 'siege-warning' }, `⛽ Gas spike: every action costs ${s.market.gasMult}× gas this round.`));
       const toggle = el('button', { class: 'btn siege-portfolio-toggle', type: 'button', 'aria-expanded': String(this.#showPortfolio) }, this.#showPortfolio ? '▾ Your portfolio' : '▸ Your portfolio');
       toggle.addEventListener('click', () => {
@@ -144,11 +166,12 @@ export class MatchPanel {
       });
     }
     if (s.phase === 'siege') {
+      body.push(fieldPanel(m));
       button(s.winner ? 'See the result' : 'Next round', 'siege-next', () => this.#nextRound());
       // the run is the battle: played again from it, it plays out the same
       const run = m.run;
       const armies = m.armies;
-      if (run && armies) button('↺ Replay the battle', 'siege-replay', () => void this.#view?.play(run, armies));
+      if (run && armies) button('↺ Replay the battle', 'siege-replay', () => void this.#view?.play(run, armies, undefined, this.#ownersBefore));
     }
     if (s.phase === 'ended') button('New match', 'siege-new', () => this.#opts.onLeave());
     const leave = el('button', { class: 'btn siege-leave', type: 'button' }, 'Leave the match');
@@ -194,6 +217,7 @@ export class MatchPanel {
   #openMarket(): void {
     const m = this.match;
     const ev = m.state.market.current;
+    this.#eventLook(ev?.id ?? null);
     const liq = m.side('A').liquidations;
     this.#note = [
       ev ? `This week: ${EVENTS[ev.id].name}.` : 'A quiet week on the market.',
@@ -233,7 +257,9 @@ export class MatchPanel {
     m.command('B', { t: 'endTrade' });
     this.render();
     const armies = m.nextArmies();
-    const run = await this.#client.run(armies, m.battleCtx());
+    const ctx = m.battleCtx();
+    this.#ownersBefore = ctx.owners;
+    const run = await this.#client.run(armies, ctx);
     m.advance(run);
     this.#busy = false;
     const units = armies.map(unitCount);
@@ -241,7 +267,7 @@ export class MatchPanel {
     this.render();
     const c = this.#opts.centre;
     this.#scene?.focusAt(c.x, c.z, 0.55);
-    await this.#view?.play(run, armies, () => this.#siege());
+    await this.#view?.play(run, armies, () => this.#siege(), this.#ownersBefore);
   }
 
   #siege(): void {
@@ -251,6 +277,8 @@ export class MatchPanel {
     m.advance();
     const after = m.state.sides.map((s) => s.keepHp);
     this.#note = `Siege: your survivors deal ${Math.round(before[1]! - after[1]!)} to the enemy keep, theirs ${Math.round(before[0]! - after[0]!)} to yours.`;
+    for (const id of m.state.shutdowns) this.#note += ` 🛡 ${id === 'A' ? 'Your' : 'The enemy'} vault called an Emergency Shutdown: the keep took no damage.`;
+    this.#markers?.setOwners(m.battleCtx().owners);
     this.#showDamage();
     this.render();
   }
@@ -271,6 +299,38 @@ export class MatchPanel {
     const m = this.match;
     if (scene) scene.sendNow(tradeErrand(m, cmd, scene.plan.buildings, gasCost({ unitValue: m.state.unitValue, gasMult: m.state.market.gasMult })));
     this.render();
+  }
+
+  /** What the week's event looks like on the town: a storm, golden light, a cart of airdropped goods at each gate. */
+  #eventLook(event: string | null): void {
+    const scene = this.#scene;
+    if (!scene) return;
+    scene.setWeather(EVENT_WEATHER[event ?? ''] ?? weatherFor(null));
+    this.#clearProps();
+    const gates = this.match.battleCtx().map?.gates;
+    if (event === 'airdrop' && gates) {
+      void scene
+        .stage()
+        .load('prop.cart')
+        .then((cart) => {
+          if (!cart || !this.#scene) return;
+          for (const [g, dir] of [
+            [gates.A, 1],
+            [gates.B, -1],
+          ] as const) {
+            const c = cart.scene.clone(true);
+            c.position.set(g.x + 2.5, 0, g.z + dir * 3);
+            c.rotation.y = dir > 0 ? 0.4 : Math.PI + 0.4;
+            scene.stage().scene.add(c);
+            this.#props.push(c);
+          }
+        });
+    }
+  }
+
+  #clearProps(): void {
+    for (const p of this.#props) p.removeFromParent();
+    this.#props.length = 0;
   }
 
   #startClock(seconds: number, fn: () => void): void {
