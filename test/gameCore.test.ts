@@ -61,10 +61,10 @@ describe('deterministic maths', () => {
 
 describe('ArmyBuilder', () => {
   it('count = floor(value / (UNIT_VALUE × costMult)), with dust making no units', () => {
-    // ETH Paladin costMult 2: $1,000 at UNIT_VALUE 100 → 5 units; PEPE frogs costMult 0.4: $100 → 2 units
+    // ETH Paladin costMult 2: $1,000 at UNIT_VALUE 100 → 5 units; PEPE frogs (costMult from units.json): $130 → 2 units at 0.6
     const s = side([
       { asset: 'eth', qty: q(1000 / 3000), kind: 'spot' },
-      { asset: 'pepe', qty: q(100 / prices.pepe!), kind: 'spot' },
+      { asset: 'pepe', qty: q(130 / prices.pepe!), kind: 'spot' },
       // $20 of LINK: under the dust line of 0.25 × 100
       { asset: 'link', qty: q(20 / prices.link!), kind: 'spot' },
       { asset: 'usdc', qty: q(5000), kind: 'spot' },
@@ -348,12 +348,12 @@ describe('MatchController', () => {
     expect(m.state.momentum).toBe(expected);
   });
 
-  it('siege damage: survivors’ Siege values, ×3 for Siege units', () => {
+  it("siege damage: survivors’ Siege values, more for Siege units", () => {
     const d = siegeDamage([
       { asset: 'eth', unit: 'paladin.eth', count: 10, stacks: [] },
       { asset: 'wbtc', unit: 'titan.bitcoin', count: 2, stacks: [] },
     ]);
-    expect(d).toBeCloseTo((10 * 2 + 2 * 6 * 3) * BALANCE.keep.siegeScale, 9);
+    expect(d).toBeCloseTo((10 * 2 + 2 * 6 * BALANCE.keep.siegeRoleMult) * BALANCE.keep.siegeScale, 9);
   });
 
   it('starting armies: the bigger side fields about 120 units’ worth (cheap units count for less)', () => {

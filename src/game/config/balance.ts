@@ -38,9 +38,14 @@ export const BALANCE = {
      * Keep damage per point of Siege. Not in the spec: a stand-in until the
      * M7 balance pass, so a match runs 5–7 rounds instead of one.
      */
-    siegeScale: 0.25,
+    siegeScale: 0.22,
     /** Siege-role units deal this many times their Siege value to the keep. */
-    siegeRoleMult: 3,
+    siegeRoleMult: 1.5,
+    /**
+     * Not in the spec (M7 balance): siege damage grows each round by this share
+     * (round 7 hits 1 + 6 × this), so defensive matches end before sudden death.
+     */
+    siegeRoundGrowth: 0.35,
   },
 
   market: {

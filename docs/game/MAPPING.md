@@ -130,7 +130,8 @@ Points the spec left open, settled here (change in config if needed):
 - **Battlefield buildings** (`render/siegePlan.ts` `battlePoints`): the plaza's bell tower is the **Oracle Tower** (no new asset needed), then the town's first Bank (lending), Exchange (dex), Temple (staking) and Vault (Maker/Sky); 3–5 in all, each held at the nearest point of a lane. Capture: 5+ units uncontested for 4 s (2 s at home); owners carry over between battles. Buffs: Bank +10% ATK, Exchange +20% speed, Temple heals 1 HP/s, Vault +5% keep max at the round's end, Oracle +1 range for Ranged. Rings fill in the capturing side's colour; the owner's banner stands beside.
 - **Relics:** tier from floor ÷ UNIT_VALUE (×1/1.5/2/3); curated collections (a punk-style PFP → +Siege, an ape-style PFP → Swarm HP, generative art → Ranged range) by sim id or contract; any other collection a generic relic by hash (Banner of the Bull, Bear Pelt, Mason's Seal, Gas Rebate, Liquidator's Eye, War Drum).
 - **Events on the town:** a storm for the Black Swan, golden light for a Bull Run, a cart at both gates for an Airdrop, slowed couriers for a Gas Spike; the rest in the HUD's notes.
-- **Not done:** the Rug Pull's squad fleeing off the map and lightning on the Temple for Slashing (the notes say what happened); hit sparks and projectiles (no VFX models yet).
+- **Effects** (`render/battleFx.ts`, batch 23): arrows from archers, bolts from mages and the Ghost Lender, sparks on one melee hit in three, a puff when a frog pops or a Flash Loan's units vanish, the detonation, siege impacts at the walls after the Siege phase, lightning on the Temple for Slashing. Capped per kind.
+- **Not done:** the Rug Pull's squad fleeing off the map (the notes say what happened).
 
 ## NPC opponents (M6)
 
@@ -141,3 +142,14 @@ Points the spec left open, settled here (change in config if needed):
 - **Yield Farmer:** pools, supply, stake and restake (abilities and home advantage).
 - **Difficulty:** easy picks at random among what suits it and ignores rumors and its loans; normal heeds rumors half the time and repays under HF 1.15; hard always heeds them, keeps HF above 1.4, and counter-picks the player's largest role.
 - It sees only what a player sees (the public rumor, not the coming event). Its commands go into the same log, so a replay plays them back as plain commands. The HUD says what it did each round.
+
+## Balance (M7)
+
+`sim/headlessRunner.ts`, `npm run siege:balance -- [per pairing] [shards]` (matches split over processes), report in `docs/game/BALANCE.md`. Changes from the spec's numbers, all in config:
+- **Siege damage grows each round** (`keep.siegeRoundGrowth` 0.35: round 7 hits 3.1×) and `keep.siegeScale` 0.22, so matches last 5–7 rounds and rarely reach sudden death.
+- **Siege-role multiplier 1.5** (spec: ×3): the Titan's Siege 6 already says it's a siege unit; at ×3 the whale's Titans won almost every match.
+- **Memecoin swarms dearer** (costMult Frog 0.65, Shiba 0.7, Goblin 0.7; spec 0.4/0.5/0.5): at the spec's numbers 100% memecoins won ~74%.
+- **Stablecoins borrowed at a lending protocol aren't walls** (a vault's minted ones are): borrowing stables and holding them raised walls for free, and looping supply and borrow made a tower of leverage.
+- **NPCs take one loan a round** (a degen two).
+
+**What tuning can't reach: the Stable Maxi.** Battles go to the bigger army (squads fight in line, so a side with half the army loses with almost nothing left), and a stable maxi has 40% of its value in its army. It loses every battle, never gets survivors to the enemy keep, and its walls only delay the end: in sudden death the side that never took damage has the higher HP %. So it wins well under the spec's 40% against any archetype. The spec's "keep has no attack of its own in v1" leaves no lever for walls to fight back; this needs a design decision (see the report).

@@ -35,7 +35,7 @@ interface Personality {
 const PERSONALITY: Record<Exclude<Archetype, 'balanced'>, Personality> = {
   degen: { army: 1.4, keep: 0.1, protocol: 0.2, hfFloor: 1.05, targets: ['pepe', 'shib', 'ldo', 'ens'], activity: 1 },
   whale: { army: 0.8, keep: 0.4, protocol: 0.2, hfFloor: 2, targets: ['wbtc', 'eth'], activity: 0.35 },
-  'stable-maxi': { army: 0.3, keep: 1.4, protocol: 0.5, hfFloor: 2, targets: ['usdc', 'dai', 'eth'], activity: 0.8 },
+  'stable-maxi': { army: 0.6, keep: 0.8, protocol: 0.5, hfFloor: 2, targets: ['usdc', 'dai', 'eth'], activity: 0.8 },
   'yield-farmer': { army: 0.7, keep: 0.4, protocol: 1.5, hfFloor: 1.5, targets: ['eth', 'link', 'usdc'], activity: 1 },
 };
 
@@ -70,7 +70,9 @@ export function npcTrade(m: Match, side: SideId): Command[] {
   const done: Command[] = [];
   if (rng() > personality.activity && !urgent(m, side, diff.hfManage)) return done;
   for (let i = 0; i < diff.actions; i++) {
-    const cands = candidates(m, side, npc.archetype, diff, rng).filter((c) => !done.some((d) => keyOf(d) === c.key));
+    // a loan a round (a degen, who maxes leverage, two): no looping collateral and debt into a tower of leverage
+    const borrowed = done.filter((d) => d.t === 'borrow').length >= (npc.archetype === 'degen' ? 2 : 1);
+    const cands = candidates(m, side, npc.archetype, diff, rng).filter((c) => !done.some((d) => keyOf(d) === c.key) && !(borrowed && c.cmd.t === 'borrow'));
     if (cands.length === 0) break;
     cands.sort((a, b) => b.score - a.score || (a.key < b.key ? -1 : 1));
     const good = cands.filter((c) => c.score > 0);
@@ -165,12 +167,16 @@ function candidates(m: Match, side: SideId, archetype: Archetype, diff: (typeof 
   if (archetype === 'whale' && s.market.current?.id === 'black-swan') {
     for (const from of stables) for (const to of ['wbtc', 'eth']) consider({ t: 'swap', from, to, qty: qmul(available(m, side, 'swap', from), 0.5) }, 3);
   }
-  // a stable maxi moves into risk only when ahead on keep HP
+  // a stable maxi moves into risk only when ahead on keep HP, and adds to its walls only when warned of a crash
   if (archetype === 'stable-maxi') {
-    const ahead = me.keepHp / me.keepHpMax > s.sides.find((x) => x.id !== side)!.keepHp / s.sides.find((x) => x.id !== side)!.keepHpMax;
+    const other = s.sides.find((x) => x.id !== side)!;
+    const ahead = me.keepHp / me.keepHpMax > other.keepHp / other.keepHpMax;
     for (let i = out.length - 1; i >= 0; i--) {
       const c = out[i]!;
-      if (!ahead && c.cmd.t === 'swap' && m.catalog.asset(c.cmd.from).isStable) out.splice(i, 1);
+      if (c.cmd.t !== 'swap') continue;
+      const intoRisk = m.catalog.asset(c.cmd.from).isStable && !m.catalog.asset(c.cmd.to).isStable;
+      const intoWalls = !m.catalog.asset(c.cmd.from).isStable && m.catalog.asset(c.cmd.to).isStable;
+      if ((intoRisk && !ahead) || (intoWalls && !crash)) out.splice(i, 1);
     }
   }
 

@@ -19,7 +19,8 @@
     "check:full": "tsc --noEmit && vitest run && playwright test",
     "assets:versions": "vite-node scripts/asset-versions-cli.ts",
     "tvl": "vite-node scripts/fetch-tvl.ts",
-    "logos": "vite-node scripts/fetch-logos.ts"
+    "logos": "vite-node scripts/fetch-logos.ts",
+    "siege:balance": "vite-node scripts/siege-balance.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",

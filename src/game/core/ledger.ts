@@ -81,11 +81,20 @@ export function holdingsOf(side: SideState): { asset: AssetId; qty: bigint; kind
   return out;
 }
 
-/** Dollars in stablecoins (any position but debt): the walls. */
+/**
+ * Dollars in stablecoins: the walls. Stablecoins borrowed at a lending
+ * protocol don't build walls (they are owed: borrowing them and holding them
+ * changes nothing); a vault's minted stablecoins do (spec: "raises keep HP
+ * without selling").
+ */
 export function stableValue(side: SideState, ctx: Pick<LedgerCtx, 'catalog' | 'prices'>): number {
-  return holdingsOf(side)
+  const held = holdingsOf(side)
     .filter((h) => ctx.catalog.asset(h.asset).isStable)
     .reduce((s, h) => s + value(h.qty, ctx.prices[h.asset] ?? 0), 0);
+  const owed = side.portfolio.positions
+    .filter((p) => p.kind === 'borrowed' && p.protocol === 'lending' && ctx.catalog.asset(p.asset).isStable)
+    .reduce((s, p) => s + value(p.qty, ctx.prices[p.asset] ?? 0), 0);
+  return Math.max(0, held - owed);
 }
 
 // ---------- the keep ----------

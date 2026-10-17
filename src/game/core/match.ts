@@ -51,6 +51,8 @@ export class Match {
   armies: [Army, Army] | null = null;
   /** The current battle in full, when it came from the simulation (for the renderer). */
   run: BattleRun | null = null;
+  /** Liquidations so far this match, both sides (the balance report counts them). */
+  liquidationCount = 0;
 
   constructor(setup: MatchSetup, resolve: BattleResolver = simulate) {
     this.#setup = structuredClone(setup) as MatchSetup;
@@ -204,7 +206,7 @@ export class Match {
     s.phase = 'siege';
     const result = s.lastBattle;
     if (!result) return;
-    const mult = s.suddenDeath ? BALANCE.match.suddenDeathSiegeMult : 1;
+    const mult = (s.suddenDeath ? BALANCE.match.suddenDeathSiegeMult : 1) * (1 + BALANCE.keep.siegeRoundGrowth * (Math.min(s.round, BALANCE.match.rounds) - 1));
     const [a, b] = s.sides;
     const extra = (i: 0 | 1) => this.armies?.[i]?.mods?.siege ?? 0;
     // Emergency Shutdown: once per match, a keep under 25% with a stable vault is immune for this Siege phase
@@ -257,7 +259,7 @@ export class Match {
     runMarket(s.market, s.seed, s.round, this.catalog, (candle) => {
       for (const side of s.sides) {
         rebalancePools(side, candle.close);
-        liquidate(side, s.round, candle.day, { catalog: this.catalog, prices: candle.close }, relicTotal(this.relics(side.id), 'liq-eye'));
+        this.liquidationCount += liquidate(side, s.round, candle.day, { catalog: this.catalog, prices: candle.close }, relicTotal(this.relics(side.id), 'liq-eye')).length;
       }
     });
     const event = s.market.current;
