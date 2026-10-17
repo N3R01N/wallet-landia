@@ -73,13 +73,18 @@ describe('NPC opponents', () => {
     expect(hard.some((x) => x.t === 'swap' && x.to === 'usdc')).toBe(true);
   });
 
-  it('a degen borrows; a stable maxi sits behind its walls', () => {
+  it('a degen borrows; a stable maxi trades walls into army while its keep is safe, and turtles when it isn’t', () => {
     const degen = npcMatch('npc-lev', 'degen', 'whale', 'hard');
     const moves = npcTrade(degen, 'A');
     expect(moves.some((x) => x.t === 'supply' || x.t === 'borrow')).toBe(true);
-    const maxi = npcMatch('npc-maxi', 'stable-maxi', 'whale', 'hard');
-    const mm = npcTrade(maxi, 'A');
-    // not ahead on keep HP: no stables go into risk
-    expect(mm.every((x) => !(x.t === 'swap' && c.asset(x.from).isStable))).toBe(true);
+    // safe (level on keep HP): stables go into ETH, stETH or WBTC
+    const safe = npcMatch('npc-maxi', 'stable-maxi', 'whale', 'hard');
+    const sm = npcTrade(safe, 'A');
+    expect(sm.some((x) => x.t === 'swap' && c.asset(x.from).isStable && !c.asset(x.to).isStable)).toBe(true);
+    // in danger (under 60% and behind): no stables go into risk
+    const danger = npcMatch('npc-maxi', 'stable-maxi', 'whale', 'hard');
+    danger.side('A').keepHp = danger.side('A').keepHpMax * 0.4;
+    const dm = npcTrade(danger, 'A');
+    expect(dm.every((x) => !(x.t === 'swap' && c.asset(x.from).isStable && !c.asset(x.to).isStable))).toBe(true);
   });
 });

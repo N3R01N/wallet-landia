@@ -146,11 +146,13 @@ Points the spec left open, settled here (change in config if needed):
 ## Balance (M7)
 
 `sim/headlessRunner.ts`, `npm run siege:balance -- [per pairing] [shards]` (matches split over processes), report in `docs/game/BALANCE.md`. Changes from the spec's numbers, all in config:
-- **Siege damage grows each round** (`keep.siegeRoundGrowth` 0.6: round 7 hits 4.6×) and `keep.siegeScale` 0.22, so matches last 5–7 rounds and rarely reach sudden death.
+- **Siege damage grows each round** (`keep.siegeRoundGrowth` 0.35: round 7 hits 3.1×) and `keep.siegeScale` 0.22, so matches last 5–7 rounds and rarely reach sudden death.
 - **Walls shoot back** (the user's call, 2026-10-17; the spec had no keep attack in v1): in the Siege phase the walls' archers deal `keep.wallVolley` (4) HP per UNIT_VALUE of stablecoins to the attacking survivors before they hit, the most fragile first, at most `keep.wallMaxShare` (70%) of them, so a keep of nothing but walls is still always hit. Arrows fly from the walls; the HUD says how many fell.
 - **Siege-role multiplier 1.5** (spec: ×3): the Titan's Siege 6 already says it's a siege unit; at ×3 the whale's Titans won almost every match.
-- **Memecoin swarms dearer** (costMult Frog 0.65, Shiba 0.7, Goblin 0.7; spec 0.4/0.5/0.5): at the spec's numbers 100% memecoins won ~74%.
+- **Memecoin swarms dearer** (costMult Frog 0.55, Shiba 0.6, Goblin 0.6; spec 0.4/0.5/0.5): at the spec's numbers 100% memecoins won ~74%.
 - **Stablecoins borrowed at a lending protocol aren't walls** (a vault's minted ones are): borrowing stables and holding them raised walls for free, and looping supply and borrow made a tower of leverage.
 - **NPCs take one loan a round** (a degen two).
 
-**What tuning can't reach: the Stable Maxi.** Battles go to the bigger army (squads fight in line, so a side with half the army loses with almost nothing left), and a stable maxi has 40% of its value in its army. Its walls now shoot back and it takes much less damage, but it still never gets survivors to the enemy keep, so it can't bring a keep down, and in sudden death the side that took no damage has the higher HP %. It wins well under the spec's 40% against the Whale and the Yield Farmer. Winning as a turtle needs a way for walls (or a turtle's choices) to damage the enemy keep, which is a further design decision.
+**The Stable Maxi trades walls into army** (the user's call, 2026-10-17): while its keep is safe (level or ahead on keep HP, or above 60%), it weighs army over walls and moves up to half of its stables a round into ETH, stETH and WBTC; in danger it turtles again. Before this it never won a battle, so it could never bring a keep down.
+
+**Still open:** the pairwise target (no archetype above 60% against another). The Yield Farmer (pools, staking and lending: every protocol ability and home advantage) is now the strongest, and the Whale still beats the Stable Maxi. See docs/game/BALANCE.md.

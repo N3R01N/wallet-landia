@@ -45,6 +45,8 @@ const DIFFICULTY: Record<Difficulty, { actions: number; rumor: number; hfManage:
   hard: { actions: 5, rumor: 1, hfManage: 1.4, counterPick: true, random: false },
 };
 
+/** A stable maxi's keep is safe above this share of its HP (or level with the enemy's). */
+const MAXI_SAFE = 0.6;
 /** Rumors that warn of a fall: de-risk into stables. */
 const CRASHES: readonly EventId[] = ['black-swan', 'depeg', 'rug-pull', 'slashing'];
 /** The role that beats each role (counter triangle: Cavalry > Ranged > Melee > Cavalry). */
@@ -102,7 +104,11 @@ function keyOf(cmd: Command): string {
 function candidates(m: Match, side: SideId, archetype: Archetype, diff: (typeof DIFFICULTY)[Difficulty], rng: Rng): Candidate[] {
   const s = m.state;
   const me = m.side(side);
-  const p = PERSONALITY[archetype === 'balanced' ? 'whale' : archetype];
+  const base = PERSONALITY[archetype === 'balanced' ? 'whale' : archetype];
+  const other = s.sides.find((x) => x.id !== side)!;
+  // a stable maxi whose keep is safe (ahead or level on keep HP, or above 60%) turns walls into army
+  const safe = me.keepHp / me.keepHpMax >= Math.min(MAXI_SAFE, other.keepHp / other.keepHpMax);
+  const p = archetype === 'stable-maxi' && safe ? { ...base, army: 1.4, keep: 0.15 } : base;
   const uv = s.unitValue;
   const prices = s.market.prices;
   const out: Candidate[] = [];
@@ -167,16 +173,16 @@ function candidates(m: Match, side: SideId, archetype: Archetype, diff: (typeof 
   if (archetype === 'whale' && s.market.current?.id === 'black-swan') {
     for (const from of stables) for (const to of ['wbtc', 'eth']) consider({ t: 'swap', from, to, qty: qmul(available(m, side, 'swap', from), 0.5) }, 3);
   }
-  // a stable maxi moves into risk only when ahead on keep HP, and adds to its walls only when warned of a crash
+  // a stable maxi trades walls into army while its keep is safe (up to half of its stables a round,
+  // into ETH, stETH and WBTC), turtles when it isn't, and adds to its walls only when warned of a crash
   if (archetype === 'stable-maxi') {
-    const other = s.sides.find((x) => x.id !== side)!;
-    const ahead = me.keepHp / me.keepHpMax > other.keepHp / other.keepHpMax;
+    if (safe) for (const from of stables) for (const to of ['eth', 'wbtc', 'steth']) for (const share of [0.25, 0.5]) consider({ t: 'swap', from, to, qty: qmul(available(m, side, 'swap', from), share) }, 1.5);
     for (let i = out.length - 1; i >= 0; i--) {
       const c = out[i]!;
       if (c.cmd.t !== 'swap') continue;
       const intoRisk = m.catalog.asset(c.cmd.from).isStable && !m.catalog.asset(c.cmd.to).isStable;
       const intoWalls = !m.catalog.asset(c.cmd.from).isStable && m.catalog.asset(c.cmd.to).isStable;
-      if ((intoRisk && !ahead) || (intoWalls && !crash)) out.splice(i, 1);
+      if ((intoRisk && !safe) || (intoWalls && !crash)) out.splice(i, 1);
     }
   }
 

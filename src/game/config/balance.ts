@@ -45,7 +45,7 @@ export const BALANCE = {
      * Not in the spec (M7 balance): siege damage grows each round by this share
      * (round 7 hits 1 + 6 × this), so defensive matches end before sudden death.
      */
-    siegeRoundGrowth: 0.6,
+    siegeRoundGrowth: 0.35,
     /**
      * Not in the spec (the user's call, 2026-10-17: "walls shoot back"): in the
      * Siege phase the walls' archers loose a volley at the attacking survivors
