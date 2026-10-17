@@ -345,6 +345,9 @@ if (!root) throw new Error('#app is missing from index.html');
 /** Siege of the Ledger: the game over the castle view, a topbar switch away (src/game). */
 const siege = new SiegeMode({
   on: new URLSearchParams(location.search).get(SIEGE_PARAM) === 'siege',
+  // the wallets on show (yours, or a visited guild's): one is picked to import
+  wallets: () => (guildNow?.heroes ?? []).map((hero, i) => ({ name: walletName(i), hero })),
+  protocols: () => guildNow?.protocols ?? new Map(),
   onChange: (on) => {
     if (on && shell.state.tab !== 'castle') shell.go('castle');
   },

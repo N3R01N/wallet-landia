@@ -1,0 +1,12 @@
+{
+  "_note": "Example collections for sim mode (spec: 'players add NFTs from a list of example collections with editable floor values'). Floors in dollars.",
+  "collections": [
+    { "id": "sim:punks", "name": "Pixel Punks (PFP)", "floor": 120000 },
+    { "id": "sim:apes", "name": "Bored Apes (PFP)", "floor": 35000 },
+    { "id": "sim:penguins", "name": "Plump Penguins (PFP)", "floor": 30000 },
+    { "id": "sim:artblocks", "name": "Art Blocks Curated (generative art)", "floor": 4000 },
+    { "id": "sim:milady", "name": "Miladies (PFP)", "floor": 9000 },
+    { "id": "sim:ens-name", "name": "A three-letter ENS name", "floor": 1500 },
+    { "id": "sim:common", "name": "A small community collection", "floor": 200 }
+  ]
+}

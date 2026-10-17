@@ -102,6 +102,11 @@ export const BALANCE = {
     hfWarning: 1.2,
   },
 
+  npc: {
+    /** An NPC's starting value against the player's (spec: "Difficulty"). */
+    valueMult: { easy: 0.7, normal: 1, hard: 1.25 },
+  },
+
   battle: {
     /** Logic ticks per second, and the longest battle. */
     tickHz: 20,

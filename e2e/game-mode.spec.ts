@@ -50,3 +50,46 @@ test.describe('phone', () => {
     await expect(page.locator('.siege-panel')).toBeVisible();
   });
 });
+
+test('match setup: a template, a wallet import, a blank build within its budget, a loadout, then the match starts', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/?mode=siege');
+  await showTown(page);
+  const panel = page.locator('.siege-panel');
+  // the default: the Balanced template, with units against the opponent
+  await expect(panel.locator('.siege-positions tr')).not.toHaveCount(0);
+  await expect(panel.locator('.siege-preview')).toContainText('units');
+
+  // a wallet the town has loaded
+  const source = panel.locator('.siege-source');
+  const wallet = await source.locator('optgroup[label="Import a wallet"] option').first().getAttribute('value');
+  expect(wallet).toBeTruthy();
+  await source.selectOption(wallet!);
+  await expect(panel.locator('.siege-positions tr')).not.toHaveCount(0);
+  await expect(panel.locator('.siege-limit')).toContainText('match cap');
+
+  // a blank build: the budget holds
+  await source.selectOption('blank');
+  await expect(panel.locator('.siege-positions tr')).toHaveCount(0);
+  await expect(panel.locator('.siege-start')).toBeDisabled();
+  await panel.locator('.siege-add-asset').selectOption('eth');
+  await panel.locator('.siege-add-dollars').fill('20000');
+  await panel.locator('.siege-add').click();
+  await expect(panel.locator('.siege-message')).toContainText('budget');
+  await panel.locator('.siege-add-dollars').fill('8000');
+  await panel.locator('.siege-add').click();
+  await expect(panel.locator('.siege-positions tr')).toHaveCount(1);
+  await expect(panel.locator('.siege-limit')).toContainText('Budget left: $2,000');
+
+  // kept as a loadout
+  await panel.locator('.siege-loadout-name').fill('All in on ETH');
+  await panel.getByRole('button', { name: 'Save' }).click();
+  await expect(panel.locator('.siege-loadouts li')).toContainText('All in on ETH');
+
+  await panel.locator('.siege-start').click();
+  await expect(panel.locator('.siege-match')).toContainText('Round 1');
+  await panel.locator('.siege-leave').click();
+  await expect(panel.locator('.siege-setup')).toBeVisible();
+  expect(errors).toEqual([]);
+});
