@@ -356,6 +356,14 @@ const SIEGE: AssetSpec[] = [
       note: 'A siege unit, drawn instanced by the hundred: everything skinned, clips in place, Tint = team colour.',
     }),
   ),
+  // batch 23 (docs/batches/23-siege-vfx.md): the battle's effects
+  { name: 'fx.hit.spark', kind: 'model', required: false, size: [0.5, 0.5, 0.5], clips: ['pop'], standin: { shape: 'sphere', color: '#fff2a8' }, note: 'A melee hit; ends invisible.' },
+  { name: 'fx.arrow', kind: 'model', required: false, size: [0.05, 0.8, 0.05], standin: { shape: 'box', color: '#7a5233' }, note: 'An arrow in flight (+Z).' },
+  { name: 'fx.bolt', kind: 'model', required: false, size: [0.4, 1, 0.4], clips: ['idle'], standin: { shape: 'sphere', color: '#f2d27a' }, note: 'A spell bolt in flight.' },
+  { name: 'fx.puff', kind: 'model', required: false, size: [0.8, 0.8, 0.8], clips: ['pop'], standin: { shape: 'sphere', color: '#e6e3dc' }, note: 'A pop of puffs; ends invisible.' },
+  { name: 'fx.detonation', kind: 'model', required: false, size: [5, 5, 3], clips: ['pop'], standin: { shape: 'sphere', color: '#f0a020' }, note: 'A liquidated squad blowing up; ends invisible.' },
+  { name: 'fx.siege.impact', kind: 'model', required: false, size: [3, 3, 3], clips: ['pop'], standin: { shape: 'sphere', color: '#c9bba0' }, note: 'Survivors hitting a keep wall; ends invisible.' },
+  { name: 'fx.lightning', kind: 'model', required: false, size: [2, 2, 12], clips: ['pop'], standin: { shape: 'cylinder', color: '#cfe6ff' }, note: 'The Slashing strike; ends invisible.' },
   { name: 'fx.capture.ring', kind: 'model', required: false, size: [2, 2, 0.02], standin: { shape: 'cylinder', color: '#d9a93a' }, note: 'Capture progress ring round a battlefield building: 24 segments seg.00…seg.23.' },
   { name: 'prop.banner.owner', kind: 'model', required: false, size: [0.8, 0.2, 3.2], clips: ['idle', 'tap'], standin: { shape: 'box', color: '#b84a32' }, note: 'The owner’s banner beside a captured building.' },
 ];
