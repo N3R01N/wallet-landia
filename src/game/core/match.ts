@@ -13,7 +13,7 @@ import { BALANCE, CONFIG_VERSION } from '../config/balance.js';
 import { buildArmy, unitCount, unitValueFor } from './army.js';
 import { Catalog, UNIT_TYPES } from './catalog.js';
 import { qtyFor } from './fixed.js';
-import { account, applyCommand, gasCost, holding, holdingsOf, liquidate, netValue, payYields, rebalancePools, refreshKeep, slash, type CommandResult, type LedgerCtx } from './ledger.js';
+import { account, applyCommand, gasCost, holding, stableValue, holdingsOf, liquidate, netValue, payYields, rebalancePools, refreshKeep, slash, type CommandResult, type LedgerCtx } from './ledger.js';
 import { drawNext, eventNum, initialMarket, runMarket } from './market.js';
 import { simulateBattle, type BattleMap, type BattleRun } from './battle.js';
 import { armyMods, canShutdown, homeAt, relicTotal, slottedRelics } from './depth.js';
@@ -76,6 +76,7 @@ export class Match {
       lastBattle: null,
       buildings: (setup.map?.points ?? []).map((p) => ({ id: p.id, kind: p.kind, owner: null })),
       shutdowns: [],
+      felled: [0, 0],
     };
     for (const s of sides) {
       refreshKeep(s, this.#ctx());
@@ -217,8 +218,13 @@ export class Match {
       s.shutdowns.push(x.id);
       return true;
     };
-    const hitB = siegeDamage(result.survivors[0], extra(0)) * mult;
-    const hitA = siegeDamage(result.survivors[1], extra(1)) * mult;
+    // the walls shoot back: each keep's archers fell some of the attackers at its gate first
+    const ctx = this.#ctx();
+    const volleyB = wallVolley(result.survivors[0], stableValue(b, ctx) / s.unitValue);
+    const volleyA = wallVolley(result.survivors[1], stableValue(a, ctx) / s.unitValue);
+    s.felled = [volleyA.felled, volleyB.felled];
+    const hitB = siegeDamage(volleyB.left, extra(0)) * mult;
+    const hitA = siegeDamage(volleyA.left, extra(1)) * mult;
     if (hitB > 0 && !immune(b)) b.keepHp = Math.max(0, b.keepHp - hitB);
     if (hitA > 0 && !immune(a)) a.keepHp = Math.max(0, a.keepHp - hitA);
     // the round's end: owned Vaults (+5% each) and a Mason's Seal raise the keep's max
@@ -420,4 +426,28 @@ export function available(m: Match, side: SideId, kind: Command['t'], asset: Ass
     default:
       return 0n;
   }
+}
+
+/**
+ * The walls' volley (the user's call: "walls shoot back"): before attackers
+ * hit a keep, its archers deal `wallVolley` HP per UNIT_VALUE of its
+ * stablecoins to them, the most fragile first; at most `wallMaxShare` of the
+ * attackers fall, so even a keep of nothing but walls is always hit.
+ */
+export function wallVolley(attackers: readonly Squad[], stableUnits: number): { left: Squad[]; felled: number } {
+  const total = attackers.reduce((n, q) => n + q.count, 0);
+  let budget = Math.max(0, stableUnits) * BALANCE.keep.wallVolley;
+  let canFell = Math.floor(total * BALANCE.keep.wallMaxShare);
+  const left = attackers.map((q) => ({ ...q }));
+  const order = left.map((q, i) => ({ q, i, hp: UNIT_TYPES[q.unit]?.hp ?? 1 })).sort((x, y) => x.hp - y.hp || x.i - y.i);
+  let felled = 0;
+  for (const { q, hp } of order) {
+    const n = Math.min(q.count, Math.floor(budget / hp), canFell);
+    q.count -= n;
+    budget -= n * hp;
+    canFell -= n;
+    felled += n;
+    if (canFell <= 0 || budget < 1) break;
+  }
+  return { left: left.filter((q) => q.count > 0).map((q) => ({ ...q, stacks: [q.count] })), felled };
 }

@@ -8,7 +8,7 @@
  * Siege phase.
  */
 
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import type { Stage } from '../../castle/scene/castleView.js';
 import type { BuildingPlacement } from '../../castle/scene/plan.js';
 import type { Errand } from '../../castle/world/world.js';
@@ -300,12 +300,24 @@ export class MatchPanel {
     m.advance();
     const after = m.state.sides.map((s) => s.keepHp);
     this.#note = `Siege: your survivors deal ${Math.round(before[1]! - after[1]!)} to the enemy keep, theirs ${Math.round(before[0]! - after[0]!)} to yours.`;
+    const [mine, theirs] = m.state.felled;
+    if (mine > 0) this.#note += ` 🏹 Your walls' archers felled ${mine} attacker${mine === 1 ? '' : 's'} at the gate.`;
+    if (theirs > 0) this.#note += ` 🏹 The enemy walls felled ${theirs} of yours.`;
     for (const id of m.state.shutdowns) this.#note += ` 🛡 ${id === 'A' ? 'Your' : 'The enemy'} vault called an Emergency Shutdown: the keep took no damage.`;
     this.#markers?.setOwners(m.battleCtx().owners);
     this.#showDamage();
     // stones fly off the walls that were hit
     const gates = m.battleCtx().map?.gates;
     if (gates && this.#fx) {
+      // the walls' volley: arrows from the front wall at the attackers before its gate
+      const volley = (count: number, g: { x: number; z: number }, dir: number) => {
+        for (let i = 0; i < Math.min(12, count); i++) {
+          const x = g.x + ((i % 6) - 2.5) * 1.6;
+          this.#fx!.shoot('fx.arrow', new THREE.Vector3(x, 3.2, g.z + dir * 5), new THREE.Vector3(x + ((i * 7) % 5) - 2, 1, g.z - dir * (2 + (i % 4))));
+        }
+      };
+      volley(m.state.felled[0], gates.A, -1);
+      volley(m.state.felled[1], gates.B, 1);
       const hit = (side: 0 | 1, g: { x: number; z: number }, dir: number) => {
         if (before[side]! - after[side]! <= 0) return;
         // at the foot of the front wall (5.3 m behind the gate point), the wall towards the castle

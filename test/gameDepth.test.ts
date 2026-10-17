@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { planCastle } from '../src/castle/scene/plan.js';
 import { stackSquads } from '../src/game/core/army.js';
 import { simulateBattle, straightMap, type CapturePoint } from '../src/game/core/battle.js';
-import { Catalog } from '../src/game/core/catalog.js';
+import { Catalog, UNIT_TYPES } from '../src/game/core/catalog.js';
 import { abilitiesOf, armyMods, relicId, relicOf } from '../src/game/core/depth.js';
 import { q } from '../src/game/core/fixed.js';
 import { holding, liquidate } from '../src/game/core/ledger.js';
-import { Match, siegeDamage } from '../src/game/core/match.js';
+import { Match, siegeDamage, wallVolley } from '../src/game/core/match.js';
+import { BALANCE } from '../src/game/config/balance.js';
 import type { Army, Portfolio, SideState, Squad } from '../src/game/core/types.js';
 import { templatePortfolio } from '../src/game/data/templates.js';
 import { siegePlan } from '../src/game/render/siegePlan.js';
@@ -192,5 +193,26 @@ describe('the match’s depth', () => {
     m.advance();
     if (m.state.buildings[0]!.owner === 'A') expect(m.side('A').keepHpMax).toBeCloseTo(max * 1.05, 6);
     else expect(m.side('A').keepBonus).toBe(0);
+  });
+});
+
+describe('walls shoot back', () => {
+  it('the walls’ archers fell the most fragile attackers first, within their volley', () => {
+    const attackers: Squad[] = [squad('eth', 'paladin.eth', 10), squad('pepe', 'swarm.frog', 10)];
+    // 5 UNIT_VALUEs of stables: 5 × wallVolley HP of arrows
+    const budget = 5 * BALANCE.keep.wallVolley;
+    const { left, felled } = wallVolley(attackers, 5);
+    const frogs = left.find((q) => q.asset === 'pepe')?.count ?? 0;
+    expect(felled).toBe(Math.min(10, Math.floor(budget / UNIT_TYPES['swarm.frog']!.hp)));
+    expect(frogs).toBe(10 - felled);
+    expect(left.find((q) => q.asset === 'eth')!.count).toBe(10);
+  });
+
+  it('never more than the cap: even a keep of nothing but walls is always hit', () => {
+    const attackers: Squad[] = [squad('eth', 'knight', 20)];
+    const { left, felled } = wallVolley(attackers, 1e6);
+    expect(felled).toBe(Math.floor(20 * BALANCE.keep.wallMaxShare));
+    expect(left[0]!.count).toBe(20 - felled);
+    expect(wallVolley(attackers, 0).felled).toBe(0);
   });
 });

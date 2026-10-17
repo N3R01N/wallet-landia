@@ -202,6 +202,8 @@ export interface MatchState {
   buildings: { id: string; kind: import('./depth.js').BuildingKind; owner: SideId | null }[];
   /** Sides whose Emergency Shutdown saved their keep in the last Siege phase. */
   shutdowns: SideId[];
+  /** The last Siege phase's wall volleys: attackers each side's walls felled. */
+  felled: [number, number];
 }
 
 type Qty = bigint;
