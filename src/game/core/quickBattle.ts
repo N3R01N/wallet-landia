@@ -11,8 +11,15 @@ import type { Army, BattleResult, Role, Squad } from './types.js';
 
 const BT = BALANCE.battle;
 
+/** What a battle is played with besides the armies. */
+export interface BattleCtx {
+  seed: string;
+  round: number;
+  map?: import('./battle.js').BattleMap;
+}
+
 /** Plays a battle between two armies; returns what is left of each. */
-export type BattleResolver = (armies: readonly [Army, Army]) => BattleResult;
+export type BattleResolver = (armies: readonly [Army, Army], ctx: BattleCtx) => BattleResult;
 
 /** Cavalry beats Ranged, Ranged beats Melee, Melee beats Cavalry. */
 const BEATS: Partial<Record<Role, Role>> = { cavalry: 'ranged', ranged: 'melee', melee: 'cavalry' };

@@ -104,3 +104,14 @@ Points the spec left open, settled here (change in config if needed):
 - **Keep damage** is scaled by `keep.siegeScale` (0.25, not in the spec) so a match isn't over in one round; tuned in M7.
 - **Fallback units' HP, ATK, range and speed** aren't in the spec; placeholders in `units.json` until the designer pass.
 - **Unstaking** keeps the stETH staked (and fighting) until the next Market phase, then pays ETH at that day's rate.
+
+## Battle and rendering (M3)
+
+- **BattleSim** (`core/battle.ts`): 20 Hz on the town's ground plane, metres in world x/z; aggro 6 m, reach 0.8 m + Range, a uniform grid for neighbours; deterministic (no clock, seeded crits and swaps). It runs in a Web Worker (`sim/battle.worker.ts`, inline fallback in `sim/battleClient.ts`) and in Node for tests. Output: survivors, the event stream, and position frames at 10 Hz.
+- **The field moves at 3.2 m/s per Speed point** (the town is ~110 m gate to gate, a battle at most 45 s); the renderer plays the walk clip faster to match.
+- **The battlefield** (`render/siegePlan.ts`): the enemy castle mirrored 14 m past the town; lanes are the avenue (round the bell tower) and a road each side behind the plots; armies form up 12 m in front of their gates; survivors that reach the enemy gate wait there.
+- **The chain view stays independent:** CastleView only knows a generic `extend` hook (placements, cleared scenery, camera reach, tints, a quiet town) and a `stage()` for a mode's objects; all siege code is in `src/game`.
+- **Units** (`render/unitMeshes.ts`): each clip baked into a float texture of bone matrices at load; one InstancedMesh per unit type; `Tint` takes the team colour per instance. A missing unit model stands in as the Militia.
+- **Damage states:** `damage.N`, `intact` and `ruin` parts are hidden in the normal town and shown in a match from each keep's HP.
+- **Replays:** a battle's run is kept; "Replay the battle" plays it again exactly.
+- **Not yet:** hit sparks, projectiles and event weather (with M5's events); capture rings (M5).

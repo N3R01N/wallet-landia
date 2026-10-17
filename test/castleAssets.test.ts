@@ -8,7 +8,7 @@ describe('castle asset manifest', () => {
   it('names are unique and every name starts with a known group', () => {
     const names = ASSETS.map((a) => a.name);
     expect(new Set(names).size).toBe(names.length);
-    const groups = new Set(['castle', 'moat', 'bridge', 'town', 'path', 'building', 'courier', 'person', 'fx', 'ui', 'badge', 'rank', 'scenery', 'prop', 'animal', 'app']);
+    const groups = new Set(['castle', 'moat', 'bridge', 'town', 'path', 'building', 'courier', 'person', 'fx', 'ui', 'badge', 'rank', 'scenery', 'prop', 'animal', 'app', 'unit']);
     for (const n of names) expect(groups.has(assetFolder(n)), n).toBe(true);
   });
 

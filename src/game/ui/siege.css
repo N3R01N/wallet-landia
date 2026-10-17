@@ -188,3 +188,109 @@
   color: #2a2118;
   font-weight: 700;
 }
+
+/* ---------- the match ---------- */
+
+.siege-round {
+  font-weight: 700;
+}
+
+.siege-round small {
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.siege-keep {
+  display: grid;
+  grid-template-columns: 6.5em 1fr auto;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: 0.82rem;
+}
+
+.siege-keep-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(42, 33, 24, 0.18);
+  overflow: hidden;
+}
+
+.siege-keep-fill {
+  display: block;
+  height: 100%;
+}
+
+.siege-keep-A .siege-keep-fill {
+  background: #3f6fa8;
+}
+
+.siege-keep-B .siege-keep-fill {
+  background: #b84a32;
+}
+
+.siege-keep-hp {
+  font-variant-numeric: tabular-nums;
+}
+
+.siege-note {
+  font-size: 0.85rem;
+}
+
+.siege-winner {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.btn.siege-go,
+.btn.siege-next,
+.btn.siege-new {
+  background: var(--gold);
+  color: #2a2118;
+  font-weight: 700;
+  min-height: 40px;
+}
+
+.btn.siege-leave {
+  margin-top: 8px;
+  font-size: 0.8rem;
+}
+
+/* during the battle the panel steps out of the way of the field */
+.siege-panel:has(.siege-match[data-phase='battle']) {
+  top: auto;
+  bottom: 10px;
+}
+
+.siege-panel:has(.siege-match[data-phase='battle']) .siege-intro {
+  display: none;
+}
+
+/* squad banners over the battle */
+.siege-banners {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.siege-banner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.siege-banner-A {
+  background: rgba(63, 111, 168, 0.92);
+}
+
+.siege-banner-B {
+  background: rgba(184, 74, 50, 0.92);
+}

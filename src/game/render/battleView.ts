@@ -1,0 +1,280 @@
+/**
+ * Plays a simulated battle in the town (spec: "Battle phase", M3): every
+ * entity of the run as an instance of its unit type's mesh, moved along the
+ * run's frames (10 Hz, interpolated), its clip from what it does (marching,
+ * striking on the event's beat, falling), an HP bar once hurt, and a banner
+ * per squad with its token and how many are left. The renderer only reads the
+ * run: the same run plays the same battle again (a replay).
+ */
+
+import * as THREE from 'three';
+import type { Stage } from '../../castle/scene/castleView.js';
+import { el } from '../../util/dom.js';
+import { FRAME_EVERY, METRES_PER_SPEED, WALK_CLIP_SPEED, type BattleRun } from '../core/battle.js';
+import { UNIT_TYPES } from '../core/catalog.js';
+import { BALANCE } from '../config/balance.js';
+import type { Army, SideId } from '../core/types.js';
+import { UnitMesh } from './unitMeshes.js';
+
+/** Seconds of battle per frame of the run. */
+const FRAME_DT = FRAME_EVERY / BALANCE.battle.tickHz;
+/** When the strike lands in every unit's attack clip (docs/batches/19-siege-units-pilot.md). */
+const STRIKE_AT = 0.4;
+/** The fallen lie this long, then sink away. */
+const LIE = 2.2;
+const SINK = 0.8;
+const HP_BAR_Y = 2.25;
+
+export const TEAM_COLORS: Record<SideId, string> = { A: '#3f6fa8', B: '#b84a32' };
+
+export interface BattleViewOptions {
+  stage: Stage;
+  /** Where the squad banners go (the castle view's element). */
+  overlay: HTMLElement;
+  /** A token's label for its banner. */
+  symbol: (asset: string) => string;
+}
+
+interface Track {
+  /** Battle seconds of each strike, ascending. */
+  strikes: number[];
+  death: number;
+  phase: number;
+}
+
+export class BattleView {
+  readonly #opts: BattleViewOptions;
+  readonly #meshes = new Map<string, UnitMesh>();
+  readonly #group = new THREE.Group();
+  readonly #team = { A: new THREE.Color(TEAM_COLORS.A), B: new THREE.Color(TEAM_COLORS.B) };
+  readonly #bars: THREE.InstancedMesh;
+  readonly #barBack: THREE.InstancedMesh;
+  readonly #labels = el('div', { class: 'siege-banners' });
+  #run: BattleRun | null = null;
+  #tracks: Track[] = [];
+  #time = 0;
+  #speed = 1;
+  #stopFrame: (() => void) | null = null;
+  #onDone: (() => void) | null = null;
+  #done = false;
+  #banners: { el: HTMLElement; side: SideId; squad: number; label: string }[] = [];
+
+  constructor(opts: BattleViewOptions) {
+    this.#opts = opts;
+    opts.stage.scene.add(this.#group);
+    const plane = new THREE.PlaneGeometry(1, 0.12);
+    this.#barBack = new THREE.InstancedMesh(plane, new THREE.MeshBasicMaterial({ color: 0x2a2118, depthTest: false, transparent: true, opacity: 0.75 }), 640);
+    this.#bars = new THREE.InstancedMesh(plane, new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false }), 640);
+    for (const m of [this.#barBack, this.#bars]) {
+      m.count = 0;
+      m.frustumCulled = false;
+      m.renderOrder = 5;
+      this.#group.add(m);
+    }
+    this.#barBack.renderOrder = 4;
+    opts.overlay.append(this.#labels);
+  }
+
+  /** Loads the meshes for these unit types (a missing model stands in as the Militia). */
+  async prepare(units: Iterable<string>, capacity = 640): Promise<void> {
+    for (const id of new Set(units)) {
+      if (this.#meshes.has(id)) continue;
+      const loaded = (await this.#opts.stage.load(`unit.${id}`)) ?? (await this.#opts.stage.load('unit.militia'));
+      if (!loaded) continue;
+      try {
+        const mesh = new UnitMesh(loaded, capacity);
+        this.#meshes.set(id, mesh);
+        this.#group.add(mesh.mesh);
+      } catch (error) {
+        console.warn('unit mesh', id, error);
+      }
+    }
+  }
+
+  /** How fast the battle plays (1 = real time). */
+  set speed(v: number) {
+    this.#speed = v;
+  }
+
+  get playing(): boolean {
+    return this.#run !== null && !this.#done;
+  }
+
+  /** Plays a run from its start; `onDone` when its last frame is reached. */
+  async play(run: BattleRun, armies: [Army, Army], onDone?: () => void): Promise<void> {
+    await this.prepare(run.entities.map((e) => e.unit));
+    this.#run = run;
+    this.#time = 0;
+    this.#done = false;
+    this.#onDone = onDone ?? null;
+    this.#tracks = run.entities.map((_, i) => ({ strikes: [], death: Infinity, phase: (i * 0.37) % 1 }));
+    const tickDt = 1 / BALANCE.battle.tickHz;
+    for (const e of run.events) {
+      if (e.t === 'attack') this.#tracks[e.id]?.strikes.push(e.tick * tickDt);
+      if (e.t === 'death') {
+        const track = this.#tracks[e.id];
+        if (track) track.death = Math.min(track.death, e.tick * tickDt);
+      }
+    }
+    this.#banners = [];
+    this.#labels.replaceChildren();
+    armies.forEach((army) =>
+      army.squads.forEach((sq, si) => {
+        const label = this.#opts.symbol(sq.asset);
+        const b = el('div', { class: `siege-banner siege-banner-${army.side}` }, label);
+        this.#labels.append(b);
+        this.#banners.push({ el: b, side: army.side, squad: si, label });
+      }),
+    );
+    this.#stopFrame?.();
+    this.#stopFrame = this.#opts.stage.onFrame((dt) => this.#update(dt));
+    this.#update(0);
+  }
+
+  /** Jumps to the end (the result stands). */
+  skip(): void {
+    if (!this.#run) return;
+    this.#time = this.#run.seconds + 0.01;
+  }
+
+  /** Takes the units off the field. */
+  clear(): void {
+    this.#stopFrame?.();
+    this.#stopFrame = null;
+    this.#run = null;
+    for (const m of this.#meshes.values()) m.commit(0);
+    this.#bars.count = 0;
+    this.#barBack.count = 0;
+    this.#labels.replaceChildren();
+    this.#banners = [];
+  }
+
+  dispose(): void {
+    this.clear();
+    for (const m of this.#meshes.values()) m.dispose();
+    this.#meshes.clear();
+    this.#bars.geometry.dispose();
+    (this.#bars.material as THREE.Material).dispose();
+    (this.#barBack.material as THREE.Material).dispose();
+    this.#group.removeFromParent();
+    this.#labels.remove();
+  }
+
+  readonly #m = new THREE.Matrix4();
+  readonly #v = new THREE.Vector3();
+  readonly #s = new THREE.Vector3();
+  readonly #color = new THREE.Color();
+
+  #update(dt: number): void {
+    const run = this.#run;
+    if (!run) return;
+    this.#time += dt * this.#speed;
+    const end = run.seconds;
+    const t = Math.min(this.#time, end);
+    const n = run.entities.length;
+    const fpos = Math.min(run.frameCount - 1, t / FRAME_DT);
+    const f0 = Math.floor(fpos);
+    const f1 = Math.min(run.frameCount - 1, f0 + 1);
+    const a = fpos - f0;
+    const fr = run.frames;
+    const counts = new Map<string, number>();
+    let bars = 0;
+    const camQ = this.#opts.stage.camera.quaternion;
+    const squadPos = new Map<string, { x: number; z: number; n: number; alive: number }>();
+    const finished = this.#time > end;
+    for (let i = 0; i < n; i++) {
+      const ent = run.entities[i]!;
+      const mesh = this.#meshes.get(ent.unit);
+      const b0 = (f0 * n + i) * 4;
+      const b1 = (f1 * n + i) * 4;
+      const x = fr[b0]! + (fr[b1]! - fr[b0]!) * a;
+      const z = fr[b0 + 1]! + (fr[b1 + 1]! - fr[b0 + 1]!) * a;
+      const hp = fr[b1 + 2]!;
+      const face = lerpAngle(fr[b0 + 3]!, fr[b1 + 3]!, a);
+      const track = this.#tracks[i]!;
+      const sinceDeath = t - track.death;
+      if (sinceDeath > LIE + SINK) continue;
+      const key = `${ent.side}|${ent.squad}`;
+      const sp = squadPos.get(key) ?? { x: 0, z: 0, n: 0, alive: 0 };
+      if (sinceDeath < 0) {
+        sp.x += x;
+        sp.z += z;
+        sp.n++;
+        sp.alive += Math.max(1, Math.ceil(hp * ent.mult - 1e-6));
+      }
+      squadPos.set(key, sp);
+      if (!mesh) continue;
+      const idx = counts.get(ent.unit) ?? 0;
+      counts.set(ent.unit, idx + 1);
+      const team = this.#team[ent.side];
+      if (sinceDeath >= 0) {
+        const y = sinceDeath > LIE ? -((sinceDeath - LIE) / SINK) * 0.9 : 0;
+        mesh.set(idx, x, z, face, 'death', sinceDeath, false, team, y);
+        continue;
+      }
+      // the last strike before now, or the next one coming (the clip winds up for it)
+      const strike = nearestStrike(track.strikes, t);
+      const moved = Math.hypot(fr[b1]! - fr[b0]!, fr[b1 + 1]! - fr[b0 + 1]!) > 0.03;
+      if (finished) mesh.set(idx, x, z, face, 'cheer', t + track.phase, true, team);
+      else if (strike !== null && Math.abs(t - strike) < 0.6) mesh.set(idx, x, z, face, 'attack', t - strike + STRIKE_AT, true, team);
+      // the walk clip at the pace the unit covers the ground (no sliding feet)
+      else if (moved) mesh.set(idx, x, z, face, 'walk', (t * (UNIT_TYPES[ent.unit]?.speed ?? 1) * METRES_PER_SPEED) / WALK_CLIP_SPEED + track.phase, true, team);
+      else mesh.set(idx, x, z, face, 'idle', t + track.phase * 2, true, team);
+      if (hp < 0.999 && bars < 640) {
+        this.#v.set(x, HP_BAR_Y, z);
+        this.#s.set(0.9, 1, 1);
+        this.#m.compose(this.#v, camQ, this.#s);
+        this.#barBack.setMatrixAt(bars, this.#m);
+        this.#s.set(Math.max(0.02, 0.9 * hp), 1, 1);
+        // shift the fill to the bar's left end
+        this.#v.add(new THREE.Vector3(-(0.9 - 0.9 * hp) / 2, 0, 0).applyQuaternion(camQ));
+        this.#m.compose(this.#v, camQ, this.#s);
+        this.#bars.setMatrixAt(bars, this.#m);
+        this.#color.set(hp > 0.5 ? 0x6fbf4a : hp > 0.25 ? 0xe0b13a : 0xd0442c);
+        this.#bars.setColorAt(bars, this.#color);
+        bars++;
+      }
+    }
+    for (const [unit, mesh] of this.#meshes) mesh.commit(counts.get(unit) ?? 0);
+    this.#bars.count = bars;
+    this.#barBack.count = bars;
+    this.#bars.instanceMatrix.needsUpdate = true;
+    this.#barBack.instanceMatrix.needsUpdate = true;
+    if (this.#bars.instanceColor) this.#bars.instanceColor.needsUpdate = true;
+    // a banner over each squad still fighting: its token and how many are left
+    for (const b of this.#banners) {
+      const sp = squadPos.get(`${b.side}|${b.squad}`);
+      if (!sp || sp.n === 0) {
+        b.el.hidden = true;
+        continue;
+      }
+      const p = this.#opts.stage.screen(this.#v.set(sp.x / sp.n, 3, sp.z / sp.n));
+      b.el.hidden = !p;
+      if (p) {
+        b.el.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -100%)`;
+        b.el.textContent = `${b.label} ${sp.alive}`;
+      }
+    }
+    if (finished && !this.#done) {
+      this.#done = true;
+      this.#onDone?.();
+    }
+  }
+}
+
+function nearestStrike(strikes: readonly number[], t: number): number | null {
+  // strikes are ascending: the last at or before t + 0.6
+  let best: number | null = null;
+  for (const s of strikes) {
+    if (s > t + 0.6) break;
+    best = s;
+  }
+  return best;
+}
+
+function lerpAngle(a: number, b: number, t: number): number {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}

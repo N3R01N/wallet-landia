@@ -44,6 +44,34 @@ import {
 
 export type CastleFocus = 'castle' | 'town';
 
+/** What a game mode adds to the scene (CastleViewOptions.extend). */
+export interface SceneExtension {
+  /** Placed like the town's own (their keys may name a Tint colour in `tints`). */
+  placements: Placement[];
+  /** The town's scenery and decor to leave out (where the extension stands). */
+  cleared?: (p: Placement) => boolean;
+  /** How far +z the camera may roam (past the town's end). */
+  reachZ?: number;
+  /** Tint colour per placement key. */
+  tints?: Record<string, string>;
+  /** No wanderers and no couriers replaying the chain: the mode runs the streets. */
+  quiet?: boolean;
+}
+
+/** A game mode's hold on the scene (CastleView.stage). */
+export interface Stage {
+  scene: THREE.Scene;
+  camera: THREE.Camera;
+  renderer: THREE.WebGLRenderer;
+  load(name: string): Promise<Loaded | null>;
+  /** Called every frame once the scene is ready, with the frame's seconds. Returns the way to stop it. */
+  onFrame(fn: (dt: number) => void): () => void;
+  /** The placed objects by placement key ('keep', 'castle' for the player's own pieces, an extension's keys). */
+  placed(key: string): THREE.Object3D[];
+  /** A point on the page (CSS px in the view) for a world point, or null off screen. */
+  screen(p: THREE.Vector3): { x: number; y: number } | null;
+}
+
 export interface CastleViewOptions {
   world: CastleWorld;
   focus: CastleFocus;
@@ -85,6 +113,11 @@ export interface CastleViewOptions {
   arranged?: Record<string, number>;
   /** Every model is placed: the scene is ready to look at. */
   onReady?: () => void;
+  /**
+   * More placed into the scene than the town (a game mode's: the siege's enemy
+   * castle). The chain view itself never depends on it (REDESIGN §8).
+   */
+  extend?: (plan: CastlePlan) => SceneExtension;
   /** In build mode, a tap on a building (its protocol) or on an empty plot. */
   onArrangeTap?: (tap: { protocolId: string } | { slot: number }) => void;
 }
@@ -318,6 +351,9 @@ export class CastleView {
   #lastSpawn = -Infinity;
   #replayAt = 0;
   #autoReplay = true;
+  readonly #extension: SceneExtension | null;
+  readonly #frameFns = new Set<(dt: number) => void>();
+  readonly #placedByKey = new Map<string, THREE.Object3D[]>();
   /** When the bell last started ringing, and when a real block last came. */
   #ringAt = -Infinity;
   /** The block ripple's speed for this layout (m/s; null: work it out on the next ring). */
@@ -397,9 +433,14 @@ export class CastleView {
 
   constructor(opts: CastleViewOptions) {
     this.#opts = opts;
-    this.#plan = planCastle(opts.world, opts.arranged, opts.layout ?? 1);
-    // the recent errands first, oldest first
-    this.#queue = opts.world.errands.slice(-REPLAY_COUNT);
+    const plan = planCastle(opts.world, opts.arranged, opts.layout ?? 1);
+    this.#extension = opts.extend?.(plan) ?? null;
+    // the camera roams as far as the extension reaches
+    const reach = this.#extension?.reachZ;
+    this.#plan = reach !== undefined ? { ...plan, town: { ...plan.town, z1: Math.max(plan.town.z1, reach) } } : plan;
+    // the recent errands first, oldest first (none while a game mode has the streets)
+    this.#queue = this.#extension?.quiet ? [] : opts.world.errands.slice(-REPLAY_COUNT);
+    if (this.#extension?.quiet) this.#autoReplay = false;
     this.#library = new ModelLibrary(opts.theme);
     const [fx, fz] = FOCUS_POINT[opts.focus];
     // the castle tab looks at the island's middle, a little towards the gate (layout 2's island is deeper)
@@ -896,6 +937,16 @@ export class CastleView {
         }
       });
       this.#layout.add(obj);
+      if (p === plan.keep) this.#placedByKey.set('keep', [obj]);
+      // by key, and the player's own castle pieces (unkeyed) as 'castle'
+      const group = p.key ?? (p.name.startsWith('castle.') ? 'castle' : null);
+      if (group) {
+        const list = this.#placedByKey.get(group);
+        if (list) list.push(obj);
+        else this.#placedByKey.set(group, [obj]);
+      }
+      // castle pieces made with damage states stand whole
+      showDamageParts(obj, 0);
       if (p.key === 'flag') {
         // on top of its wallet's tower, in that wallet's crest colour
         obj.position.y = TOWER_TOP;
@@ -941,6 +992,8 @@ export class CastleView {
       showTierParts(obj, p.tier ?? ('protocol' in p ? 0 : (plan.keep.tier ?? 0)));
       // a hall's dressing by what its wallet mostly holds (`focus.tokens`, `focus.defi`, `focus.nft`)
       showFocusParts(obj, (p as WalletPlacement).focus ?? 'tokens');
+      const extTint = p.key ? this.#extension?.tints?.[p.key] : undefined;
+      if (extTint) paint(obj, 'Tint', extTint, this.#painted);
       const decorTint = p.key === 'decor' ? DECOR_TINT[p.name] : undefined;
       if (decorTint) paint(obj, 'Tint', decorTint === 'crest' ? crestColors(this.#opts.world.walletIds[0] ?? '')[0] : decorTint, this.#painted);
       if (p === plan.tower) {
@@ -1273,6 +1326,10 @@ export class CastleView {
   /** A new object for an asset: its model, or its standin. */
   #makeLife(): void {
     this.#life?.dispose();
+    if (this.#extension?.quiet) {
+      this.#life = null;
+      return;
+    }
     this.#life = new Life(
       {
         has: (n) => !!this.#loaded.get(n),
@@ -1558,7 +1615,48 @@ export class CastleView {
 
   #placements(): Placement[] {
     const p = this.#plan;
-    return [...p.water, ...p.ground, ...p.walls, ...p.wallets, ...p.wings, p.keep, p.gatehouse, ...(p.storehouse ? [p.storehouse] : []), p.tollbooth, p.tower, ...p.road, ...p.lit, ...p.buildings, ...p.scenery, ...p.decor];
+    const ext = this.#extension;
+    const keep = (x: Placement) => !ext?.cleared?.(x);
+    return [
+      ...p.water,
+      ...p.ground,
+      ...p.walls,
+      ...p.wallets,
+      ...p.wings,
+      p.keep,
+      p.gatehouse,
+      ...(p.storehouse ? [p.storehouse] : []),
+      p.tollbooth,
+      p.tower,
+      ...p.road,
+      ...p.lit,
+      ...p.buildings,
+      ...p.scenery.filter(keep),
+      ...p.decor.filter(keep),
+      ...(ext?.placements ?? []),
+    ];
+  }
+
+  /** A game mode's hold on the scene: its objects, its frame callback, the models. */
+  stage(): Stage {
+    return {
+      scene: this.#scene,
+      camera: this.#camera,
+      renderer: this.#renderer,
+      load: (n) => this.#library.load(n),
+      onFrame: (fn) => {
+        this.#frameFns.add(fn);
+        return () => this.#frameFns.delete(fn);
+      },
+      placed: (key) => this.#placedByKey.get(key) ?? [],
+      screen: (p) => this.#toScreen(p),
+    };
+  }
+
+  /** Shows a castle piece's damage (`damage.N` parts from state N; `ruin` instead of `body` at 4). */
+  setDamage(obj: THREE.Object3D, state: number): void {
+    showDamageParts(obj, state);
+    this.#renderer.shadowMap.needsUpdate = true;
   }
 
   #fit(): void {
@@ -2050,6 +2148,7 @@ export class CastleView {
       this.#driftClouds(dt);
       this.#animate(dt);
       this.#watchSpeed(dt);
+      for (const fn of this.#frameFns) fn(dt);
       if (this.#time < this.#shadowsMoveUntil) this.#renderer.shadowMap.needsUpdate = true;
     }
     this.#renderer.render(this.#scene, this.#camera);
@@ -2317,6 +2416,25 @@ function showTierParts(root: THREE.Object3D, tier: number): void {
   root.traverse((o) => {
     const m = /^tier\.(\d)$/.exec((o.userData.name as string | undefined) ?? o.name);
     if (m) o.visible = tier >= Number(m[1]);
+  });
+}
+
+/**
+ * Damage states (docs/batches/20-siege-dressing.md): `damage.N` shows from
+ * state N; a wall's `intact` part goes at the breach (2); at 4 the `ruin`
+ * stands instead of `body`. A model without them is untouched.
+ */
+function showDamageParts(root: THREE.Object3D, state: number): void {
+  root.traverse((o) => {
+    const name = (o.userData.name as string | undefined) ?? o.name;
+    const m = /^damage\.(\d)$/.exec(name);
+    if (m) o.visible = state >= Number(m[1]);
+    else if (name === 'intact') o.visible = state < 2;
+    else if (name === 'ruin') {
+      o.visible = state >= 4;
+      // the standing keep beside it goes
+      for (const sib of o.parent?.children ?? []) if (((sib.userData.name as string | undefined) ?? sib.name) === 'body') sib.visible = state < 4;
+    }
   });
 }
 

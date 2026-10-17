@@ -159,6 +159,8 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       onSelectErrand: (e) => open({ id: ERRAND_SHEET + e.key, title: e.label || 'A transaction' }),
       onToll: (e) => sound.tollNow(Math.min(3, e.tier / 2)),
       onRefused: () => sound.refused(),
+      // the siege's enemy castle and its battlefield, while the game is on (src/game)
+      extend: (plan) => siege.extension(plan) ?? { placements: [] },
     });
     // Test hook (dev server only): the browser tests find buildings on screen through it.
     if (import.meta.env.DEV) (window as unknown as { castleView?: CastleView }).castleView = view;
@@ -181,7 +183,7 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
           savePrefs(prefs);
         },
       });
-    siege.attach(view.element);
+    siege.attach(view);
     return el('section', { class: 'tab-page scene-tab', 'data-tab-page': tab }, view.element);
   }
   view = null;
@@ -348,9 +350,8 @@ const siege = new SiegeMode({
   // the wallets on show (yours, or a visited guild's): one is picked to import
   wallets: () => (guildNow?.heroes ?? []).map((hero, i) => ({ name: walletName(i), hero })),
   protocols: () => guildNow?.protocols ?? new Map(),
-  onChange: (on) => {
-    if (on && shell.state.tab !== 'castle') shell.go('castle');
-  },
+  // the castle view is built again, with or without the siege's battlefield
+  onChange: () => shell.go('castle'),
 });
 
 const shell = new Shell({ renderTab, renderSheet, topbar: { guild: 'Your guild', rank: 'Wanderer', level: 'Lv 1' } });

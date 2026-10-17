@@ -1,12 +1,19 @@
 /**
  * Siege of the Ledger's switch: a topbar button that turns the castle view into
- * the game and back (docs/game/MAPPING.md). The chain view never depends on it.
- * The game's panel holds the match setup, then the match.
+ * the game and back (docs/game/MAPPING.md). The chain view never depends on it:
+ * while the game is on, the view is built with the siege's extension (the
+ * enemy castle past the town, a quiet town), and the game's panel holds the
+ * match setup, then the match.
  */
 
+import type { SceneExtension } from '../../castle/scene/castleView.js';
+import type { CastlePlan } from '../../castle/scene/plan.js';
 import { el } from '../../util/dom.js';
 import { Match } from '../core/match.js';
+import { siegePlan, type SiegePlan } from '../render/siegePlan.js';
+import { TEAM_COLORS } from '../render/battleView.js';
 import { opponentPortfolio } from '../setup/editor.js';
+import { MatchPanel, showCastleDamage, type MatchScene } from './matchPanel.js';
 import { SetupPanel, type SetupChoice, type SetupOptions } from './setupPanel.js';
 import './siege.css';
 
@@ -16,10 +23,8 @@ export const SIEGE_PARAM = 'mode';
 export interface SiegeModeOptions extends Omit<SetupOptions, 'onStart'> {
   /** Whether the game starts on (default: off). */
   on?: boolean;
-  /** Called after every switch, with the new state. */
+  /** Called after every switch, with the new state (the castle view is built again). */
   onChange?: (on: boolean) => void;
-  /** A new match (the renderer picks it up). */
-  onMatch?: (match: Match | null) => void;
   /** A match seed; the default is random. */
   seed?: () => string;
 }
@@ -28,11 +33,12 @@ export class SiegeMode {
   readonly button: HTMLButtonElement;
   #on: boolean;
   readonly #opts: SiegeModeOptions;
-  #scene: HTMLElement | null = null;
+  #scene: MatchScene | null = null;
   readonly #panel: HTMLElement;
   readonly #body: HTMLElement;
   readonly #setup: SetupPanel;
-  match: Match | null = null;
+  #plan: SiegePlan | null = null;
+  #matchPanel: MatchPanel | null = null;
 
   constructor(opts: SiegeModeOptions) {
     this.#opts = opts;
@@ -55,24 +61,42 @@ export class SiegeMode {
     return this.#on;
   }
 
+  get match(): Match | null {
+    return this.#matchPanel?.match ?? null;
+  }
+
   set(on: boolean): void {
     if (on === this.#on) return;
     this.#on = on;
-    // the wallets may have loaded since the setup was drawn
-    if (on && !this.match) this.#setup.render();
+    if (!on) this.leave();
     this.#show();
     this.#opts.onChange?.(on);
   }
 
-  /** The castle view's element, each time it is built: the game's HUD goes over it. */
-  attach(scene: HTMLElement): void {
+  /** What the castle view adds while the game is on: the enemy castle, the cleared ground, a quiet town. */
+  extension(plan: CastlePlan): SceneExtension | undefined {
+    if (!this.#on) return undefined;
+    const sp = siegePlan(plan);
+    this.#plan = sp;
+    return {
+      placements: sp.enemy,
+      cleared: sp.cleared,
+      reachZ: sp.field.z1 + 4,
+      tints: { enemy: TEAM_COLORS.B, 'enemy-piece': TEAM_COLORS.B, 'enemy-keep': TEAM_COLORS.B },
+      quiet: true,
+    };
+  }
+
+  /** The castle view, each time it is built: the game's HUD goes over it. */
+  attach(scene: MatchScene): void {
     this.#scene = scene;
-    scene.append(this.#panel);
-    if (!this.match) this.#setup.render();
+    scene.element.append(this.#panel);
+    if (this.#matchPanel) this.#matchPanel.attach(scene);
+    else this.#setup.render();
     this.#show();
   }
 
-  /** Starts a match from the setup's choice. */
+  /** Starts a match from the setup's choice, on this town's battlefield. */
   start(choice: SetupChoice): Match {
     const seed = this.#opts.seed?.() ?? randomSeed();
     const match = new Match({
@@ -80,30 +104,23 @@ export class SiegeMode {
       portfolios: [choice.draft.portfolio, opponentPortfolio(choice.draft, choice.archetype, choice.difficulty)],
       npc: [undefined, { archetype: choice.archetype, difficulty: choice.difficulty }],
       customAssets: choice.draft.customAssets,
+      ...(this.#plan ? { map: this.#plan.map } : {}),
     });
-    this.match = match;
-    this.#showMatch();
-    this.#opts.onMatch?.(match);
+    const f = this.#plan?.field;
+    this.#matchPanel = new MatchPanel({ match, centre: f ? { x: 0, z: (f.z0 + f.z1) / 2 + 8 } : { x: 0, z: 30 }, onLeave: () => this.leave() });
+    this.#body.replaceChildren(this.#matchPanel.element);
+    if (this.#scene) this.#matchPanel.attach(this.#scene);
     return match;
   }
 
   /** Back to the setup (the match is dropped). */
   leave(): void {
-    this.match = null;
+    this.#matchPanel?.dispose();
+    this.#matchPanel = null;
     this.#body.replaceChildren(this.#setup.element);
-    this.#setup.render();
-    this.#opts.onMatch?.(null);
-  }
-
-  #showMatch(): void {
-    const m = this.match;
-    if (!m) return;
-    const leave = el('button', { class: 'btn siege-leave', type: 'button' }, 'Leave the match');
-    leave.addEventListener('click', () => this.leave());
-    const s = m.state;
-    this.#body.replaceChildren(
-      el('div', { class: 'siege-match', 'data-phase': s.phase }, el('p', {}, `Round ${s.round} · ${s.phase} phase`), el('p', { class: 'siege-soon' }, `Seed ${s.seed}`), leave),
-    );
+    // the keeps stand whole again
+    if (this.#scene) showCastleDamage(this.#scene, [0, 0]);
+    if (this.#on) this.#setup.render();
   }
 
   #show(): void {
@@ -113,7 +130,7 @@ export class SiegeMode {
     this.button.setAttribute('aria-label', this.#on ? 'Back to the town' : 'Siege of the Ledger');
     this.button.title = this.#on ? 'Back to the town' : 'Siege of the Ledger: your portfolio goes to war';
     this.#panel.hidden = !this.#on;
-    if (this.#scene) this.#scene.toggleAttribute('data-siege', this.#on);
+    this.#scene?.element.toggleAttribute('data-siege', this.#on);
   }
 }
 

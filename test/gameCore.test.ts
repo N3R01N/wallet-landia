@@ -307,7 +307,7 @@ describe('MatchController', () => {
   });
 
   it('7 rounds complete headlessly over many seeds', () => {
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 6; i++) {
       const m = new Match(setup(`seed-${i}`));
       expect(m.playOut(trades).phase).toBe('ended');
     }

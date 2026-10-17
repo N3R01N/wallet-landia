@@ -15,7 +15,8 @@ import { Catalog, UNIT_TYPES } from './catalog.js';
 import { qtyFor } from './fixed.js';
 import { applyCommand, holdingsOf, liquidate, netValue, payYields, rebalancePools, refreshKeep, slash, type CommandResult, type LedgerCtx } from './ledger.js';
 import { drawNext, eventNum, initialMarket, runMarket } from './market.js';
-import { quickBattle, type BattleResolver } from './quickBattle.js';
+import { simulateBattle, type BattleMap, type BattleRun } from './battle.js';
+import type { BattleResolver } from './quickBattle.js';
 import type { Army, Asset, Command, LoggedCommand, MatchState, Portfolio, SideId, SideState, Squad } from './types.js';
 
 export interface MatchSetup {
@@ -25,7 +26,12 @@ export interface MatchSetup {
   npc?: readonly [SideState['npc'] | undefined, SideState['npc'] | undefined];
   /** Assets an imported wallet brought that the data files lack. */
   customAssets?: readonly Asset[];
+  /** The battlefield (the town's lanes); a straight field when absent. */
+  map?: BattleMap;
 }
+
+/** The full battle simulation (the default). */
+export const simulate: BattleResolver = (armies, ctx) => simulateBattle(armies, ctx);
 
 /** Everything a replay needs (spec: "{seed, config version, initial portfolios, command log}"). */
 export interface Replay {
@@ -42,8 +48,10 @@ export class Match {
   readonly #resolve: BattleResolver;
   /** The armies of the current battle (for the renderer). */
   armies: [Army, Army] | null = null;
+  /** The current battle in full, when it came from the simulation (for the renderer). */
+  run: BattleRun | null = null;
 
-  constructor(setup: MatchSetup, resolve: BattleResolver = quickBattle) {
+  constructor(setup: MatchSetup, resolve: BattleResolver = simulate) {
     this.#setup = structuredClone(setup) as MatchSetup;
     this.#resolve = resolve;
     this.catalog = new Catalog(setup.customAssets ?? []);
@@ -92,8 +100,27 @@ export class Match {
     return this.state.sides.every((s) => s.tradeDone);
   }
 
-  /** Moves one phase on. A Trade phase ends here whether or not both sides ended it (its time is up). */
-  advance(): void {
+  /**
+   * The armies the next battle will field (built as the Battle phase would):
+   * the game simulates them in a worker, then passes the run to `advance`.
+   */
+  nextArmies(): [Army, Army] {
+    const s = this.state;
+    const ctx = { catalog: this.catalog, prices: s.market.prices, unitValue: s.unitValue };
+    return s.sides.map((side) => buildArmy(side, ctx, s.momentum === side.id ? 1 + BALANCE.match.momentumAtk : 1)) as [Army, Army];
+  }
+
+  /** The battle's seed, round and map (for simulating it elsewhere). */
+  battleCtx(): { seed: string; round: number; map?: BattleMap } {
+    return { seed: this.state.seed, round: this.state.round, ...(this.#setup.map ? { map: this.#setup.map } : {}) };
+  }
+
+  /**
+   * Moves one phase on. A Trade phase ends here whether or not both sides
+   * ended it (its time is up). Into a battle, `run` is that battle already
+   * simulated (from the same armies and context), else it is simulated here.
+   */
+  advance(run?: BattleRun): void {
     const s = this.state;
     switch (s.phase) {
       case 'trade':
@@ -102,7 +129,7 @@ export class Match {
           this.#openTrade();
           return;
         }
-        this.#battle();
+        this.#battle(run);
         return;
       case 'battle':
         this.#siege();
@@ -135,14 +162,16 @@ export class Match {
     s.market.rumor = rumor;
   }
 
-  #battle(): void {
+  #battle(run?: BattleRun): void {
     const s = this.state;
+    this.armies = this.nextArmies();
     s.phase = 'battle';
-    const ctx = { catalog: this.catalog, prices: s.market.prices, unitValue: s.unitValue };
-    this.armies = s.sides.map((side) => buildArmy(side, ctx, s.momentum === side.id ? 1 + BALANCE.match.momentumAtk : 1)) as [Army, Army];
     // the seized collateral has had its moment
     for (const side of s.sides) side.liquidations = [];
-    s.lastBattle = this.#resolve(this.armies);
+    const result = run ?? this.#resolve(this.armies, this.battleCtx());
+    this.run = 'frames' in result ? (result as BattleRun) : null;
+    // the state keeps the outcome only (the frames are the renderer's)
+    s.lastBattle = { survivors: result.survivors, seconds: result.seconds };
   }
 
   #siege(): void {
@@ -243,7 +272,7 @@ export function siegeDamage(survivors: readonly Squad[]): number {
 }
 
 /** Plays a replay back: the same seed and commands give the same match. */
-export function replay(r: Replay, resolve: BattleResolver = quickBattle): Match {
+export function replay(r: Replay, resolve: BattleResolver = simulate): Match {
   if (r.configVersion !== CONFIG_VERSION) throw new Error(`replay is for rules ${r.configVersion}, these are ${CONFIG_VERSION}`);
   const m = new Match(r.setup, resolve);
   m.playOut((match) => {
@@ -255,4 +284,15 @@ export function replay(r: Replay, resolve: BattleResolver = quickBattle): Match 
 /** The state as JSON (bigints as "123n"): byte-identical for identical matches. */
 export function serialize(state: MatchState): string {
   return JSON.stringify(state, (_k, v: unknown) => (typeof v === 'bigint' ? `${v}n` : v));
+}
+
+/**
+ * The keep's damage state from its HP (spec: cracks at 75%, a breached outer
+ * wall at 50%, a burning keep at 25%, collapse at 0): 0 whole … 4 collapsed.
+ */
+export function damageState(hp: number, max: number): 0 | 1 | 2 | 3 | 4 {
+  if (hp <= 0) return 4;
+  const f = hp / max;
+  const [cracked, breached, burning] = BALANCE.keep.damageStates;
+  return f <= burning ? 3 : f <= breached ? 2 : f <= cracked ? 1 : 0;
 }

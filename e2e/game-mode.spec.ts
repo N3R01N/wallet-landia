@@ -93,3 +93,27 @@ test('match setup: a template, a wallet import, a blank build within its budget,
   await expect(panel.locator('.siege-setup')).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('a battle in the town: the enemy castle stands past it, the armies fight on the streets, the siege hits the keeps', async ({ page }) => {
+  test.setTimeout(150_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/?mode=siege');
+  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 120_000 });
+  const panel = page.locator('.siege-panel');
+  await panel.locator('.siege-start').click();
+  await expect(panel.locator('.siege-match')).toHaveAttribute('data-phase', 'trade');
+  await panel.locator('.siege-go').click();
+  await expect(panel.locator('.siege-match')).toHaveAttribute('data-phase', 'battle', { timeout: 30_000 });
+  // squad banners over the field, for both sides
+  await expect(page.locator('.siege-banner-A').first()).toBeAttached();
+  await expect(page.locator('.siege-banner-B').first()).toBeAttached();
+  await panel.locator('.siege-skip').click();
+  await expect(panel.locator('.siege-match')).toHaveAttribute('data-phase', 'siege', { timeout: 30_000 });
+  await expect(panel.locator('.siege-note')).toContainText('Siege:');
+  await expect(panel.locator('.siege-replay')).toBeVisible();
+  // the next round opens on trading again (or the match is over)
+  await panel.locator('.siege-next').click();
+  await expect(panel.locator('.siege-match')).toHaveAttribute('data-phase', /trade|ended|siege/);
+  expect(errors).toEqual([]);
+});

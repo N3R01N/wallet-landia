@@ -334,6 +334,32 @@ const FX: AssetSpec[] = [
   { name: 'fx.cobweb', kind: 'fx', required: false, size: [256, 256, 0], standin: { shape: 'sphere', color: '#e6e1d6' }, note: 'Cobweb overlay.' },
 ];
 
+/**
+ * Siege of the Ledger's models (docs/batches/19-siege-units-pilot.md, 20-siege-dressing.md):
+ * one rigged unit per unit type (src/game/data/units.json), and the capture markers.
+ */
+export const UNIT_MODELS = [
+  'titan.bitcoin', 'paladin.eth', 'paladin.staked', 'lancer.lido', 'archer.oracle', 'mage.swap', 'lender.ghost', 'warden.vault',
+  'rider.name', 'pack.shiba', 'swarm.frog', 'knight', 'mage.battle', 'archer.scout', 'swarm.goblin', 'golem.stone', 'construct', 'militia',
+] as const;
+export const UNIT_CLIPS = ['idle', 'walk', 'attack', 'hit', 'death', 'cheer'] as const;
+
+const SIEGE: AssetSpec[] = [
+  ...UNIT_MODELS.map(
+    (id): AssetSpec => ({
+      name: `unit.${id}`,
+      kind: 'model',
+      required: false,
+      size: id.startsWith('titan') || id.startsWith('golem') ? [1.6, 1.2, 3.5] : id.startsWith('swarm') || id.startsWith('pack') ? [0.6, 0.8, 0.9] : [0.7, 0.5, 1.75],
+      clips: UNIT_CLIPS,
+      standin: { shape: 'capsule', color: '#8a7a6a', offset: [0, 0.85, 0] },
+      note: 'A siege unit, drawn instanced by the hundred: everything skinned, clips in place, Tint = team colour.',
+    }),
+  ),
+  { name: 'fx.capture.ring', kind: 'model', required: false, size: [2, 2, 0.02], standin: { shape: 'cylinder', color: '#d9a93a' }, note: 'Capture progress ring round a battlefield building: 24 segments seg.00…seg.23.' },
+  { name: 'prop.banner.owner', kind: 'model', required: false, size: [0.8, 0.2, 3.2], clips: ['idle', 'tap'], standin: { shape: 'box', color: '#b84a32' }, note: 'The owner’s banner beside a captured building.' },
+];
+
 const ICONS = ['castle', 'town', 'badges', 'guild', 'bell', 'gas', 'close', 'settings', 'map'];
 const BADGES = [
   'first-steps', 'barter', 'fountain', 'blessed', 'vault', 'borrower', 'paid', 'survived', 'keys', 'patron', 'seafarer',
@@ -561,6 +587,7 @@ export const ASSETS: readonly AssetSpec[] = [
   ...SCENERY,
   ...PROPS,
   ...LIFE,
+  ...SIEGE,
 ];
 
 /**
