@@ -104,6 +104,8 @@ export interface Errand {
   label: string;
   /** A loan's collateral that goes back from the wallet's hall to the building as this errand begins (the loan ended). */
   collateralBack?: Goods;
+  /** How fast its courier walks, against the usual pace (a game mode's: the siege's gas spike); 1 when absent. */
+  pace?: number;
 }
 
 export interface ErrandStep {

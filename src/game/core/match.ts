@@ -10,14 +10,14 @@
  */
 
 import { BALANCE, CONFIG_VERSION } from '../config/balance.js';
-import { buildArmy, unitValueFor } from './army.js';
+import { buildArmy, unitCount, unitValueFor } from './army.js';
 import { Catalog, UNIT_TYPES } from './catalog.js';
 import { qtyFor } from './fixed.js';
-import { applyCommand, holdingsOf, liquidate, netValue, payYields, rebalancePools, refreshKeep, slash, type CommandResult, type LedgerCtx } from './ledger.js';
+import { account, applyCommand, gasCost, holding, holdingsOf, liquidate, netValue, payYields, rebalancePools, refreshKeep, slash, type CommandResult, type LedgerCtx } from './ledger.js';
 import { drawNext, eventNum, initialMarket, runMarket } from './market.js';
 import { simulateBattle, type BattleMap, type BattleRun } from './battle.js';
 import type { BattleResolver } from './quickBattle.js';
-import type { Army, Asset, Command, LoggedCommand, MatchState, Portfolio, SideId, SideState, Squad } from './types.js';
+import type { Army, Asset, AssetId, Command, LoggedCommand, MatchState, Portfolio, SideId, SideState, Squad } from './types.js';
 
 export interface MatchSetup {
   seed: string;
@@ -295,4 +295,85 @@ export function damageState(hp: number, max: number): 0 | 1 | 2 | 3 | 4 {
   const f = hp / max;
   const [cracked, breached, burning] = BALANCE.keep.damageStates;
   return f <= burning ? 3 : f <= breached ? 2 : f <= cracked ? 1 : 0;
+}
+
+/** What a command would do, without doing it (the trade panel's preview, the NPCs' scoring). */
+export interface CommandPreview {
+  ok: boolean;
+  reason?: string;
+  /** Gas paid, in dollars. */
+  gas: number;
+  /** Net portfolio value before and after (fees, slippage and gas come off). */
+  valueBefore: number;
+  valueAfter: number;
+  /** Units the army fields before and after. */
+  unitsBefore: number;
+  unitsAfter: number;
+  keepMaxBefore: number;
+  keepMaxAfter: number;
+  keepHpAfter: number;
+  /** The loans' health factors after (Infinity: no debt). */
+  hfAfter: { lending: number; vault: number };
+}
+
+export function previewCommand(m: Match, side: SideId, cmd: Command): CommandPreview {
+  const s = m.state;
+  const real = m.side(side);
+  const draft = structuredClone(real);
+  const ctx = { catalog: m.catalog, prices: s.market.prices, unitValue: s.unitValue, round: s.round, gasMult: s.market.gasMult };
+  const units = (x: SideState) => unitCount(buildArmy(x, ctx));
+  const r = applyCommand(draft, cmd, ctx);
+  return {
+    ok: r.ok,
+    ...(r.ok ? {} : { reason: r.reason }),
+    gas: gasCost(ctx),
+    valueBefore: netValue(real, s.market.prices),
+    valueAfter: netValue(draft, s.market.prices),
+    unitsBefore: units(real),
+    unitsAfter: units(draft),
+    keepMaxBefore: real.keepHpMax,
+    keepMaxAfter: draft.keepHpMax,
+    keepHpAfter: draft.keepHp,
+    hfAfter: { lending: account(draft, 'lending', ctx).hf, vault: account(draft, 'vault', ctx).hf },
+  };
+}
+
+/**
+ * The most a command can take, in token units (bigint), for a side as it
+ * stands: a holding for swap/stake/supply, a staked or supplied amount, the
+ * room left under the LTV limit for a borrow, the debt for a repay.
+ */
+export function available(m: Match, side: SideId, kind: Command['t'], asset: AssetId, via: 'lending' | 'vault' = 'lending'): bigint {
+  const s = m.state;
+  const x = m.side(side);
+  const ctx = { catalog: m.catalog, prices: s.market.prices };
+  switch (kind) {
+    case 'swap':
+    case 'stake':
+    case 'supply':
+    case 'lpAdd': {
+      const have = holding(x, asset);
+      // gas comes out of the ETH first: "all" leaves it behind
+      if (asset !== 'eth') return have;
+      const gas = qtyFor(gasCost({ unitValue: s.unitValue, gasMult: s.market.gasMult }) * 1.001, s.market.prices.eth ?? 0);
+      return have > gas ? have - gas : 0n;
+    }
+    case 'unstake':
+    case 'restake':
+      return holding(x, asset, 'staked', 'staking') + holding(x, asset);
+    case 'withdraw':
+      return holding(x, asset, 'supplied', via);
+    case 'borrow': {
+      const acc = account(x, via, ctx);
+      const room = Math.max(0, acc.collateral * BALANCE.ledger.ltv - acc.debt);
+      return qtyFor(room * 0.999, s.market.prices[asset] ?? 0);
+    }
+    case 'repay': {
+      const debt = holding(x, asset, 'borrowed', via);
+      const have = holding(x, asset);
+      return debt < have ? debt : have;
+    }
+    default:
+      return 0n;
+  }
 }

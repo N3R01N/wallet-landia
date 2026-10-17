@@ -1396,7 +1396,7 @@ export class CastleView {
       // and brings the repayment home
       const back = !!errand.collateralBack && errand.direction === 'in';
       if (back) route = route.map(({ stop, ...p }) => (stop === 'toll' ? p : { ...p, ...(stop ? { stop } : {}) }));
-      script = buildCourierScript(route, DEFAULT_TIMING, back ? 'out' : errand.direction, { failed: errand.failed });
+      script = buildCourierScript(route, errand.pace ? { ...DEFAULT_TIMING, speed: DEFAULT_TIMING.speed * errand.pace } : DEFAULT_TIMING, back ? 'out' : errand.direction, { failed: errand.failed });
     }
     const figure = new Figure(this.#make('courier.base'), this.#loaded.get('courier.base')?.clips ?? [], [TAP_CLIP]);
     // its goods, sized by value, in its right hand (on the standin's back)

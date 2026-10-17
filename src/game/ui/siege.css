@@ -29,10 +29,10 @@
 
 .siege-panel {
   position: absolute;
+  z-index: 6;
   top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(420px, calc(100% - 32px));
+  left: 10px;
+  width: min(380px, calc(100% - 32px));
   padding: 12px 16px;
   border-radius: 10px;
   background: rgba(243, 234, 214, 0.94);
@@ -62,8 +62,33 @@
 /* ---------- setup ---------- */
 
 .siege-panel {
-  max-height: calc(100% - 80px);
+  max-height: calc(100% - 20px);
   overflow-y: auto;
+}
+
+/* phones: a sheet at the bottom, the town above it */
+.shell[data-layout='phone'] .siege-panel {
+  top: auto;
+  bottom: 8px;
+  left: 8px;
+  width: calc(100% - 16px);
+  max-height: 55%;
+}
+
+.siege-panel .siege-min {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+/* minimised: the head and the keeps only */
+.siege-panel[data-min] .siege-intro,
+.siege-panel[data-min] .siege-setup,
+.siege-panel[data-min] .siege-match > :not(.siege-head, .siege-keep, .siege-row) {
+  display: none;
 }
 
 .siege-panel .siege-intro {
@@ -256,12 +281,6 @@
   font-size: 0.8rem;
 }
 
-/* during the battle the panel steps out of the way of the field */
-.siege-panel:has(.siege-match[data-phase='battle']) {
-  top: auto;
-  bottom: 10px;
-}
-
 .siege-panel:has(.siege-match[data-phase='battle']) .siege-intro {
   display: none;
 }
@@ -293,4 +312,191 @@
 
 .siege-banner-B {
   background: rgba(184, 74, 50, 0.92);
+}
+
+/* ---------- the HUD (M4) ---------- */
+
+.siege-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 4px;
+}
+
+.siege-timer {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #2a2118;
+  color: #f3ead6;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.siege-timer.paused {
+  background: #7a6a55;
+}
+
+.siege-regime {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  background: rgba(42, 33, 24, 0.1);
+}
+
+.siege-regime-bull {
+  background: rgba(111, 191, 74, 0.3);
+}
+
+.siege-regime-bear {
+  background: rgba(208, 68, 44, 0.25);
+}
+
+.siege-ticker {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0;
+  font-size: 0.8rem;
+}
+
+.siege-tick {
+  display: grid;
+  grid-template-columns: 4.5em 58px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.siege-tick-sym {
+  font-weight: 700;
+}
+
+.siege-candles rect.up,
+.siege-tick-chg.up {
+  fill: #4f9a3a;
+  color: #3d7d2c;
+}
+
+.siege-candles rect.down,
+.siege-tick-chg.down {
+  fill: #c2412b;
+  color: #b0381f;
+}
+
+.siege-rumor {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-left: 3px solid #7a6a55;
+  background: rgba(42, 33, 24, 0.06);
+  font-size: 0.82rem;
+}
+
+.siege-rumor small {
+  opacity: 0.65;
+}
+
+.siege-gauges {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0;
+}
+
+.siege-gauge {
+  display: grid;
+  grid-template-columns: 5.5em 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+
+.siege-gauge-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(42, 33, 24, 0.15);
+  overflow: hidden;
+}
+
+.siege-gauge-fill {
+  display: block;
+  height: 100%;
+  background: #4f9a3a;
+}
+
+.siege-gauge-warn .siege-gauge-fill {
+  background: #e0a32e;
+}
+
+.siege-gauge-danger .siege-gauge-fill {
+  background: #c2412b;
+}
+
+.siege-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(224, 163, 46, 0.3);
+  font-size: 0.82rem;
+}
+
+.btn.siege-portfolio-toggle {
+  min-height: 30px;
+  padding: 0 6px;
+  background: transparent;
+  border: 0;
+  font-weight: 700;
+  color: inherit;
+}
+
+.siege-portfolio {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.siege-portfolio td {
+  padding: 2px 4px;
+  border-bottom: 1px solid rgba(42, 33, 24, 0.1);
+}
+
+.siege-portfolio .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.siege-trade {
+  margin: 8px 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(42, 33, 24, 0.05);
+}
+
+.siege-pct {
+  flex: 1;
+  min-width: 120px;
+}
+
+.siege-pct-label {
+  min-width: 3em;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn.siege-quick {
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 0.8rem;
+}
+
+.siege-preview-line {
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.btn.siege-send {
+  width: 100%;
+  min-height: 38px;
+  font-weight: 700;
 }

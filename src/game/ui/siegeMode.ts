@@ -47,9 +47,16 @@ export class SiegeMode {
     this.button.addEventListener('click', () => this.set(!this.#on));
     this.#setup = new SetupPanel({ wallets: opts.wallets, protocols: opts.protocols, onStart: (c) => this.start(c) });
     this.#body = el('div', { class: 'siege-body' }, this.#setup.element);
+    const min = el('button', { class: 'btn siege-min', type: 'button', 'aria-label': 'Fold the panel', 'aria-expanded': 'true' }, '▾');
+    min.addEventListener('click', () => {
+      const folded = this.#panel.toggleAttribute('data-min');
+      min.textContent = folded ? '▸' : '▾';
+      min.setAttribute('aria-expanded', String(!folded));
+    });
     this.#panel = el(
       'div',
       { class: 'siege-panel', role: 'region', 'aria-label': 'Siege of the Ledger' },
+      min,
       el('h2', {}, '⚔ Siege of the Ledger'),
       el('p', { class: 'siege-intro' }, 'Your portfolio is your army. Trade between battles and bring down the enemy keep.'),
       this.#body,

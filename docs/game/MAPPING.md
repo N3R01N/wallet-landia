@@ -115,3 +115,10 @@ Points the spec left open, settled here (change in config if needed):
 - **Damage states:** `damage.N`, `intact` and `ruin` parts are hidden in the normal town and shown in a match from each keep's HP.
 - **Replays:** a battle's run is kept; "Replay the battle" plays it again exactly.
 - **Not yet:** hit sparks, projectiles and event weather (with M5's events); capture rings (M5).
+
+## Trade phase and HUD (M4)
+
+- **The HUD** (`ui/matchPanel.ts`, `ui/hud.ts`): round, phase and its timer, the regime badge, both keeps' HP, the price ticker with the week's daily candles (played day by day in the Market phase), the rumor card, Health Factor gauges (amber under 1.2), and the portfolio (positions → squads, stables → walls). A column on the left on desktop, a sheet at the bottom on phones; it folds away.
+- **The trade panel** (`ui/tradePanel.ts`): every command of the spec, amounts as shares of what is available (`available`: "all" ETH leaves the gas behind; a borrow, the room under the LTV limit), and a dry-run preview (`previewCommand`) with gas, fee and slippage, the army's units, the walls and the loans' health. One-tap "Repay half" and "Add collateral" when a loan is under 1.2.
+- **Couriers** (`render/tradeCouriers.ts`): each accepted command sends the town's courier to a building of its kind (swaps to the exchange, loans to the bank, a vault to Maker/Sky, staking to the staking house), else to the town's end; during a gas spike they walk at less than half pace (`Errand.pace`).
+- **30 s of trading** with pause, then the battle; the Market week is ~8 s; sudden death skips the trade.

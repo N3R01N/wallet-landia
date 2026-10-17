@@ -117,3 +117,44 @@ test('a battle in the town: the enemy castle stands past it, the armies fight on
   await expect(panel.locator('.siege-match')).toHaveAttribute('data-phase', /trade|ended|siege/);
   expect(errors).toEqual([]);
 });
+
+test('the trade phase: the timer pauses, a swap goes out with its courier, the rumor and the ticker show, the market week plays', async ({ page }) => {
+  test.setTimeout(150_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/?mode=siege');
+  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 120_000 });
+  const panel = page.locator('.siege-panel');
+  await panel.locator('.siege-start').click();
+  const timer = panel.locator('.siege-timer');
+  await expect(timer).toHaveText(/\d+ s/);
+  await panel.locator('.siege-pause').click();
+  await expect(timer).toHaveText('⏸');
+  await expect(panel.locator('.siege-rumor')).toContainText('Rumor');
+  await expect(panel.locator('.siege-tick')).not.toHaveCount(0);
+  // a swap: the preview, then the courier
+  await panel.locator('.siege-action').selectOption('swap');
+  await panel.locator('.siege-quick', { hasText: '25%' }).click();
+  await expect(panel.locator('.siege-preview-line')).toContainText('gas');
+  await expect(panel.locator('.siege-preview-line')).toContainText('fee and slippage');
+  await panel.locator('.siege-send').click();
+  await expect(panel.locator('.siege-message')).toContainText('courier sets out');
+  await expect.poll(() => page.evaluate(() => (window as unknown as { castleView: { state(): { couriers: number } } }).castleView.state().couriers), { timeout: 20_000 }).toBeGreaterThan(0);
+  // the portfolio folds open
+  await panel.locator('.siege-portfolio-toggle').click();
+  await expect(panel.locator('.siege-portfolio tr')).not.toHaveCount(0);
+  // through the battle to the next round's market week, then trading again
+  await panel.locator('.siege-go').click();
+  await expect(panel.locator('.siege-match')).toHaveAttribute('data-phase', 'battle', { timeout: 30_000 });
+  await panel.locator('.siege-skip').click();
+  await expect(panel.locator('.siege-match')).toHaveAttribute('data-phase', 'siege', { timeout: 30_000 });
+  const winner = await panel.locator('.siege-winner').count();
+  if (winner === 0) {
+    await panel.locator('.siege-next').click();
+    await expect(panel.locator('.siege-match')).toHaveAttribute('data-phase', 'market');
+    await expect(panel.locator('.siege-candles').first()).toBeAttached();
+    await panel.locator('.siege-skip').click();
+    await expect(panel.locator('.siege-match')).toHaveAttribute('data-phase', 'trade');
+  }
+  expect(errors).toEqual([]);
+});
