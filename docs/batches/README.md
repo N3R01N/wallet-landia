@@ -30,9 +30,9 @@ Rules: `docs/STYLEGUIDE_V2.md`, especially §10 (lessons).
 | 17 | Wallet halls by worth (t0–t6: lean-to, cottage, townhouse, stone hall, tower house, great tower, palace spire) and by what the wallet holds (tokens, DeFi, NFTs dressing) | [17](17-wallet-halls.md) | blender-e2 (t0, t3–t6), blender-3e (t1, t2) | all seven checked in the game (2026-10-15); waiting for the user's look |
 | 18 | Path shapes: bend, tee, cross, end (the kerb no longer crosses a branch) | [18](18-path-tiles.md) | blender-3e | checked in the game (2026-10-15); waiting for the user's look |
 | 19 | Siege units pilot: Militia, Ether Paladin, Oracle Archer (combat clips, instancing budget) | [19](19-siege-units-pilot.md) | blender-a4 | ✅ all three approved, committed |
-| 21 | Siege units, the humanoids: Knight, Staked Paladin, Vault Warden, Scout Archer, Swap Mage, Battle Mage, Ghost Lender, Goblin, Construct | [21](21-siege-units-humanoid.md) | blender-a4 | briefed (2026-10-17) |
+| 21 | Siege units, the humanoids: Knight, Staked Paladin, Vault Warden, Scout Archer, Swap Mage, Battle Mage, Ghost Lender, Goblin, Construct | [21](21-siege-units-humanoid.md) | blender-a4 | ✅ all nine approved, committed |
 | 20 | Siege dressing: keep and wall damage states, capture ring, owner banner | [20](20-siege-dressing.md) | blender-de | ✅ checked in the game (2026-10-17), committed |
-| 22 | Siege units, creatures and mounts: Titan, Golem, Lido Lancer, Name Rider, Shiba Pack, Frog Swarm | [22](22-siege-creatures.md) | blender-de | briefed (2026-10-17) |
+| 22 | Siege units, creatures and mounts: Titan, Golem, Lido Lancer, Name Rider, Shiba Pack, Frog Swarm | [22](22-siege-creatures.md) | blender-de | ✅ all six approved, committed |
 
 The landmark classes come from each protocol's value on Ethereum (`src/castle/world/tvl.json`), so a protocol may change class when the snapshot is renewed. Batch 3 (castle wings) was dropped: castle layout 2 has none.
 
