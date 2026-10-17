@@ -1,0 +1,258 @@
+/**
+ * The MatchController: the phase machine of a match (spec: "Core match
+ * loop"). Round 1 opens on the Trade phase at known prices; every later round
+ * runs Market → Trade → Battle → Siege. After round 7 with both keeps standing
+ * comes one sudden-death round (siege ×3, no trade), then the higher keep HP %
+ * wins.
+ *
+ * Players and NPCs change the state only through commands; `advance` moves one
+ * phase on. No clocks: the UI decides when a phase's time is up.
+ */
+
+import { BALANCE, CONFIG_VERSION } from '../config/balance.js';
+import { buildArmy, unitValueFor } from './army.js';
+import { Catalog, UNIT_TYPES } from './catalog.js';
+import { qtyFor } from './fixed.js';
+import { applyCommand, holdingsOf, liquidate, netValue, payYields, rebalancePools, refreshKeep, slash, type CommandResult, type LedgerCtx } from './ledger.js';
+import { drawNext, eventNum, initialMarket, runMarket } from './market.js';
+import { quickBattle, type BattleResolver } from './quickBattle.js';
+import type { Army, Asset, Command, LoggedCommand, MatchState, Portfolio, SideId, SideState, Squad } from './types.js';
+
+export interface MatchSetup {
+  seed: string;
+  portfolios: readonly [Portfolio, Portfolio];
+  /** Which sides an NPC plays (M6). */
+  npc?: readonly [SideState['npc'] | undefined, SideState['npc'] | undefined];
+  /** Assets an imported wallet brought that the data files lack. */
+  customAssets?: readonly Asset[];
+}
+
+/** Everything a replay needs (spec: "{seed, config version, initial portfolios, command log}"). */
+export interface Replay {
+  setup: MatchSetup;
+  configVersion: string;
+  log: LoggedCommand[];
+}
+
+export class Match {
+  readonly state: MatchState;
+  readonly catalog: Catalog;
+  readonly log: LoggedCommand[] = [];
+  readonly #setup: MatchSetup;
+  readonly #resolve: BattleResolver;
+  /** The armies of the current battle (for the renderer). */
+  armies: [Army, Army] | null = null;
+
+  constructor(setup: MatchSetup, resolve: BattleResolver = quickBattle) {
+    this.#setup = structuredClone(setup) as MatchSetup;
+    this.#resolve = resolve;
+    this.catalog = new Catalog(setup.customAssets ?? []);
+    const market = initialMarket(this.catalog, [...setup.portfolios[0].nfts, ...setup.portfolios[1].nfts]);
+    const sides = (['A', 'B'] as const).map((id, i) => newSide(id, setup.portfolios[i]!, setup.npc?.[i])) as [SideState, SideState];
+    const unitValue = unitValueFor(sides, this.catalog, market.prices);
+    this.state = {
+      seed: setup.seed,
+      configVersion: CONFIG_VERSION,
+      round: 1,
+      phase: 'trade',
+      unitValue,
+      customAssets: [...(setup.customAssets ?? [])],
+      market,
+      sides,
+      momentum: null,
+      suddenDeath: false,
+      winner: null,
+      lastBattle: null,
+    };
+    for (const s of sides) {
+      refreshKeep(s, this.#ctx());
+      s.keepHp = s.keepHpMax;
+    }
+    this.#openTrade();
+  }
+
+  side(id: SideId): SideState {
+    return this.state.sides[id === 'A' ? 0 : 1];
+  }
+
+  #ctx(): LedgerCtx {
+    return { catalog: this.catalog, prices: this.state.market.prices, unitValue: this.state.unitValue, round: this.state.round, gasMult: this.state.market.gasMult };
+  }
+
+  /** A command from a player or an NPC; only in the Trade phase. */
+  command(side: SideId, cmd: Command): CommandResult {
+    if (this.state.phase !== 'trade') return { ok: false, reason: `no trading in the ${this.state.phase} phase` };
+    const r = applyCommand(this.side(side), cmd, this.#ctx());
+    if (r.ok) this.log.push({ round: this.state.round, side, cmd: structuredClone(cmd) });
+    return r;
+  }
+
+  /** Both sides have ended their Trade phase. */
+  get tradeDone(): boolean {
+    return this.state.sides.every((s) => s.tradeDone);
+  }
+
+  /** Moves one phase on. A Trade phase ends here whether or not both sides ended it (its time is up). */
+  advance(): void {
+    const s = this.state;
+    switch (s.phase) {
+      case 'trade':
+      case 'market':
+        if (s.phase === 'market' && !s.suddenDeath) {
+          this.#openTrade();
+          return;
+        }
+        this.#battle();
+        return;
+      case 'battle':
+        this.#siege();
+        return;
+      case 'siege':
+        this.#nextRound();
+        return;
+      case 'ended':
+        return;
+    }
+  }
+
+  /** Runs phases until the match ends (both sides passing every Trade phase unless `onTrade` trades). */
+  playOut(onTrade: (m: Match) => void = () => {}): MatchState {
+    let guard = 0;
+    while (this.state.phase !== 'ended' && guard++ < 1000) {
+      if (this.state.phase === 'trade') onTrade(this);
+      this.advance();
+    }
+    return this.state;
+  }
+
+  #openTrade(): void {
+    const s = this.state;
+    s.phase = 'trade';
+    for (const side of s.sides) side.tradeDone = false;
+    const held = new Set(s.sides.flatMap((side) => holdingsOf(side).map((h) => h.asset)));
+    const { next, rumor } = drawNext(s.seed, s.round, this.catalog, { held });
+    s.market.next = next;
+    s.market.rumor = rumor;
+  }
+
+  #battle(): void {
+    const s = this.state;
+    s.phase = 'battle';
+    const ctx = { catalog: this.catalog, prices: s.market.prices, unitValue: s.unitValue };
+    this.armies = s.sides.map((side) => buildArmy(side, ctx, s.momentum === side.id ? 1 + BALANCE.match.momentumAtk : 1)) as [Army, Army];
+    // the seized collateral has had its moment
+    for (const side of s.sides) side.liquidations = [];
+    s.lastBattle = this.#resolve(this.armies);
+  }
+
+  #siege(): void {
+    const s = this.state;
+    s.phase = 'siege';
+    const result = s.lastBattle;
+    if (!result) return;
+    const mult = s.suddenDeath ? BALANCE.match.suddenDeathSiegeMult : 1;
+    const [a, b] = s.sides;
+    b.keepHp = Math.max(0, b.keepHp - siegeDamage(result.survivors[0]) * mult);
+    a.keepHp = Math.max(0, a.keepHp - siegeDamage(result.survivors[1]) * mult);
+    if (a.keepHp <= 0 && b.keepHp <= 0) s.winner = 'draw';
+    else if (b.keepHp <= 0) s.winner = 'A';
+    else if (a.keepHp <= 0) s.winner = 'B';
+  }
+
+  #nextRound(): void {
+    const s = this.state;
+    if (s.winner) {
+      s.phase = 'ended';
+      return;
+    }
+    if (s.suddenDeath) {
+      const [a, b] = s.sides.map((x) => x.keepHp / x.keepHpMax) as [number, number];
+      s.winner = a > b ? 'A' : b > a ? 'B' : 'draw';
+      s.phase = 'ended';
+      return;
+    }
+    if (s.round >= BALANCE.match.rounds) s.suddenDeath = true;
+    s.round++;
+    this.#market();
+  }
+
+  #market(): void {
+    const s = this.state;
+    s.phase = 'market';
+    const ctx = this.#ctx();
+    for (const side of s.sides) {
+      side.valueBeforeMarket = netValue(side, s.market.prices);
+      payYields(side, s.round, ctx);
+    }
+    runMarket(s.market, s.seed, s.round, this.catalog, (candle) => {
+      for (const side of s.sides) {
+        rebalancePools(side, candle.close);
+        liquidate(side, s.round, candle.day, { catalog: this.catalog, prices: candle.close });
+      }
+    });
+    const event = s.market.current;
+    if (event?.id === 'slashing') for (const side of s.sides) slash(side, eventNum('slashing', 'burn'));
+    if (event?.id === 'airdrop') {
+      const asset = 'drop';
+      const qty = qtyFor(eventNum('airdrop', 'units') * s.unitValue, s.market.prices[asset] ?? 1);
+      for (const side of s.sides) side.portfolio.positions.push({ asset, qty, kind: 'spot' });
+    }
+    const after = this.#ctx();
+    for (const side of s.sides) refreshKeep(side, after);
+    // Momentum: the better portfolio % change this week
+    const change = s.sides.map((side) => {
+      const before = side.valueBeforeMarket;
+      return before > 0 ? (netValue(side, s.market.prices) - before) / before : 0;
+    }) as [number, number];
+    s.momentum = change[0] > change[1] ? 'A' : change[1] > change[0] ? 'B' : null;
+  }
+
+  /** The match so far, for replays: rebuilt by `replay`. */
+  replay(): Replay {
+    return { setup: structuredClone(this.#setup), configVersion: CONFIG_VERSION, log: structuredClone(this.log) };
+  }
+}
+
+function newSide(id: SideId, portfolio: Portfolio, npc: SideState['npc'] | undefined): SideState {
+  const p = structuredClone(portfolio);
+  while (p.relics.length < 3) p.relics.push(null);
+  return {
+    id,
+    portfolio: p,
+    keepHp: 0,
+    keepHpMax: 0,
+    buildingsOwned: [],
+    isNpc: npc !== undefined,
+    ...(npc ? { npc } : {}),
+    tradeDone: false,
+    valueBeforeMarket: 0,
+    liquidations: [],
+    shutdownUsed: false,
+  };
+}
+
+/** Keep damage from a side's survivors: each unit's Siege value (×3 for Siege units), scaled. */
+export function siegeDamage(survivors: readonly Squad[]): number {
+  let total = 0;
+  for (const s of survivors) {
+    const u = UNIT_TYPES[s.unit];
+    if (!u) continue;
+    total += s.count * u.siege * (u.role === 'siege' ? BALANCE.keep.siegeRoleMult : 1);
+  }
+  return total * BALANCE.keep.siegeScale;
+}
+
+/** Plays a replay back: the same seed and commands give the same match. */
+export function replay(r: Replay, resolve: BattleResolver = quickBattle): Match {
+  if (r.configVersion !== CONFIG_VERSION) throw new Error(`replay is for rules ${r.configVersion}, these are ${CONFIG_VERSION}`);
+  const m = new Match(r.setup, resolve);
+  m.playOut((match) => {
+    for (const c of r.log) if (c.round === match.state.round) match.command(c.side, c.cmd);
+  });
+  return m;
+}
+
+/** The state as JSON (bigints as "123n"): byte-identical for identical matches. */
+export function serialize(state: MatchState): string {
+  return JSON.stringify(state, (_k, v: unknown) => (typeof v === 'bigint' ? `${v}n` : v));
+}

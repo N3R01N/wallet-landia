@@ -1,0 +1,32 @@
+{
+  "units": {
+    "titan.bitcoin": { "name": "Bitcoin Titan", "role": "siege", "costMult": 3, "hp": 60, "atk": 8, "range": 1, "speed": 0.6, "siege": 6, "ability": "hardened" },
+    "paladin.eth": { "name": "Ether Paladin", "role": "melee", "costMult": 2, "hp": 30, "atk": 6, "range": 1, "speed": 1.0, "siege": 2, "ability": "heal-adjacent" },
+    "paladin.staked": { "name": "Staked Paladin", "role": "melee", "costMult": 2, "hp": 34, "atk": 5, "range": 1, "speed": 0.9, "siege": 2, "ability": "start-shield" },
+    "lancer.lido": { "name": "Lido Lancer", "role": "cavalry", "costMult": 1.5, "hp": 18, "atk": 6, "range": 1, "speed": 2.0, "siege": 1, "ability": "charge" },
+    "archer.oracle": { "name": "Oracle Archer", "role": "ranged", "costMult": 1.2, "hp": 10, "atk": 5, "range": 5, "speed": 1.0, "siege": 1, "ability": "reveal-crit" },
+    "mage.swap": { "name": "Swap Mage", "role": "ranged", "costMult": 1.5, "hp": 12, "atk": 4, "range": 4, "speed": 0.9, "siege": 1, "ability": "swap-enemies" },
+    "lender.ghost": { "name": "Ghost Lender", "role": "support", "costMult": 1.5, "hp": 14, "atk": 3, "range": 3, "speed": 1.1, "siege": 1, "ability": "drain-atk" },
+    "warden.vault": { "name": "Vault Warden", "role": "melee", "costMult": 2, "hp": 40, "atk": 3, "range": 1, "speed": 0.8, "siege": 1, "ability": "taunt" },
+    "rider.name": { "name": "Name Rider", "role": "cavalry", "costMult": 1, "hp": 12, "atk": 4, "range": 1, "speed": 1.8, "siege": 1 },
+    "pack.shiba": { "name": "Shiba Pack", "role": "swarm", "costMult": 0.5, "hp": 5, "atk": 2, "range": 1, "speed": 1.6, "siege": 1, "ability": "pack-bonus" },
+    "swarm.frog": { "name": "Frog Swarm", "role": "swarm", "costMult": 0.4, "hp": 4, "atk": 2, "range": 1, "speed": 1.5, "siege": 1, "ability": "death-burst" },
+
+    "knight": { "name": "Knight", "role": "melee", "costMult": 1.5, "hp": 24, "atk": 5, "range": 1, "speed": 1.0, "siege": 1 },
+    "mage.battle": { "name": "Battle Mage", "role": "ranged", "costMult": 1.3, "hp": 11, "atk": 4, "range": 4, "speed": 0.9, "siege": 1, "ability": "small-area" },
+    "archer.scout": { "name": "Scout Archer", "role": "ranged", "costMult": 1.1, "hp": 8, "atk": 4, "range": 6, "speed": 1.1, "siege": 1 },
+    "swarm.goblin": { "name": "Goblin Swarm", "role": "swarm", "costMult": 0.5, "hp": 5, "atk": 2, "range": 1, "speed": 1.5, "siege": 1 },
+    "golem.stone": { "name": "Stone Golem", "role": "siege", "costMult": 2.5, "hp": 50, "atk": 6, "range": 1, "speed": 0.5, "siege": 5 },
+    "construct": { "name": "Construct", "role": "support", "costMult": 1.3, "hp": 16, "atk": 3, "range": 2, "speed": 0.9, "siege": 1, "ability": "buff-atk" },
+    "militia": { "name": "Militia", "role": "melee", "costMult": 1, "hp": 14, "atk": 3, "range": 1, "speed": 1.0, "siege": 1 }
+  },
+  "fallback": {
+    "largecap": "knight",
+    "defi-gov": "mage.battle",
+    "infra": "archer.scout",
+    "meme": "swarm.goblin",
+    "rwa": "golem.stone",
+    "ai-gaming": "construct",
+    "misc": "militia"
+  }
+}

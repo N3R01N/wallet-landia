@@ -81,3 +81,26 @@ No soldiers exist, so every unit is at least a variant. Humanoids are variants o
 | 19 | Unit pilot: Militia, Ether Paladin, Oracle Archer (sets the combat clips and the instancing budget) | blender-a4 |
 | 20 | Siege dressing: keep and wall damage states, capture ring, owner banner | blender-de |
 | 21+ | The remaining units, the Oracle Tower, VFX (hit sparks, detonation, siege impact), event weather | after the pilot is approved |
+
+## Core (M1): where it is, and what it settles
+
+`src/game/core/` (pure TS, no DOM or three.js), numbers in `src/game/config/balance.ts` and `src/game/data/*.json`, tests in `test/gameCore.test.ts`.
+
+| Module | File |
+|---|---|
+| Ledger (commands, gas, fees, slippage, LTV, yields, IL, liquidations) | `core/ledger.ts` |
+| Market (regimes, candles, events, rumors) | `core/market.ts` |
+| ArmyBuilder (counts, dust, stacks) | `core/army.ts` |
+| MatchController (phases, keep HP, Momentum, sudden death, replays) | `core/match.ts` |
+| Deterministic maths and seeded streams | `core/detmath.ts`, `core/fixed.ts` |
+| Stand-in battle until BattleSim (M3) | `core/quickBattle.ts` |
+
+Points the spec left open, settled here (change in config if needed):
+- **Same bits everywhere:** the core uses only +, −, ×, ÷ and √ (exactly rounded); `exp`/`log` are its own series, normal draws are Irwin–Hall. So a replay matches on any machine, ready for PvP.
+- **The stable vault** has no command of its own in the spec: it is `supply`/`borrow` with `via: 'vault'`, and it mints stablecoins only.
+- **"About 120 units":** UNIT_VALUE = larger army ÷ 120 is 120 units' *worth*; cheap units (costMult < 1) make a side field more than 120.
+- **Borrowed stablecoins are walls** (they are held stables), which is how a vault raises keep HP without selling.
+- **Market moves change the walls too:** a depeg lowers max HP by the same rule as a swap out of stables.
+- **Keep damage** is scaled by `keep.siegeScale` (0.25, not in the spec) so a match isn't over in one round; tuned in M7.
+- **Fallback units' HP, ATK, range and speed** aren't in the spec; placeholders in `units.json` until the designer pass.
+- **Unstaking** keeps the stETH staked (and fighting) until the next Market phase, then pays ETH at that day's rate.

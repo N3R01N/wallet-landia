@@ -1,0 +1,14 @@
+{
+  "_note": "Market events: seeded weight, and the numbers of their effect. Effects are applied in core/market.ts.",
+  "events": {
+    "black-swan": { "name": "Black Swan", "weight": 1, "dropMin": 0.2, "dropMax": 0.35, "rumor": "Whispers of a crash…" },
+    "bull-run": { "name": "Bull Run", "weight": 1.2, "dailyDrift": 0.02, "rumor": "Talk of a rally in the taverns…" },
+    "meme-mania": { "name": "Meme Mania", "weight": 1, "rise": 0.6, "fallNext": 0.3, "rumor": "The goblins are restless…" },
+    "depeg": { "name": "Depeg", "weight": 0.6, "to": 0.85, "recoverPerRound": 0.5, "rumor": "Whispers of a depeg…" },
+    "rug-pull": { "name": "Rug Pull", "weight": 0.6, "drop": 0.9, "rumor": "A shady merchant is packing up…" },
+    "gas-spike": { "name": "Gas Spike", "weight": 1, "gasMult": 5, "rumor": "The roads are filling up…" },
+    "slashing": { "name": "Slashing", "weight": 0.6, "burn": 0.1, "rumor": "Storm clouds over the Temple…" },
+    "airdrop": { "name": "Airdrop", "weight": 1, "units": 3, "asset": "drop", "rumor": "A cart was seen on the road…" }
+  },
+  "calmRumor": "The market seems calm."
+}
