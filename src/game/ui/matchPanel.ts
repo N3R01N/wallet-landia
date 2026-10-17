@@ -25,6 +25,8 @@ import { fieldPanel, gauges, portfolio, powersPanel, regimeBadge, rumorCard, tic
 import { FieldMarkers } from '../render/fieldMarkers.js';
 import { weatherFor, type Weather } from '../../castle/world/sky.js';
 import { TradePanel } from './tradePanel.js';
+import { npcTrade } from '../ai/npcPlanner.js';
+import { qn } from '../core/fixed.js';
 
 /** The castle view, as far as a match uses it. */
 export interface MatchScene {
@@ -75,6 +77,8 @@ export class MatchPanel {
   #day = 7;
   #clock: ReturnType<typeof setInterval> | null = null;
   #showPortfolio = false;
+  /** What the NPC did this Trade phase (public: a PvP opponent's trades would show the same way). */
+  #enemyMoves = '';
   /** Who held the buildings as the last battle began (its replay starts from there). */
   #ownersBefore: Record<string, SideId | null> = {};
 
@@ -145,7 +149,7 @@ export class MatchPanel {
       button('⏩ Skip', 'siege-skip', () => this.#endMarket());
     }
     if (s.phase === 'trade') {
-      body.push(ticker(m), rumorCard(m), gauges(m), powersPanel(m), fieldPanel(m));
+      body.push(ticker(m), rumorCard(m), this.#enemyMoves ? el('p', { class: 'siege-enemy-moves' }, this.#enemyMoves) : null, gauges(m), powersPanel(m), fieldPanel(m));
       if (s.market.gasMult > 1) body.push(el('p', { class: 'siege-warning' }, `⛽ Gas spike: every action costs ${s.market.gasMult}× gas this round.`));
       const toggle = el('button', { class: 'btn siege-portfolio-toggle', type: 'button', 'aria-expanded': String(this.#showPortfolio) }, this.#showPortfolio ? '▾ Your portfolio' : '▸ Your portfolio');
       toggle.addEventListener('click', () => {
@@ -199,6 +203,12 @@ export class MatchPanel {
 
   #openTrade(): void {
     const m = this.match;
+    // the NPC trades by the same rules, through the same commands
+    if (m.side('B').isNpc) {
+      const done = npcTrade(m, 'B');
+      const said = done.map((c) => describe(m, c));
+      this.#enemyMoves = said.length > 0 ? `The enemy traded: ${said.join('; ')}.` : 'The enemy holds.';
+    }
     this.#left = this.#opts.tradeSeconds ?? 30;
     this.#paused = false;
     this.#trade.render();
@@ -371,4 +381,32 @@ export function showCastleDamage(scene: Pick<MatchScene, 'stage' | 'setDamage'>,
       }
     }
   });
+}
+
+/** A command in words, for the HUD ("swapped 2.5 ETH for USDC"). */
+export function describe(m: Match, cmd: Command): string {
+  const sym = (id: string) => (m.catalog.has(id) ? m.catalog.asset(id).symbol : id);
+  const amt = (q: bigint, id: string) => `${Number(qn(q).toPrecision(3))} ${sym(id)}`;
+  switch (cmd.t) {
+    case 'swap':
+      return `swapped ${amt(cmd.qty, cmd.from)} for ${sym(cmd.to)}`;
+    case 'stake':
+    case 'unstake':
+    case 'restake':
+      return `${cmd.t}d ${amt(cmd.qty, cmd.asset)}`;
+    case 'lpAdd':
+      return `put ${amt(cmd.qty, cmd.a)} into a ${sym(cmd.a)}/${sym(cmd.b)} pool`;
+    case 'lpRemove':
+      return `left a ${sym(cmd.a)}/${sym(cmd.b)} pool`;
+    case 'supply':
+    case 'withdraw':
+    case 'repay':
+      return `${cmd.t === 'supply' ? 'supplied' : cmd.t === 'withdraw' ? 'withdrew' : 'repaid'} ${amt(cmd.qty, cmd.asset)}`;
+    case 'borrow':
+      return `borrowed ${amt(cmd.qty, cmd.asset)}${cmd.via === 'vault' ? ' from a vault' : ''}`;
+    case 'slotRelic':
+      return 'slotted a relic';
+    case 'endTrade':
+      return 'ended trading';
+  }
 }

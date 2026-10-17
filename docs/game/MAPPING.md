@@ -131,3 +131,13 @@ Points the spec left open, settled here (change in config if needed):
 - **Relics:** tier from floor ÷ UNIT_VALUE (×1/1.5/2/3); curated collections (a punk-style PFP → +Siege, an ape-style PFP → Swarm HP, generative art → Ranged range) by sim id or contract; any other collection a generic relic by hash (Banner of the Bull, Bear Pelt, Mason's Seal, Gas Rebate, Liquidator's Eye, War Drum).
 - **Events on the town:** a storm for the Black Swan, golden light for a Bull Run, a cart at both gates for an Airdrop, slowed couriers for a Gas Spike; the rest in the HUD's notes.
 - **Not done:** the Rug Pull's squad fleeing off the map and lightning on the Temple for Slashing (the notes say what happened); hit sparks and projectiles (no VFX models yet).
+
+## NPC opponents (M6)
+
+`ai/npcPlanner.ts`: a utility-scoring planner. Candidates (swaps into the archetype's tokens, collateral and loans, staking, restaking, pools, repaying, a relic) are scored by `previewCommand` as personality weight × the change in army units and walls, minus fees, slippage and gas, × a risk penalty when a loan would drop below the archetype's floor; the top N are sent through `match.command`, N from the difficulty (1 / 3 / 5).
+- **Degen:** memecoins and large caps, chases last week's best performer, collateral early and borrows to the limit.
+- **Whale:** WBTC and ETH, trades in about a third of rounds, buys the dip after a Black Swan.
+- **Stable Maxi:** stables and staked ETH, moves stables into risk only when ahead on keep HP.
+- **Yield Farmer:** pools, supply, stake and restake (abilities and home advantage).
+- **Difficulty:** easy picks at random among what suits it and ignores rumors and its loans; normal heeds rumors half the time and repays under HF 1.15; hard always heeds them, keeps HF above 1.4, and counter-picks the player's largest role.
+- It sees only what a player sees (the public rumor, not the coming event). Its commands go into the same log, so a replay plays them back as plain commands. The HUD says what it did each round.
