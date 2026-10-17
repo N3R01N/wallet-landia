@@ -49,6 +49,7 @@ import { currentRpcUrl, setRpcUrl, startHeartbeat, validRpcUrl } from '../data/r
 import { loadPrefs, savePrefs } from '../settings.js';
 import { Soundscape } from '../audio/soundscape.js';
 import { crestColors, setCrests } from '../util/rng.js';
+import { SIEGE_PARAM, SiegeMode } from '../game/ui/siegeMode.js';
 
 const SHEET_PREFIX = 'protocol:';
 const ERRAND_SHEET = 'errand:';
@@ -180,6 +181,7 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
           savePrefs(prefs);
         },
       });
+    siege.attach(view.element);
     return el('section', { class: 'tab-page scene-tab', 'data-tab-page': tab }, view.element);
   }
   view = null;
@@ -340,6 +342,14 @@ if (import.meta.env.DEV) (window as unknown as { castleLoading?: LoadingScreen }
 const root = document.querySelector<HTMLDivElement>('#app');
 if (!root) throw new Error('#app is missing from index.html');
 
+/** Siege of the Ledger: the game over the castle view, a topbar switch away (src/game). */
+const siege = new SiegeMode({
+  on: new URLSearchParams(location.search).get(SIEGE_PARAM) === 'siege',
+  onChange: (on) => {
+    if (on && shell.state.tab !== 'castle') shell.go('castle');
+  },
+});
+
 const shell = new Shell({ renderTab, renderSheet, topbar: { guild: 'Your guild', rank: 'Wanderer', level: 'Lv 1' } });
 root.replaceChildren(shell.element);
 
@@ -400,6 +410,7 @@ const conditions = new Conditions(() => shell.open({ id: CONDITIONS_SHEET, title
 // settings: the key, the wallets, their names and crest colours live in the Guild tab
 const settingsBtn = el('button', { class: 'btn topbar-icon settings-btn', type: 'button', 'aria-label': 'Settings: key, wallets, crest colours', title: 'Settings: your Zerion key, wallets, names and crest colours' }, '⚙');
 settingsBtn.addEventListener('click', () => shell.go('guild'));
+shell.addTopbarAction(siege.button);
 shell.addTopbarAction(conditions.chip);
 shell.addTopbarAction(settingsBtn);
 shell.addTopbarAction(tourBtn);
