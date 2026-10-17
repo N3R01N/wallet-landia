@@ -2424,7 +2424,7 @@ function showTierParts(root: THREE.Object3D, tier: number): void {
  * state N; a wall's `intact` part goes at the breach (2); at 4 the `ruin`
  * stands instead of `body`. A model without them is untouched.
  */
-function showDamageParts(root: THREE.Object3D, state: number): void {
+export function showDamageParts(root: THREE.Object3D, state: number): void {
   root.traverse((o) => {
     const name = (o.userData.name as string | undefined) ?? o.name;
     const m = /^damage\.(\d)$/.exec(name);

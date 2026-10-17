@@ -14,6 +14,7 @@ import { FRAME_EVERY, METRES_PER_SPEED, WALK_CLIP_SPEED, type BattleRun } from '
 import { UNIT_TYPES } from '../core/catalog.js';
 import { ABILITY_NAME } from '../core/depth.js';
 import type { FieldMarkers } from './fieldMarkers.js';
+import type { BattleFx, Burst, Projectile } from './battleFx.js';
 import { BALANCE } from '../config/balance.js';
 import type { Army, SideId } from '../core/types.js';
 import { UnitMesh } from './unitMeshes.js';
@@ -37,7 +38,30 @@ export interface BattleViewOptions {
   symbol: (asset: string) => string;
   /** The battlefield buildings' rings and banners, to play the captures on. */
   markers?: FieldMarkers;
+  /** The effects: sparks, projectiles, puffs, detonations. */
+  fx?: BattleFx;
 }
+
+/** An effect due at a moment of the battle. */
+interface Cue {
+  at: number;
+  burst?: Burst;
+  projectile?: Projectile;
+  /** Where: an entity (its place at that moment), or a point. */
+  from: number;
+  to?: number;
+  x?: number;
+  z?: number;
+}
+
+/** Shooters' projectiles: archers loose arrows, mages and the Ghost Lender bolts. */
+const SHOT: Partial<Record<string, Projectile>> = {
+  'archer.oracle': 'fx.arrow',
+  'archer.scout': 'fx.arrow',
+  'mage.swap': 'fx.bolt',
+  'mage.battle': 'fx.bolt',
+  'lender.ghost': 'fx.bolt',
+};
 
 /** A moment of the battle shown as a toast: an ability cast, a liquidation blowing up. */
 interface Moment {
@@ -73,6 +97,8 @@ export class BattleView {
   readonly #labels = el('div', { class: 'siege-banners' });
   readonly #toasts = el('div', { class: 'siege-toasts', 'aria-live': 'polite' });
   #moments: Moment[] = [];
+  #cues: Cue[] = [];
+  #cue = 0;
   #captures: CaptureStep[] = [];
   #owners: Record<string, SideId | null> = {};
   #run: BattleRun | null = null;
@@ -158,6 +184,24 @@ export class BattleView {
     }
     this.#toasts.replaceChildren();
     this.#opts.markers?.setOwners(this.#owners);
+    // the effects, in battle time
+    this.#cues = [];
+    this.#cue = 0;
+    let melee = 0;
+    for (const e of run.events) {
+      const at = e.tick * tickDt;
+      if (e.t === 'attack') {
+        const shot = SHOT[run.entities[e.id]?.unit ?? ''];
+        if (shot) this.#cues.push({ at: Math.max(0, at - 0.15), projectile: shot, from: e.id, to: e.target });
+        // one melee hit in three shows sparks: a big melee would bury the field in them
+        else if (melee++ % 3 === 0) this.#cues.push({ at, burst: 'fx.hit.spark', from: e.target });
+      }
+      if (e.t === 'death' && run.entities[e.id]?.unit === 'swarm.frog') this.#cues.push({ at: at + 0.43, burst: 'fx.puff', from: e.id });
+      if (e.t === 'vanish') this.#cues.push({ at, burst: 'fx.puff', from: e.id });
+      if (e.t === 'detonate') this.#cues.push({ at, burst: 'fx.detonation', from: -1, x: e.x, z: e.z });
+    }
+    this.#cues.sort((a, b) => a.at - b.at);
+    this.#opts.fx?.clear();
     this.#banners = [];
     this.#labels.replaceChildren();
     armies.forEach((army) =>
@@ -302,6 +346,7 @@ export class BattleView {
       }
     }
     this.#playCaptures(t);
+    this.#playCues(t, run);
     for (const mo of this.#moments) {
       if (mo.shown || mo.at > t) continue;
       mo.shown = true;
@@ -313,6 +358,36 @@ export class BattleView {
       this.#done = true;
       this.#onDone?.();
     }
+  }
+
+  /** Effects due by now; ones long past (a skip) are dropped rather than all fired at once. */
+  #playCues(t: number, run: BattleRun): void {
+    const fx = this.#opts.fx;
+    if (!fx) return;
+    while (this.#cue < this.#cues.length && this.#cues[this.#cue]!.at <= t) {
+      const c = this.#cues[this.#cue++]!;
+      if (t - c.at > 0.5) continue;
+      const p = this.#placeAt(run, c.from, c.at) ?? (c.x !== undefined && c.z !== undefined ? { x: c.x, z: c.z } : null);
+      if (!p) continue;
+      if (c.burst === 'fx.detonation') fx.burst('fx.detonation', c.x ?? p.x, 0, c.z ?? p.z);
+      else if (c.burst === 'fx.puff') fx.burst('fx.puff', p.x, 0, p.z);
+      else if (c.burst) fx.burst(c.burst, p.x, 1.1, p.z);
+      if (c.projectile && c.to !== undefined) {
+        const q = this.#placeAt(run, c.to, c.at + 0.15);
+        if (q) fx.shoot(c.projectile, new THREE.Vector3(p.x, 1.3, p.z), new THREE.Vector3(q.x, 1.0, q.z));
+      }
+    }
+  }
+
+  /** Where an entity stands at a moment of the battle. */
+  #placeAt(run: BattleRun, id: number, at: number): { x: number; z: number } | null {
+    if (id < 0) return null;
+    const n = run.entities.length;
+    const f = Math.min(run.frameCount - 1, Math.max(0, Math.round(at / FRAME_DT)));
+    const b = (f * n + id) * 4;
+    const x = run.frames[b];
+    const z = run.frames[b + 1];
+    return x === undefined || z === undefined ? null : { x, z };
   }
 
   /** The rings fill as a side takes a building; a taken one turns its colour. */

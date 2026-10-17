@@ -23,6 +23,7 @@ import { tradeErrand } from '../render/tradeCouriers.js';
 import { BattleClient } from '../sim/battleClient.js';
 import { fieldPanel, gauges, portfolio, powersPanel, regimeBadge, rumorCard, ticker } from './hud.js';
 import { FieldMarkers } from '../render/fieldMarkers.js';
+import { BattleFx } from '../render/battleFx.js';
 import { weatherFor, type Weather } from '../../castle/world/sky.js';
 import { TradePanel } from './tradePanel.js';
 import { npcTrade } from '../ai/npcPlanner.js';
@@ -67,6 +68,7 @@ export class MatchPanel {
   #scene: MatchScene | null = null;
   #view: BattleView | null = null;
   #markers: FieldMarkers | null = null;
+  #fx: BattleFx | null = null;
   readonly #props: THREE.Object3D[] = [];
   #busy = false;
   #note = '';
@@ -99,6 +101,9 @@ export class MatchPanel {
     this.#scene = scene;
     const m = this.match;
     this.#markers = new FieldMarkers(scene.stage());
+    this.#fx?.dispose();
+    this.#fx = new BattleFx(scene.stage());
+    void this.#fx.load();
     const points = m.battleCtx().map?.points ?? [];
     void this.#markers.place(points).then(() => this.#markers?.setOwners(m.battleCtx().owners));
     this.#view = new BattleView({
@@ -106,9 +111,10 @@ export class MatchPanel {
       overlay: scene.element,
       symbol: (asset) => (m.catalog.has(asset) ? m.catalog.asset(asset).symbol : asset),
       markers: this.#markers,
+      fx: this.#fx,
     });
     // the meshes load while the player trades
-    void this.#view.prepare(['militia', 'paladin.eth', 'archer.oracle']);
+    this.#preload();
     this.#showDamage();
     this.render();
   }
@@ -119,6 +125,8 @@ export class MatchPanel {
     this.#view = null;
     this.#markers?.dispose();
     this.#markers = null;
+    this.#fx?.dispose();
+    this.#fx = null;
     this.#clearProps();
     this.#scene?.setWeather(weatherFor(null));
     this.#client.dispose();
@@ -211,6 +219,7 @@ export class MatchPanel {
     }
     this.#left = this.#opts.tradeSeconds ?? 30;
     this.#paused = false;
+    this.#preload();
     this.#trade.render();
     this.render();
     this.#startClock(0.25, () => {
@@ -228,6 +237,10 @@ export class MatchPanel {
     const m = this.match;
     const ev = m.state.market.current;
     this.#eventLook(ev?.id ?? null);
+    if (ev?.id === 'slashing') {
+      const temple = m.battleCtx().map?.points?.find((p) => p.kind === 'temple');
+      if (temple) this.#fx?.burst('fx.lightning', temple.x, 0, temple.z);
+    }
     const liq = m.side('A').liquidations;
     this.#note = [
       ev ? `This week: ${EVENTS[ev.id].name}.` : 'A quiet week on the market.',
@@ -290,6 +303,17 @@ export class MatchPanel {
     for (const id of m.state.shutdowns) this.#note += ` 🛡 ${id === 'A' ? 'Your' : 'The enemy'} vault called an Emergency Shutdown: the keep took no damage.`;
     this.#markers?.setOwners(m.battleCtx().owners);
     this.#showDamage();
+    // stones fly off the walls that were hit
+    const gates = m.battleCtx().map?.gates;
+    if (gates && this.#fx) {
+      const hit = (side: 0 | 1, g: { x: number; z: number }, dir: number) => {
+        if (before[side]! - after[side]! <= 0) return;
+        // at the foot of the front wall (5.3 m behind the gate point), the wall towards the castle
+        for (const dx of [-3, 0, 3]) this.#fx!.burst('fx.siege.impact', g.x + dx, 0, g.z + dir * 5.3, dir > 0 ? Math.PI : 0);
+      };
+      hit(0, gates.A, -1);
+      hit(1, gates.B, 1);
+    }
     this.render();
   }
 
@@ -309,6 +333,12 @@ export class MatchPanel {
     const m = this.match;
     if (scene) scene.sendNow(tradeErrand(m, cmd, scene.plan.buildings, gasCost({ unitValue: m.state.unitValue, gasMult: m.state.market.gasMult })));
     this.render();
+  }
+
+  /** Both armies' unit models, loaded while the player trades (the battle then starts at once). */
+  #preload(): void {
+    const units = this.match.nextArmies().flatMap((a) => a.squads.map((q) => q.unit));
+    void this.#view?.prepare(['militia', ...units]);
   }
 
   /** What the week's event looks like on the town: a storm, golden light, a cart of airdropped goods at each gate. */

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- The same policy as the castle's pages: only this origin's files. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob: data:; object-src 'none'; base-uri 'none'"
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#2b2a33" />
+    <title>Wallet-landia · Siege assets</title>
+    <link rel="stylesheet" href="/src/castle/shell.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/game/gallery/siegeGallery.ts"></script>
+  </body>
+</html>

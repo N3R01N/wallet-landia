@@ -1,0 +1,183 @@
+/* The siege gallery (siege-gallery.html): a list of the siege assets and one model on a turntable. */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-family: system-ui, sans-serif;
+  background: #2b2a33;
+  color: #f3ead6;
+}
+
+#app {
+  height: 100%;
+}
+
+.sg {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  height: 100%;
+}
+
+.sg-side {
+  overflow-y: auto;
+  padding: 12px;
+  background: #2b2a33;
+}
+
+.sg-side h1 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+}
+
+.sg-side h2 {
+  margin: 14px 0 4px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+
+.sg-item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sg-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sg-item[aria-current='true'] {
+  background: #d9a93a;
+  color: #2a2118;
+}
+
+.sg-picker {
+  display: none;
+}
+
+.sg-stage {
+  position: relative;
+  min-width: 0;
+}
+
+.sg-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.sg-panel {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  max-height: 45%;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(43, 42, 51, 0.88);
+}
+
+.sg-info h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.sg-meta {
+  margin: 2px 0;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.sg-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 0.85rem;
+}
+
+.sg-row .btn,
+.sg-row select {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.sg-row .btn[aria-pressed='true'] {
+  background: #d9a93a;
+  border-color: #d9a93a;
+  color: #2a2118;
+}
+
+.sg-team-A[aria-pressed='true'] {
+  background: #3f6fa8 !important;
+  border-color: #3f6fa8 !important;
+  color: #fff !important;
+}
+
+.sg-team-B[aria-pressed='true'] {
+  background: #b84a32 !important;
+  border-color: #b84a32 !important;
+  color: #fff !important;
+}
+
+.sg-state {
+  min-width: 10em;
+}
+
+/* phones: the list becomes a picker over the model */
+@media (max-width: 700px) {
+  .sg {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .sg-stage {
+    min-height: 0;
+  }
+
+  .sg-side {
+    padding: 8px 16px;
+  }
+
+  .sg-side h1 {
+    display: none;
+  }
+
+  .sg-list {
+    display: none;
+  }
+
+  .sg-picker {
+    display: block;
+    width: 100%;
+    min-height: 36px;
+    font: inherit;
+  }
+
+  .sg-panel {
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+  }
+}
