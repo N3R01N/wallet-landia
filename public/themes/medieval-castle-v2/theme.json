@@ -2,7 +2,7 @@
   "format": "wallet-landia-theme/1",
   "id": "medieval-castle-v2",
   "name": "Medieval castle",
-  "version": "0.9.4",
+  "version": "0.9.6",
   "extends": "medieval-castle",
   "art": true,
   "castleLayout": 2,
