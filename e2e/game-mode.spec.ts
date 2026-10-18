@@ -171,3 +171,31 @@ test('the trade phase: the timer pauses, a swap goes out with its courier, the r
   }
   expect(errors).toEqual([]);
 });
+
+test('a whole match ends in the recap: charts of the portfolios and keeps, the MVP, the table', async ({ page }) => {
+  test.setTimeout(400_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/?mode=siege');
+  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 120_000 });
+  const panel = page.locator('.siege-panel');
+  const match = panel.locator('.siege-match');
+  await panel.locator('.siege-start').click();
+  for (let i = 0; i < 60; i++) {
+    const phase = await match.getAttribute('data-phase');
+    if (phase === 'ended') break;
+    const next = { trade: '.siege-go', battle: '.siege-skip', siege: '.siege-next', market: '.siege-skip' }[phase ?? ''];
+    const button = next ? panel.locator(next) : null;
+    if (button && (await button.isEnabled().catch(() => false))) await button.click().catch(() => {});
+    await page.waitForTimeout(400);
+  }
+  await expect(match).toHaveAttribute('data-phase', 'ended', { timeout: 60_000 });
+  const recap = panel.locator('.siege-recap');
+  await expect(recap.locator('.siege-recap-head')).toHaveText(/Victory|Defeat|A draw/);
+  await expect(recap.locator('.siege-chart')).toHaveCount(2);
+  await expect(recap.locator('.siege-tile')).toHaveCount(4);
+  await expect(recap.locator('.siege-mvp')).toContainText('MVP');
+  await recap.locator('.siege-recap-table summary').click();
+  await expect(recap.locator('.siege-recap-table tbody tr').first()).toBeVisible();
+  expect(errors).toEqual([]);
+});

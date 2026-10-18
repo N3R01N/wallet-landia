@@ -57,6 +57,7 @@ export class Match {
   run: BattleRun | null = null;
   /** Liquidations so far this match, both sides (the balance report counts them). */
   liquidationCount = 0;
+  #weekLiquidations: [number, number] = [0, 0];
 
   constructor(setup: MatchSetup, resolve: BattleResolver = simulate) {
     this.#setup = structuredClone(setup) as MatchSetup;
@@ -82,11 +83,13 @@ export class Match {
       buildings: (setup.map?.points ?? []).map((p) => ({ id: p.id, kind: p.kind, owner: null })),
       shutdowns: [],
       felled: [0, 0],
+      history: [],
     };
     for (const s of sides) {
       refreshKeep(s, this.#ctx());
       s.keepHp = s.keepHpMax;
     }
+    this.#record(0, [0, 0]);
     this.#openTrade();
   }
 
@@ -239,6 +242,8 @@ export class Match {
       x.keepBonus = 0.05 * s.buildings.filter((bl) => bl.kind === 'vault' && bl.owner === x.id).length + relicTotal(this.relics(x.id), 'keep-max');
       refreshKeep(x, this.#ctx());
     }
+    this.#record(s.round, this.#weekLiquidations);
+    this.#weekLiquidations = [0, 0];
     if (a.keepHp <= 0 && b.keepHp <= 0) s.winner = 'draw';
     else if (b.keepHp <= 0) s.winner = 'A';
     else if (a.keepHp <= 0) s.winner = 'B';
@@ -273,7 +278,9 @@ export class Match {
     for (const candle of this.#prices.step(s.market, s.round)) {
       for (const side of s.sides) {
         rebalancePools(side, candle.close);
-        this.liquidationCount += liquidate(side, s.round, candle.day, { catalog: this.catalog, prices: candle.close }, relicTotal(this.relics(side.id), 'liq-eye')).length;
+        const n = liquidate(side, s.round, candle.day, { catalog: this.catalog, prices: candle.close }, relicTotal(this.relics(side.id), 'liq-eye')).length;
+        this.liquidationCount += n;
+        this.#weekLiquidations[side.id === 'A' ? 0 : 1] += n;
       }
     }
     const event = s.market.current;
@@ -291,6 +298,18 @@ export class Match {
       return before > 0 ? (netValue(side, s.market.prices) - before) / before : 0;
     }) as [number, number];
     s.momentum = change[0] > change[1] ? 'A' : change[1] > change[0] ? 'B' : null;
+  }
+
+  /** A round's line in the history (the recap's charts). */
+  #record(round: number, liquidations: [number, number]): void {
+    const s = this.state;
+    s.history.push({
+      round,
+      value: s.sides.map((x) => netValue(x, s.market.prices)) as [number, number],
+      keep: s.sides.map((x) => (x.keepHpMax > 0 ? x.keepHp / x.keepHpMax : 0)) as [number, number],
+      event: round === 0 ? null : (s.market.current?.id ?? null),
+      liquidations,
+    });
   }
 
   /** The match so far, for replays: rebuilt by `replay`. */

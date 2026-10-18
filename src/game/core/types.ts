@@ -211,6 +211,20 @@ export interface MatchState {
   shutdowns: SideId[];
   /** The last Siege phase's wall volleys: attackers each side's walls felled. */
   felled: [number, number];
+  /** The match so far, round by round (round 0: the start), for the recap. */
+  history: RoundRecord[];
+}
+
+export interface RoundRecord {
+  round: number;
+  /** Net portfolio value per side, in dollars. */
+  value: [number, number];
+  /** Keep HP as a share of its max, per side. */
+  keep: [number, number];
+  /** The week's market event (null: none). */
+  event: EventId | null;
+  /** Liquidations that week, per side. */
+  liquidations: [number, number];
 }
 
 type Qty = bigint;

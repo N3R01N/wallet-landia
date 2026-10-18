@@ -31,6 +31,8 @@ import { hashString } from '../../util/rng.js';
 import { account, holdingsOf } from '../core/ledger.js';
 import { weatherFor, type Weather } from '../../castle/world/sky.js';
 import { TradePanel } from './tradePanel.js';
+import { recap, type Mvp } from './recap.js';
+import { UNIT_TYPES } from '../core/catalog.js';
 import { qn } from '../core/fixed.js';
 
 /** The castle view, as far as a match uses it. */
@@ -94,6 +96,9 @@ export class MatchPanel {
   #showPortfolio = false;
   /** What the NPC did this Trade phase (public: a PvP opponent's trades would show the same way). */
   #enemyMoves = '';
+  /** Damage dealt per squad over the match, for the recap's MVPs. */
+  readonly #damage = new Map<string, { side: SideId; label: string; damage: number }>();
+
   /** Who held the buildings as the last battle began (its replay starts from there). */
   #ownersBefore: Record<string, SideId | null> = {};
 
@@ -233,7 +238,10 @@ export class MatchPanel {
       const armies = m.armies;
       if (run && armies) button('↺ Replay the battle', 'siege-replay', () => void this.#view?.play(run, armies, undefined, this.#ownersBefore));
     }
-    if (s.phase === 'ended') button('New match', 'siege-new', () => this.#opts.onLeave());
+    if (s.phase === 'ended') {
+      body.push(recap(m, this.#mvp()));
+      button('New match', 'siege-new', () => this.#opts.onLeave());
+    }
     const leave = el('button', { class: 'btn siege-leave', type: 'button' }, 'Leave the match');
     leave.addEventListener('click', () => this.#opts.onLeave());
     const winner = s.winner === 'A' ? 'You win: the enemy keep has fallen!' : s.winner === 'B' ? 'Your keep has fallen.' : s.winner === 'draw' ? 'A draw: both keeps stand at the same strength.' : '';
@@ -349,6 +357,18 @@ export class MatchPanel {
     }
     const units = armies.map(unitCount);
     this.#note = `${units[0]} of yours against ${units[1]}.`;
+    // the squads' damage, for the MVPs
+    for (const e of run.events) {
+      if (e.t !== 'attack') continue;
+      const ent = run.entities[e.id];
+      const sq = ent && armies[ent.side === 'A' ? 0 : 1].squads[ent.squad];
+      if (!ent || !sq) continue;
+      const key = `${ent.side}|${sq.asset}|${sq.unit}`;
+      const label = `${m.catalog.has(sq.asset) ? m.catalog.asset(sq.asset).symbol : sq.asset} ${UNIT_TYPES[sq.unit]?.name ?? sq.unit}`;
+      const prev = this.#damage.get(key) ?? { side: ent.side, label, damage: 0 };
+      prev.damage += e.damage;
+      this.#damage.set(key, prev);
+    }
     this.render();
     const c = this.#opts.centre;
     this.#scene?.focusAt(c.x, c.z, 0.55);
@@ -489,6 +509,12 @@ export class MatchPanel {
         this.#flag = { obj };
         this.#flagStop = stage.onFrame((dt) => mixer?.update(dt));
       });
+  }
+
+  /** Each side's squad that dealt the most damage over the match. */
+  #mvp(): { A: Mvp | null; B: Mvp | null } {
+    const best = (side: SideId) => [...this.#damage.values()].filter((d) => d.side === side).sort((a, b) => b.damage - a.damage)[0] ?? null;
+    return { A: best('A'), B: best('B') };
   }
 
   /** The camera over the whole field (the Market and Trade phases). */

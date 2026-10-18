@@ -390,3 +390,16 @@ describe('price providers', () => {
     expect(serialize(b.state)).toBe(serialize(a.state));
   });
 });
+
+describe('the match history (the recap)', () => {
+  it('a line at the start and after every Siege phase: values, keeps, events, liquidations', () => {
+    const m = new Match({ seed: 'hist-rec', portfolios: [templatePortfolio('balanced', 20000, catalog), templatePortfolio('degen', 20000, catalog)] });
+    m.playOut();
+    const h = m.state.history;
+    expect(h[0]).toMatchObject({ round: 0, keep: [1, 1], event: null, liquidations: [0, 0] });
+    expect(h.map((r) => r.round)).toEqual(Array.from({ length: m.state.round + 1 }, (_, i) => i));
+    const last = h[h.length - 1]!;
+    expect(last.keep.some((k) => k <= 0) || m.state.suddenDeath).toBe(true);
+    expect(h.reduce((n, r) => n + r.liquidations[0] + r.liquidations[1], 0)).toBe(m.liquidationCount);
+  }, 60_000);
+});

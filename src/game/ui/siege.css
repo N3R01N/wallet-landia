@@ -620,3 +620,114 @@
   border-radius: 50%;
   border: 1.5px solid rgba(255, 255, 255, 0.85);
 }
+
+/* ---------- the recap ---------- */
+
+.siege-recap-head {
+  margin: 4px 0 2px;
+  font-size: 1.3rem;
+}
+
+.siege-recap-A {
+  color: #2f5a8c;
+}
+
+.siege-recap-B {
+  color: #9a3a26;
+}
+
+.siege-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.siege-tile {
+  display: grid;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(42, 33, 24, 0.06);
+}
+
+.siege-tile strong {
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.siege-tile span {
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+
+.siege-figure {
+  margin: 8px 0;
+}
+
+.siege-figure figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.siege-legend {
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.siege-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.siege-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.siege-chart-base {
+  stroke: rgba(42, 33, 24, 0.25);
+  stroke-width: 1;
+}
+
+.siege-chart-tick {
+  font-size: 9px;
+  fill: rgba(42, 33, 24, 0.6);
+}
+
+.siege-chart-label {
+  font-size: 10px;
+  fill: #2a2118;
+}
+
+.siege-mvp {
+  display: grid;
+  gap: 2px;
+  font-size: 0.82rem;
+}
+
+.siege-events {
+  margin: 6px 0;
+  padding-left: 18px;
+  font-size: 0.8rem;
+}
+
+.siege-recap-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.siege-recap-table th,
+.siege-recap-table td {
+  padding: 2px 4px;
+  border-bottom: 1px solid rgba(42, 33, 24, 0.1);
+  text-align: left;
+}
