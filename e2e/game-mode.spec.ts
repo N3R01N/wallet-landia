@@ -112,6 +112,11 @@ test('a battle in the town: the enemy castle stands past it, the armies fight on
   // squad banners over the field, for both sides
   await expect(page.locator('.siege-banner-A').first()).toBeAttached();
   await expect(page.locator('.siege-banner-B').first()).toBeAttached();
+  // the battle pauses and plays on
+  await panel.locator('.siege-battle-pause').click();
+  await expect(panel.locator('.siege-battle-pause')).toHaveText('▶ Play');
+  await panel.locator('.siege-battle-pause').click();
+  await expect(panel.locator('.siege-battle-pause')).toHaveText('⏸ Pause');
   // the camera follows a lane, then goes free again
   await panel.locator('.siege-follow').selectOption('1');
   await page.waitForTimeout(500);

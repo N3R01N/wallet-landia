@@ -211,9 +211,18 @@ export class MatchPanel {
         if (this.#view) this.#view.follow = follow.value === 'free' ? null : Number(follow.value);
       });
       controls.push(follow);
-      button('⏩ Skip', 'siege-skip', () => this.#view?.skip());
-      button('2×', 'siege-fast', () => {
-        if (this.#view) this.#view.speed = 2;
+      const v = this.#view;
+      button(v?.paused ? '▶ Play' : '⏸ Pause', 'siege-battle-pause', () => {
+        if (v) v.paused = !v.paused;
+        this.render();
+      });
+      button(v && v.speed > 1 ? '1×' : '2×', 'siege-fast', () => {
+        if (v) v.speed = v.speed > 1 ? 1 : 2;
+        this.render();
+      });
+      button('⏩ Skip', 'siege-skip', () => {
+        if (v) v.paused = false;
+        v?.skip();
       });
     }
     if (s.phase === 'siege') {
@@ -343,6 +352,10 @@ export class MatchPanel {
     this.render();
     const c = this.#opts.centre;
     this.#scene?.focusAt(c.x, c.z, 0.55);
+    if (this.#view) {
+      this.#view.paused = false;
+      this.#view.speed = 1;
+    }
     await this.#view?.play(run, armies, () => void this.#siege(), this.#ownersBefore);
   }
 

@@ -156,6 +156,13 @@ export class BattleView {
     this.#speed = v;
   }
 
+  get speed(): number {
+    return this.#speed;
+  }
+
+  /** A paused battle holds its frame (the player looks around; spec open question: pause to inspect). */
+  paused = false;
+
   get playing(): boolean {
     return this.#run !== null && !this.#done;
   }
@@ -274,7 +281,7 @@ export class BattleView {
   #update(dt: number): void {
     const run = this.#run;
     if (!run) return;
-    this.#time += dt * this.#speed;
+    if (!this.paused) this.#time += dt * this.#speed;
     const end = run.seconds;
     const t = Math.min(this.#time, end);
     const n = run.entities.length;
