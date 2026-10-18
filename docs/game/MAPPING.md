@@ -160,3 +160,7 @@ Points the spec left open, settled here (change in config if needed):
 ## The match in a worker
 
 `sim/match.worker.ts` holds the authoritative Match: commands, phase steps, the NPCs' trades and the battles run there (spec: "Core simulation runs in a Web Worker"). The page (`sim/matchClient.ts`) keeps a replica in lockstep: each command is applied to both, the NPC's trades and each battle's outcome come from the worker, and every reply's state hash is checked against the replica (a desync is logged). The HUD and the trade previews read the replica, so they stay instant. Without a worker the same handler runs inline on a second copy; if the worker dies, the inline copy replays everything sent so far.
+
+### Unit and ability tuning (2026-10-18)
+
+Strength in a mass battle goes roughly with HP × ATK ÷ costMult² (cheaper units come in larger numbers), and the ETH units were far ahead. Changed in config: the Ether Paladin heals 1 HP/s (spec 2), the Staked Paladin has 30 HP (spec 34), the swarms have more HP (Frog 5, Shiba 6, Goblin 6), the Validator Shield gives 6 HP (spec 10), a Flash Loan adds a third of the largest squad (spec half), the Bitcoin Titan costs 3.3 (spec 3), the walls' volley is 3 HP per UNIT_VALUE of stables, restaking yields 2% and pool fees 0.6% a round; the Yield Farmer template holds 15% in stables (its supplied USDC became supplied LINK) and a Stable Maxi may move up to three quarters of its stables in a round. The worst pairing went from 90% to about 82%; see docs/game/BALANCE.md.

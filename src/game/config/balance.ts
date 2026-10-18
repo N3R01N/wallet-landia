@@ -52,7 +52,7 @@ export const BALANCE = {
      * before they hit: this much HP of damage per UNIT_VALUE of stablecoins,
      * the most fragile attackers first, at most `wallMaxShare` of them felled.
      */
-    wallVolley: 4,
+    wallVolley: 3,
     wallMaxShare: 0.7,
   },
 
@@ -107,8 +107,8 @@ export const BALANCE = {
     /** Per round, paid into the position at the start of each Market phase. */
     debtGrowth: 0.02,
     supplyYield: 0.015,
-    restakeYield: 0.03,
-    lpFee: 0.01,
+    restakeYield: 0.02,
+    lpFee: 0.006,
     /** Rounds an unstake takes. */
     unstakeRounds: 1,
     /** HF below this turns the gauge amber. */
@@ -129,6 +129,11 @@ export const BALANCE = {
     swarmAreaBonus: 0.5,
     /** Siege units deal this much damage to units. */
     siegeVsUnits: 0.5,
+    /** HP a second each Ether Paladin heals the allies beside it (spec: 2; M7 balance). */
+    paladinHeal: 1,
+    /** Validator Shield's HP per melee unit (spec: 10), and the share of the largest squad a Flash Loan adds (spec: 50%). */
+    validatorShield: 6,
+    flashLoanShare: 0.33,
   },
 } as const;
 

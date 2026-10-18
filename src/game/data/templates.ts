@@ -49,10 +49,9 @@ export const TEMPLATES: Readonly<Record<Archetype, { name: string; slices: Slice
     name: 'Yield Farmer',
     slices: [
       { asset: 'eth', share: 0.3, kind: 'lp', protocol: 'dex', pairWith: 'usdc' },
-      { asset: 'link', share: 0.15, kind: 'supplied', protocol: 'lending' },
+      { asset: 'link', share: 0.25, kind: 'supplied', protocol: 'lending' },
       { asset: 'steth', share: 0.2, kind: 'staked', protocol: 'staking' },
       { asset: 'steth', share: 0.15, kind: 'restaked', protocol: 'restaking' },
-      { asset: 'usdc', share: 0.1, kind: 'supplied', protocol: 'lending' },
       { asset: 'eth', share: 0.1 },
     ],
   },

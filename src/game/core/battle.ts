@@ -222,7 +222,7 @@ export function simulateBattle(armies: readonly [Army, Army], opts: BattleOption
     // side abilities on their timers
     for (const side of ['A', 'B'] as const) {
       if (tick === SHIELD_AT * BT.tickHz && has(side, 'validator-shield')) {
-        for (const e of ents) if (e.side === side && e.active && e.pool > 0 && e.u.role === 'melee') e.shield += 10 * alive(e);
+        for (const e of ents) if (e.side === side && e.active && e.pool > 0 && e.u.role === 'melee') e.shield += BT.validatorShield * alive(e);
         events.push({ t: 'side-ability', tick, side, ability: 'validator-shield' });
       }
       if (tick > 0 && tick % (SWAP_EVERY * BT.tickHz) === 0 && has(side, 'flash-swap')) {
@@ -284,7 +284,7 @@ export function simulateBattle(armies: readonly [Army, Army], opts: BattleOption
       if (e.pool <= 0) continue;
       // abilities that run on their own
       if (e.u.ability === 'heal-adjacent' && tick % BT.tickHz === 0) {
-        for (const o of grid.near(e.x, e.z, 1.6)) if (o.side === e.side && o !== e && o.pool > 0) o.pool = Math.min(o.poolMax, o.pool + 2 * alive(e));
+        for (const o of grid.near(e.x, e.z, 1.6)) if (o.side === e.side && o !== e && o.pool > 0) o.pool = Math.min(o.poolMax, o.pool + BT.paladinHeal * alive(e));
       }
       if (e.u.ability === 'swap-enemies') {
         e.timer += DT;
@@ -471,7 +471,7 @@ function spawn(armies: readonly [Army, Army], paths: Record<SideId, LanePoint[][
       laneOf[si] = lane;
       for (const mult of sq.stacks.length > 0 ? sq.stacks : [sq.count]) make(sq, si, mult, lane, false);
     });
-    // a Flash Loan's units: half again of the largest squad, off the field until the loan
+    // a Flash Loan's units: a share again of the largest squad, off the field until the loan
     if (mods?.abilities.includes('flash-loan')) {
       let best = -1;
       army.squads.forEach((sq, si) => {
@@ -480,7 +480,7 @@ function spawn(armies: readonly [Army, Army], paths: Record<SideId, LanePoint[][
       const sq = army.squads[best];
       if (sq) {
         const stacks = sq.stacks.length > 0 ? sq.stacks : [sq.count];
-        const extra = Math.max(1, Math.ceil(stacks.length / 2));
+        const extra = Math.max(1, Math.ceil(stacks.length * BT.flashLoanShare));
         for (let i = 0; i < extra; i++) make(sq, best, stacks[i % stacks.length]!, laneOf[best] ?? 1, true);
       }
     }

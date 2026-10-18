@@ -56,7 +56,7 @@ describe('protocol abilities', () => {
       ['flash-loan', 400],
     ]);
     const reserves = run.entities.map((e, i) => ({ e, i })).filter(({ e, i }) => e.side === 'A' && i >= 20);
-    expect(reserves.length).toBe(10);
+    expect(reserves.length).toBe(Math.ceil(20 * BALANCE.battle.flashLoanShare));
     const n = run.entities.length;
     const hpAt = (frame: number, i: number) => run.frames[(frame * n + i) * 4 + 2]!;
     const i = reserves[0]!.i;

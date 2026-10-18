@@ -173,10 +173,10 @@ function candidates(m: Match, side: SideId, archetype: Archetype, diff: (typeof 
   if (archetype === 'whale' && s.market.current?.id === 'black-swan') {
     for (const from of stables) for (const to of ['wbtc', 'eth']) consider({ t: 'swap', from, to, qty: qmul(available(m, side, 'swap', from), 0.5) }, 3);
   }
-  // a stable maxi trades walls into army while its keep is safe (up to half of its stables a round,
+  // a stable maxi trades walls into army while its keep is safe (up to three quarters of its stables a round,
   // into ETH, stETH and WBTC), turtles when it isn't, and adds to its walls only when warned of a crash
   if (archetype === 'stable-maxi') {
-    if (safe) for (const from of stables) for (const to of ['eth', 'wbtc', 'steth']) for (const share of [0.25, 0.5]) consider({ t: 'swap', from, to, qty: qmul(available(m, side, 'swap', from), share) }, 1.5);
+    if (safe) for (const from of stables) for (const to of ['eth', 'wbtc', 'steth']) for (const share of [0.25, 0.5, 0.75]) consider({ t: 'swap', from, to, qty: qmul(available(m, side, 'swap', from), share) }, 1.5);
     for (let i = out.length - 1; i >= 0; i--) {
       const c = out[i]!;
       if (c.cmd.t !== 'swap') continue;
