@@ -49,6 +49,8 @@ export interface Asset {
   collateral: boolean;
   /** Opening price, in dollars. */
   price: number;
+  /** Its Ethereum mainnet contract (none: native ETH or a sim-only token). */
+  address?: string;
 }
 
 export type Role = 'melee' | 'ranged' | 'cavalry' | 'swarm' | 'siege' | 'support';

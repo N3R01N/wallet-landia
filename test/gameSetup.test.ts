@@ -63,6 +63,15 @@ describe('WalletImporter', () => {
     expect(r.notes.join(' ')).toContain('other chains');
   });
 
+  it('tokens are matched by their contract: a look-alike under a known symbol is not taken for the real one', () => {
+    const real = { ...item('USDC', 100, 100, 'stable'), address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48' };
+    const fake = { ...item('USDC', 50, 50, 'stable'), id: 'ethereum:fake', address: '0x000000000000000000000000000000000000dead' };
+    const r = importWallet(hero({ items: [real, fake] }), new Map());
+    const ids = r.portfolio.positions.map((p) => p.asset).sort();
+    expect(ids).toEqual(['usdc', 'x:0x000000000000000000000000000000000000dead']);
+    expect(r.customAssets[0]).toMatchObject({ symbol: 'USDC', address: '0x000000000000000000000000000000000000dead' });
+  });
+
   it('protocol positions map onto the game’s kinds', () => {
     const entry = (symbol: string, kind: 'deposit' | 'loan' | 'staked', quantity: number, usd: number) => ({ name: symbol, symbol, kind, module: null, quantity, usd, chainId: 'ethereum' });
     const stash = (protocolId: string, entries: ReturnType<typeof entry>[]) => ({ protocolId, entries, netUsd: 0, grossUsd: 0, tier: 0 as const, hasRewards: false, hasDebt: false });

@@ -194,6 +194,7 @@ function mapItems(raw: RawWallet): { items: Item[]; spam: number } {
       usd,
       tier: tierOf(usd),
       iconUrl: imageUrl(f.icon?.url) ?? null,
+      address: impl?.address ? impl.address.toLowerCase() : null,
     });
   }
   const items = [...byId.values()].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
@@ -262,6 +263,7 @@ function mapStashes(raw: RawWallet, book: ProtocolBook): Stash[] {
       quantity: attrs.quantity.float,
       usd: kind === 'loan' ? -Math.abs(value) : value,
       chainId: position.relationships?.chain?.data.id ?? 'unknown',
+      address: contractOf(attrs.fungible_info, position.relationships?.chain?.data.id),
     };
     const list = byProtocol.get(ident.id) ?? [];
     list.push(entry);
@@ -928,4 +930,10 @@ function consolidateMysteries(book: ProtocolBook, journeys: Journey[]): void {
       if (step.target.kind === 'building' && mergedIds.has(step.target.protocolId)) step.target = { kind: 'building', protocolId: CAMP_ID };
     }
   }
+}
+
+/** A token's contract on a chain, lower case (null: native, or not listed). */
+function contractOf(f: { implementations?: { chain_id?: string; address?: string | null }[] } | undefined, chainId: string | undefined): string | null {
+  const a = f?.implementations?.find((i) => i.chain_id === chainId)?.address;
+  return a ? a.toLowerCase() : null;
 }

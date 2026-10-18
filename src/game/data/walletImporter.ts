@@ -14,6 +14,7 @@ import { BASE_ASSETS } from '../core/catalog.js';
 import { qtyFor } from '../core/fixed.js';
 import type { Asset, AssetId, Category, NftHolding, Portfolio, Position, ProtocolFn } from '../core/types.js';
 
+const BY_ADDRESS = new Map(BASE_ASSETS.filter((a) => a.address).map((a) => [a.address!, a]));
 const BY_SYMBOL = new Map(BASE_ASSETS.map((a) => [a.symbol.toLowerCase(), a]));
 
 /** Our domain's token categories → the game's fallback categories. */
@@ -43,12 +44,19 @@ export function importWallet(hero: Hero, protocols: ReadonlyMap<string, Protocol
   const notes: string[] = [];
   let offChain = 0;
 
-  const assetFor = (symbol: string, category: AssetCategory | null, price: number): AssetId | null => {
-    const known = BY_SYMBOL.get(symbol.toLowerCase());
+  /**
+   * The asset a token is (spec: AssetId = its Ethereum contract): a known
+   * contract first; by symbol only for a token without one (native ETH, or
+   * data that lacks it), so a look-alike token under a known symbol isn't
+   * taken for the real one.
+   */
+  const assetFor = (symbol: string, category: AssetCategory | null, price: number, address?: string | null): AssetId | null => {
+    const contract = address ? address.toLowerCase() : null;
+    const known = contract ? BY_ADDRESS.get(contract) : BY_SYMBOL.get(symbol.toLowerCase());
     if (known) return known.id;
     if (category === 'receipt' || category === 'debt' || category === 'nft') return null;
     if (!(price > 0)) return null;
-    const id = `x:${symbol.toLowerCase()}`;
+    const id = `x:${contract ?? symbol.toLowerCase()}`;
     if (!custom.has(id)) {
       const cat = CATEGORY[category ?? 'token'] ?? 'misc';
       custom.set(id, {
@@ -59,6 +67,7 @@ export function importWallet(hero: Hero, protocols: ReadonlyMap<string, Protocol
         isStable: cat === 'stable',
         collateral: cat !== 'meme',
         price,
+        ...(contract ? { address: contract } : {}),
         ...(cat === 'lst' ? { follows: 'eth', curatedUnit: 'paladin.staked' } : {}),
       });
     }
@@ -71,7 +80,7 @@ export function importWallet(hero: Hero, protocols: ReadonlyMap<string, Protocol
       continue;
     }
     if (!(item.quantity > 0) || !(item.usd !== null && item.usd > 0)) continue;
-    const id = assetFor(item.symbol, item.category, item.usd / item.quantity);
+    const id = assetFor(item.symbol, item.category, item.usd / item.quantity, item.address);
     if (id) positions.push({ asset: id, qty: qtyFor(item.quantity, 1), kind: 'spot' });
   }
 
@@ -86,8 +95,8 @@ export function importWallet(hero: Hero, protocols: ReadonlyMap<string, Protocol
     const deposits = entries.filter((e) => e.kind === 'deposit');
     if (fn === 'dex' && deposits.length === 2) {
       const [a, b] = deposits as [StashEntry, StashEntry];
-      const ia = assetFor(a.symbol, null, Math.abs(a.usd) / a.quantity);
-      const ib = assetFor(b.symbol, null, Math.abs(b.usd) / b.quantity);
+      const ia = assetFor(a.symbol, null, Math.abs(a.usd) / a.quantity, a.address);
+      const ib = assetFor(b.symbol, null, Math.abs(b.usd) / b.quantity, b.address);
       if (ia && ib && ia !== ib) {
         positions.push({ asset: ia, qty: qtyFor(a.quantity, 1), kind: 'lp', protocol: 'dex', pairWith: ib, pairQty: qtyFor(b.quantity, 1) });
         for (const e of entries) if (e !== a && e !== b) pushEntry(e);
@@ -97,7 +106,7 @@ export function importWallet(hero: Hero, protocols: ReadonlyMap<string, Protocol
     for (const e of entries) pushEntry(e);
 
     function pushEntry(e: StashEntry): void {
-      const id = assetFor(e.symbol, null, Math.abs(e.usd) / e.quantity);
+      const id = assetFor(e.symbol, null, Math.abs(e.usd) / e.quantity, e.address);
       if (!id) return;
       const qty = qtyFor(e.quantity, 1);
       if (e.kind === 'loan') positions.push({ asset: id, qty, kind: 'borrowed', protocol: fn === 'vault' ? 'vault' : 'lending' });

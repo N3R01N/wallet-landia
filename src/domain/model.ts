@@ -28,6 +28,8 @@ export interface Item {
   usd: number | null;
   tier: Tier;
   iconUrl: string | null;
+  /** The token's contract on its chain (null: the chain's native coin, or not known). */
+  address?: string | null;
 }
 
 export type PositionKind = 'deposit' | 'loan' | 'staked' | 'reward' | 'locked' | 'investment' | 'other';
@@ -41,6 +43,8 @@ export interface StashEntry {
   /** Signed: loans are negative. */
   usd: number;
   chainId: string;
+  /** The token's contract (null or absent: native, or not known). */
+  address?: string | null;
 }
 
 /** A hero's holdings inside one protocol building. */
