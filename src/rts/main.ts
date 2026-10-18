@@ -17,9 +17,11 @@ import { loadCastleTheme, themeFromUrl } from '../castle/assets/theme.js';
 import { el } from '../util/dom.js';
 import { RULES, START_KITS, TRAIN, type BuildingKind, type PlayerId, type StartKit } from './data/rules.js';
 import { World, type Command } from './core/world.js';
-import type { OrderKind, Unit } from './core/units.js';
+import { newUnit, type OrderKind, type Unit } from './core/units.js';
+import type { UnitTypeId } from '../game/core/types.js';
 import { RtsView } from './render/view.js';
 import { UnitLayer } from './render/unitLayer.js';
+import { FightFx } from './render/fightFx.js';
 import { Hud } from './ui/hud.js';
 import './rts.css';
 
@@ -52,6 +54,7 @@ async function play(kit: StartKit): Promise<void> {
   const world = new World({ seed, kits: { A: kit, B: kit } });
   const view = new RtsView(library);
   const layer = new UnitLayer(view);
+  const fx = new FightFx(view, world);
   layer.preload(TRAIN.filter((t) => t.level === 1 && t.at === 'hall').map((t) => t.unit));
   const selection = new Set<number>();
   let building: number | null = null;
@@ -249,8 +252,11 @@ async function play(kit: StartKit): Promise<void> {
       acc -= tick;
     }
     const events = world.takeEvents();
-    if (events.some((e) => e.t === 'placed' || e.t === 'upgraded')) void view.sync(world);
+    if (events.some((e) => e.t === 'placed' || e.t === 'upgraded' || e.t === 'destroyed')) void view.sync(world);
+    fx.handle(events);
     for (const e of events) {
+      if (e.t === 'destroyed' && e.owner === ME) hud.say(`Your ${e.kind === 'hall' ? 'wallet hall' : 'building'} was destroyed!`);
+      if (e.t === 'won') gameOver(e.winner === ME);
       if (e.t === 'built' && e.owner === ME) hud.say('A building is ready: place it.');
       if (e.t === 'liquidated' && e.owner === ME) hud.say('⚠ A loan was liquidated!');
     }
@@ -265,7 +271,7 @@ async function play(kit: StartKit): Promise<void> {
     const b = world.buildings.find((x) => x.id === building) ?? null;
     view.select(selection.size === 0 ? b : null);
     view.rally(selection.size === 0 && b?.owner === ME ? b.rally : null);
-    layer.draw(world.units, acc / tick, dt, selection, ME);
+    layer.draw(world.units, acc / tick, dt, selection, ME, world.buildings);
     hudClock += dt;
     if (hudClock > 0.2) {
       hudClock = 0;
@@ -273,8 +279,27 @@ async function play(kit: StartKit): Promise<void> {
     }
   });
   hud.render();
+
+  function gameOver(won: boolean): void {
+    const again = el('button', { class: 'btn', type: 'button' }, 'Play again');
+    again.addEventListener('click', () => location.reload());
+    const minutes = Math.floor(world.time / 60);
+    app.querySelector('.rts')!.append(
+      el(
+        'div',
+        { class: `rts-over ${won ? 'won' : 'lost'}`, role: 'dialog', 'aria-label': won ? 'Victory' : 'Defeat' },
+        el('h2', {}, won ? '🏆 Victory' : '💀 Defeat'),
+        el('p', {}, won ? `The enemy’s wallet hall has fallen, after ${minutes} min.` : `Your wallet hall has fallen, after ${minutes} min.`),
+        el('div', { class: 'rts-row' }, again, el('a', { class: 'btn', href: './' }, 'Back to the castle')),
+      ),
+    );
+  }
   // test hook (dev server only)
-  if (import.meta.env.DEV) Object.assign(window, { rts: { world, view, send, selection } });
+  let spawned = 1_000_000;
+  if (import.meta.env.DEV)
+    Object.assign(window, {
+      rts: { world, view, send, selection, spawn: (owner: PlayerId, type: UnitTypeId, x: number, z: number) => world.units.push(newUnit(spawned++, type, owner, x, z)) },
+    });
 }
 
 startScreen();

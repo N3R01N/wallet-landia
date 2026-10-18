@@ -12,6 +12,7 @@ import { generateMap, markRect, type GameMap, cellOf } from './map.js';
 import { openingMarket, stepMarket, type Market } from './market.js';
 import { Paths } from './path.js';
 import { formation, newUnit, separate, walk, type OrderKind, type Unit } from './units.js';
+import { COMBAT, fight, type FightEvent } from './combat.js';
 import { UNIT_TYPES } from '../../game/core/catalog.js';
 import type { UnitTypeId } from '../../game/core/types.js';
 import { accrue, applyEcon, ECON_COMMANDS, liquidate, type EconCommand, type EconWorld, type Position } from './economy.js';
@@ -31,6 +32,8 @@ export interface Building {
   queue: { unit: UnitTypeId; left: number; total: number }[];
   /** Where its new units walk to (null: they stay by the door). */
   rally: { x: number; z: number } | null;
+  /** A wallet hall's seconds until its next arrow. */
+  shot?: number;
 }
 
 export interface Player {
@@ -70,7 +73,10 @@ export type WorldEvent =
   | { t: 'upgraded'; id: number }
   | { t: 'paid'; owner: PlayerId; usd: number }
   | { t: 'liquidated'; owner: PlayerId; count: number }
-  | { t: 'trained'; id: number };
+  | { t: 'trained'; id: number }
+  | { t: 'destroyed'; id: number; kind: BuildingKind; owner: PlayerId }
+  | { t: 'won'; winner: PlayerId }
+  | FightEvent;
 
 export interface WorldSetup {
   seed: string;
@@ -327,7 +333,10 @@ export class World {
       for (const u of units) u.order = { t: 'attack', target: c.target };
       return;
     }
-    for (const u of units) u.order = c.kind === 'hold' ? { t: 'hold' } : { t: 'idle' };
+    for (const u of units) {
+      u.order = c.kind === 'hold' ? { t: 'hold' } : { t: 'idle' };
+      u.guard = { x: u.x, z: u.z };
+    }
   }
 
   /** One tick. */
@@ -375,18 +384,44 @@ export class World {
       this.#spawn(b, first.unit);
     }
     this.#moveUnits();
+    this.#fallen();
   }
 
-  /** The units' walking (combat comes before it, in combat.ts's turn). */
+  /** Fighting first (combat.ts), then the walking of those who didn't fight. */
   #moveUnits(): void {
     for (const u of this.units) {
       u.px = u.x;
       u.pz = u.z;
       u.moving = false;
-      if (u.died >= 0) continue;
-      if (u.order.t === 'move' && walk(u, DT, this.paths)) u.order = { t: 'idle' };
+      if (u.died >= 0) u.died += DT;
+    }
+    const acted = fight({ units: this.units, buildings: this.buildings, paths: this.paths, rng: this.#rng, dt: DT, emit: (e) => this.#events.push(e) });
+    for (const u of this.units) {
+      if (u.died >= 0 || acted.has(u.id)) continue;
+      if (u.order.t === 'move' && walk(u, DT, this.paths)) {
+        u.order = { t: 'idle' };
+        u.guard = { x: u.x, z: u.z };
+      }
     }
     separate(this.units, this.map);
+  }
+
+  /** The dead taken away; buildings at 0 HP fall (their ground opens again); a fallen wallet hall ends the match. */
+  #fallen(): void {
+    for (let i = this.units.length - 1; i >= 0; i--) if (this.units[i]!.died > COMBAT.corpse) this.units.splice(i, 1);
+    for (let i = this.buildings.length - 1; i >= 0; i--) {
+      const b = this.buildings[i]!;
+      if (b.hp > 0) continue;
+      this.buildings.splice(i, 1);
+      const f = BUILDINGS[b.kind].footprint;
+      markRect(this.map, b.x - f / 2, b.z - f / 2, b.x + f / 2, b.z + f / 2, 0);
+      this.paths.invalidate();
+      this.#events.push({ t: 'destroyed', id: b.id, kind: b.kind, owner: b.owner });
+      if (b.kind === 'hall' && !this.winner) {
+        this.winner = b.owner === 'A' ? 'B' : 'A';
+        this.#events.push({ t: 'won', winner: this.winner });
+      }
+    }
   }
 
   /** A trained unit steps out of its building (on the side towards its rally point, or the middle) and walks to the rally point. */

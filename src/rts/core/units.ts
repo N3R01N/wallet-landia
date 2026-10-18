@@ -48,12 +48,17 @@ export interface Unit {
   /** Progress made towards the slot: the best distance so far and seconds without bettering it. */
   best: number;
   stall: number;
+  /** Where an idle unit stands guard (it goes back there after a chase). */
+  guard: { x: number; z: number } | null;
   /** Ability state: the Lancer's charge spent, the Swap Mage's timer, the drain on its attack. */
   charged: boolean;
   timer: number;
   drained: number;
   shield: number;
 }
+
+/** A unit's HP is its type's × this (combat.ts COMBAT.hpScale: fights last a few blows). */
+const HP_SCALE = 2;
 
 /** Metres a second per point of a unit type's speed. */
 export const METRES_PER_SPEED = 2.4;
@@ -69,7 +74,8 @@ export function speedOf(type: UnitTypeId): number {
 
 export function newUnit(id: number, type: UnitTypeId, owner: PlayerId, x: number, z: number): Unit {
   const t = UNIT_TYPES[type]!;
-  return { id, type, owner, x, z, px: x, pz: z, face: owner === 'A' ? Math.PI : 0, hp: t.hp, maxHp: t.hp, order: { t: 'idle' }, target: null, cooldown: 0, struck: 99, died: -1, moving: false, best: Infinity, stall: 0, charged: false, timer: 0, drained: 0, shield: 0 };
+  const hp = t.hp * HP_SCALE;
+  return { id, type, owner, x, z, px: x, pz: z, face: owner === 'A' ? Math.PI : 0, hp, maxHp: hp, order: { t: 'idle' }, target: null, cooldown: 0, struck: 99, died: -1, moving: false, best: Infinity, stall: 0, guard: { x, z }, charged: false, timer: 0, drained: 0, shield: t.ability === 'start-shield' ? 10 : 0 };
 }
 
 /**
@@ -159,15 +165,19 @@ export function walk(u: Unit, dt: number, paths: Paths): boolean {
   return false;
 }
 
-/** Steps a unit towards a point (a target), by the field when the way isn't clear. */
-export function approach(u: Unit, x: number, z: number, dt: number, paths: Paths): void {
+/**
+ * Steps a unit towards a point (a target), by a flow field when the way isn't
+ * clear: the field to `goal` (default the point), snapped to a 3 m grid so
+ * that chasers of nearby targets share fields.
+ */
+export function approach(u: Unit, x: number, z: number, dt: number, paths: Paths, goal: { x: number; z: number } = { x, z }): void {
   const dx = x - u.x;
   const dz = z - u.z;
   const d = Math.hypot(dx, dz) || 1;
   let vx = dx / d;
   let vz = dz / d;
   if (!paths.clear(u.x, u.z, x, z)) {
-    const s = paths.step(paths.field(paths.nearestOpen(x, z, 6)), u.x, u.z);
+    const s = paths.step(paths.field(paths.nearestOpen(Math.round(goal.x / 3) * 3, Math.round(goal.z / 3) * 3, 8)), u.x, u.z);
     if (s) {
       vx = s.dx;
       vz = s.dz;

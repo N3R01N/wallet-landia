@@ -133,3 +133,31 @@ test('units: trained at the hall, box-selected, sent across the map with a right
   expect(errors).toEqual([]);
 });
 
+test('combat: an attack order, effects as they fight, and victory when the enemy hall falls', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/rts.html?seed=e2e');
+  await page.locator('.rts-kit[data-kit="usdc"]').click();
+  await expect(page.locator('.rts[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
+  type R = { rts: { world: { step(): void; winner: string | null; units: { id: number; owner: string; died: number }[]; hallOf(p: string): { id: number; x: number; z: number } }; send(c: unknown): { ok: boolean }; spawn(o: string, t: string, x: number, z: number): void } };
+  // your titans and knights at the enemy's door; a few defenders
+  await page.evaluate(() => {
+    const r = (window as unknown as R).rts;
+    const hall = r.world.hallOf('B');
+    for (let i = 0; i < 4; i++) r.spawn('A', 'titan.bitcoin', hall.x - 4 + i * 2.5, hall.z + 12);
+    for (let i = 0; i < 6; i++) r.spawn('A', 'knight', hall.x - 4 + i * 1.5, hall.z + 14);
+    for (let i = 0; i < 3; i++) r.spawn('B', 'militia', hall.x + i * 1.2, hall.z + 7);
+    const mine = r.world.units.filter((u) => u.owner === 'A').map((u) => u.id);
+    r.send({ t: 'order', units: mine, kind: 'attack', target: hall.id });
+    for (let i = 0; i < 4 * 20; i++) r.world.step();
+  });
+  // the defenders fight back; the fight goes on
+  await page.evaluate(() => {
+    const w = (window as unknown as R).rts.world;
+    for (let i = 0; i < 200 * 20 && !w.winner; i++) w.step();
+  });
+  await expect(page.locator('.rts-over')).toContainText('Victory', { timeout: 10_000 });
+  expect(errors).toEqual([]);
+});
+

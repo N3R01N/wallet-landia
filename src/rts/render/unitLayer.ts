@@ -11,6 +11,8 @@ import { UnitMesh } from '../../game/render/unitMeshes.js';
 import type { UnitTypeId } from '../../game/core/types.js';
 import { radiusOf, speedOf, type Unit } from '../core/units.js';
 import type { RtsView } from './view.js';
+import { BUILDINGS } from '../data/rules.js';
+import type { Building } from '../core/world.js';
 
 const CAPACITY = 320;
 /** Units drawn a little bigger than life, to read at an RTS camera's distance. */
@@ -59,7 +61,7 @@ export class UnitLayer {
   }
 
   /** Draws the units: `alpha` is how far the frame is between the last tick and the next (0–1). */
-  draw(units: readonly Unit[], alpha: number, dt: number, selected: ReadonlySet<number>, me: string): void {
+  draw(units: readonly Unit[], alpha: number, dt: number, selected: ReadonlySet<number>, me: string, buildings: readonly Building[] = []): void {
     const byType = new Map<UnitTypeId, Unit[]>();
     for (const u of units) {
       const list = byType.get(u.type);
@@ -115,6 +117,20 @@ export class UnitLayer {
         this.#barFill.setColorAt(b, this.#c.set(frac > 0.5 ? 0x5bd25b : frac > 0.25 ? 0xf2c14e : 0xe0452e));
         b++;
       }
+    }
+    // buildings: a wider bar over the hurt
+    for (const bd of buildings) {
+      if (bd.hp >= bd.maxHp || b >= CAPACITY) continue;
+      const f = BUILDINGS[bd.kind].footprint;
+      const frac = Math.max(0, bd.hp / bd.maxHp);
+      const w = f * 0.8;
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.#q);
+      this.#m.compose(this.#v.set(bd.x, f * 1.3, bd.z), this.#q, this.#s.set(w, 0.3, 1));
+      this.#barBack.setMatrixAt(b, this.#m);
+      this.#m.compose(this.#v.set(bd.x - (right.x * (w * (1 - frac))) / 2, f * 1.3, bd.z - (right.z * (w * (1 - frac))) / 2), this.#q, this.#s.set(w * frac, 0.22, 1));
+      this.#barFill.setMatrixAt(b, this.#m);
+      this.#barFill.setColorAt(b, this.#c.set(frac > 0.5 ? 0x5bd25b : frac > 0.25 ? 0xf2c14e : 0xe0452e));
+      b++;
     }
     this.#rings.count = r;
     this.#barBack.count = b;

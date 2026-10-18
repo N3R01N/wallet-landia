@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Loaded, ModelLibrary } from '../../castle/assets/models.js';
-import { showTierParts } from '../../castle/scene/castleView.js';
+import { showTierParts, type Stage } from '../../castle/scene/castleView.js';
 import { TEAM_COLORS } from '../../game/render/battleView.js';
 import { BUILDINGS, type BuildingKind, type PlayerId } from '../data/rules.js';
 import type { Building, World } from '../core/world.js';
@@ -248,6 +248,23 @@ export class RtsView {
     this.#ring.scale.setScalar(r);
   }
 
+  /** This view as Siege's effects want a stage (render/battleFx.ts). */
+  stage(): Stage {
+    return {
+      scene: this.scene,
+      camera: this.camera,
+      renderer: this.renderer,
+      load: (name) => this.load(name),
+      onFrame: (fn) => this.onFrame(fn),
+      placed: () => [],
+      screen: (p) => {
+        const s = this.toScreen(p.x, p.y, p.z);
+        const r = this.canvas.getBoundingClientRect();
+        return s ? { x: s.x - r.left, y: s.y - r.top } : null;
+      },
+    };
+  }
+
   /** A ring that shrinks away where an order went. */
   marker(x: number, z: number, color: number): void {
     const obj = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.9, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false }));
@@ -369,7 +386,8 @@ export class RtsView {
 
   #loop(now: number): void {
     this.#timer.update(now);
-    const dt = Math.min(0.1, this.#timer.getDelta());
+    // a slow frame still moves the game on (up to a quarter second at a time)
+    const dt = Math.min(0.25, this.#timer.getDelta());
     const k = this.#keys;
     const speed = this.#dist * 0.9 * dt;
     // the arrows, or the pointer at the canvas's edge
