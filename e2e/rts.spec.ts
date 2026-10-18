@@ -180,3 +180,45 @@ test('the computer opponent builds and trains by the same rules (Easy, Normal or
   expect(errors).toEqual([]);
 });
 
+test('the help, the minimap and control groups', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/rts.html?seed=e2e&ai=0');
+  await page.locator('.rts-kit[data-kit="usdc"]').click();
+  await expect(page.locator('.rts[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
+  // the help: every building and what it trains
+  await page.locator('.rts-help-btn').click();
+  const help = page.locator('dialog.rts-help');
+  await expect(help).toBeVisible();
+  await help.locator('.rts-help-tab[data-tab="buildings"]').click();
+  await expect(help).toContainText('Bitcoin Titan (WBTC');
+  await page.keyboard.press('Escape');
+  await expect(help).toBeHidden();
+  // the minimap: a click looks there
+  type R = { rts: { view: { cameraState: { x: number; z: number } }; selection: Set<number>; spawn(o: string, t: string, x: number, z: number): void; world: { units: { id: number }[] } } };
+  const map = (await page.locator('.rts-minimap').boundingBox())!;
+  await page.mouse.click(map.x + map.width / 2, map.y + map.height / 2);
+  const cam = await page.evaluate(() => (window as unknown as R).rts.view.cameraState);
+  expect(Math.abs(cam.z)).toBeLessThan(6);
+  // a group: Ctrl+1 keeps it, 1 brings it back
+  await page.evaluate(() => {
+    const r = (window as unknown as R).rts;
+    for (let i = 0; i < 3; i++) r.spawn('A', 'knight', i * 1.5, 50);
+    for (const u of r.world.units) r.selection.add(u.id);
+  });
+  await page.locator('.rts-canvas').focus();
+  await page.keyboard.press('Control+1');
+  await page.keyboard.press('Escape');
+  expect(await page.evaluate(() => (window as unknown as R).rts.selection.size)).toBe(0);
+  await page.keyboard.press('1');
+  expect(await page.evaluate(() => (window as unknown as R).rts.selection.size)).toBe(3);
+  expect(errors).toEqual([]);
+});
+
+test('the castle’s topbar opens Ledger Wars', async ({ page }) => {
+  await page.goto('/');
+  const link = page.locator('.topbar .rts-link');
+  await expect(link).toHaveAttribute('href', /rts\.html$/);
+});
+

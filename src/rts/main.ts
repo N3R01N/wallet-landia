@@ -10,6 +10,8 @@
  *   right click       move there, or attack what is under the cursor;
  *                     with a building of yours selected: its rally point
  *   A then click      attack-move;  S stop;  H hold;  Esc clear
+ *   Ctrl+1–9          make a group; 1–9 selects it, twice jumps to it
+ *   minimap           click to look; right-click to send;  F1 help
  */
 
 import { ModelLibrary } from '../castle/assets/models.js';
@@ -23,6 +25,8 @@ import { RtsView } from './render/view.js';
 import { UnitLayer } from './render/unitLayer.js';
 import { FightFx } from './render/fightFx.js';
 import { Hud } from './ui/hud.js';
+import { Help } from './ui/help.js';
+import { Minimap } from './render/minimap.js';
 import type { Difficulty } from './ai/opponent.js';
 import './rts.css';
 
@@ -94,7 +98,17 @@ async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
   });
   const box = el('div', { class: 'rts-box' });
   box.hidden = true;
-  app.replaceChildren(el('div', { class: 'rts', 'data-ready': 'false' }, view.canvas, box, hud.element));
+  const help = new Help();
+  const helpBtn = el('button', { class: 'btn rts-help-btn', type: 'button', 'aria-label': 'Help', title: 'Help (F1)' }, '? Help');
+  helpBtn.addEventListener('click', () => help.show());
+  const minimap = new Minimap(world, {
+    onLook: (x, z) => view.lookAt(x, z),
+    onSend: (x, z) => {
+      const units = selectedUnits();
+      if (units.length > 0) send({ t: 'order', units: units.map((u) => u.id), kind: 'move', x, z });
+    },
+  });
+  app.replaceChildren(el('div', { class: 'rts', 'data-ready': 'false' }, view.canvas, box, hud.element, minimap.element, helpBtn));
   view.focus(RULES.start[ME].x, RULES.start[ME].z - 10);
   await view.build(world);
   app.querySelector('.rts')!.setAttribute('data-ready', 'true');
@@ -248,7 +262,34 @@ async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
     } else if (k === 'a') order('armAttack');
     else if (k === 's') order('stop');
     else if (k === 'h') order('hold');
+    else if (k === 'f1') {
+      e.preventDefault();
+      help.show();
+    } else if (/^[1-9]$/.test(k)) {
+      // control groups
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        groups.set(k, [...selection]);
+        hud.say(`Group ${k}: ${selection.size} unit${selection.size === 1 ? '' : 's'}`);
+        return;
+      }
+      const ids = (groups.get(k) ?? []).filter((id) => world.units.some((u) => u.id === id && u.died < 0));
+      if (ids.length === 0) return;
+      const now = performance.now();
+      if (lastGroup.key === k && now - lastGroup.t < 400) {
+        const us = world.units.filter((u) => ids.includes(u.id));
+        view.lookAt(us.reduce((t, u) => t + u.x, 0) / us.length, us.reduce((t, u) => t + u.z, 0) / us.length);
+      }
+      lastGroup = { key: k, t: now };
+      selection.clear();
+      for (const id of ids) selection.add(id);
+      building = null;
+      hud.render();
+    }
   });
+  const groups = new Map<string, number[]>();
+  let lastGroup = { key: '', t: 0 };
+  let warned = -99;
 
   // time: fixed ticks, the view every frame, the HUD five times a second
   let acc = 0;
@@ -264,6 +305,17 @@ async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
     if (events.some((e) => e.t === 'placed' || e.t === 'upgraded' || e.t === 'destroyed')) void view.sync(world);
     fx.handle(events);
     for (const e of events) {
+      // under attack: a flash on the minimap, and a word now and then
+      if (e.t === 'strike') {
+        const hit = world.units.find((u) => u.id === e.target) ?? world.buildings.find((b) => b.id === e.target);
+        if (hit && hit.owner === ME) {
+          minimap.ping(e.toX, e.toZ);
+          if (world.time - warned > 12 && !view.inView(e.toX, e.toZ)) {
+            warned = world.time;
+            hud.say('⚔ You are under attack!');
+          }
+        }
+      }
       if (e.t === 'destroyed' && e.owner === ME) hud.say(`Your ${e.kind === 'hall' ? 'wallet hall' : 'building'} was destroyed!`);
       if (e.t === 'won') gameOver(e.winner === ME);
       if (e.t === 'built' && e.owner === ME) hud.say('A building is ready: place it.');
@@ -281,6 +333,7 @@ async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
     view.select(selection.size === 0 ? b : null);
     view.rally(selection.size === 0 && b?.owner === ME ? b.rally : null);
     layer.draw(world.units, acc / tick, dt, selection, ME, world.buildings);
+    minimap.draw(ME, view.outline(), dt);
     hudClock += dt;
     if (hudClock > 0.2) {
       hudClock = 0;

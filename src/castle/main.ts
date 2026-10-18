@@ -415,6 +415,10 @@ const conditions = new Conditions(() => shell.open({ id: CONDITIONS_SHEET, title
 const settingsBtn = el('button', { class: 'btn topbar-icon settings-btn', type: 'button', 'aria-label': 'Settings: key, wallets, crest colours', title: 'Settings: your Zerion key, wallets, names and crest colours' }, '⚙');
 settingsBtn.addEventListener('click', () => shell.go('guild'));
 shell.addTopbarAction(siege.button);
+// Ledger Wars, the real-time strategy mode, on its own page (src/rts)
+shell.addTopbarAction(
+  el('a', { class: 'btn rts-link', href: `${import.meta.env.BASE_URL}rts.html`, 'aria-label': 'Ledger Wars (real-time strategy)', title: 'Ledger Wars: build, stake and command your army in real time' }, '🗡', el('span', { class: 'siege-word' }, ' RTS')),
+);
 shell.addTopbarAction(conditions.chip);
 shell.addTopbarAction(settingsBtn);
 shell.addTopbarAction(tourBtn);

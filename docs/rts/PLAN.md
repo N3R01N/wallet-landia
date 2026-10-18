@@ -57,3 +57,17 @@ better units.
 4. **R4 Combat**: attack, attack-move, stop, hold/defend, the counter triangle and abilities, building damage and destruction, effects, victory and defeat.
 5. **R5 The AI**: an opponent that builds, trades and attacks by the same rules; a headless runner to tune the economy to ~15-minute matches.
 6. **R6 Polish**: minimap, hotkeys and control groups, a guide, the topbar button, tests.
+
+## Status (2026-10-18): R1–R6 built
+
+All six milestones are in (`src/rts/`, tests `test/rts*.test.ts` and `e2e/rts.spec.ts`).
+
+Changes from the plan made along the way:
+
+- **The camera moves by the arrows**, the screen's edges or the middle button: A, S and H are orders (attack-move, stop, hold), as in most RTS games.
+- **Pacing** (from the headless runner, `npx vite-node scripts/rts-sim.ts [n] [A] [B] [kit]`): units cost $200 per point of their cost, yields are game-fast (staking 12% a minute, pools 16%, restaking 18%, paid each second), the wallet hall has 4,000 HP and shoots arrows, buildings take 0.8× a unit's attack plus 6 per point of Siege. Positions can be taken out in part.
+- **The computer** comes in Easy, Normal and Hard (start screen). Hard beats Normal 5 to 1, Normal beats Easy 6 to 0 in about 24 minutes; Normal beats a player who never fights back in about 6.5 minutes. A human who attacks should end matches sooner; the 15-minute target needs a playtest.
+- **No button on phones**: the castle's topbar has a "🗡 RTS" link on desktop only (the mode needs a mouse).
+- `?ai=0` on rts.html starts without an opponent (a sandbox; the browser tests use it).
+
+Not done yet: fog of war, a worker and PvP, sounds, saving a match.

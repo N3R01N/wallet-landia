@@ -1,7 +1,11 @@
 /* Siege of the Ledger: the topbar switch and the game's HUD over the castle view. */
 
-.topbar .siege-toggle {
+.topbar .siege-toggle,
+.topbar .rts-link {
+  display: inline-flex;
+  align-items: center;
   min-height: 36px;
+  text-decoration: none;
   border: 1px solid var(--gold);
   background: transparent;
   color: var(--gold-hi);
@@ -19,6 +23,11 @@
 }
 
 .shell[data-layout='phone'] .topbar .siege-word {
+  display: none;
+}
+
+/* Ledger Wars needs a mouse (boxes, right clicks): no button for it on a phone */
+.shell[data-layout='phone'] .topbar .rts-link {
   display: none;
 }
 

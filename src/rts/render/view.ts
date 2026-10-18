@@ -316,6 +316,31 @@ export class RtsView {
     return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
   }
 
+  /** Whether a point of the ground shows in the view now. */
+  inView(x: number, z: number): boolean {
+    const p = this.toScreen(x, 0, z);
+    const r = this.canvas.getBoundingClientRect();
+    return !!p && p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom;
+  }
+
+  /** Moves the view to look at a point (its turn kept). */
+  lookAt(x: number, z: number): void {
+    const h = 85;
+    this.#target.set(Math.max(-h, Math.min(h, x)), 0, Math.max(-h, Math.min(h, z)));
+  }
+
+  /** The view's outline on the ground: where the canvas's corners fall (null when the sky shows in one). */
+  outline(): { x: number; z: number }[] | null {
+    const r = this.canvas.getBoundingClientRect();
+    const pts = [
+      [r.left, r.top],
+      [r.right, r.top],
+      [r.right, r.bottom],
+      [r.left, r.bottom],
+    ].map(([x, y]) => this.groundAt(x!, y!));
+    return pts.every((p) => p !== null) ? (pts as { x: number; z: number }[]) : null;
+  }
+
   focus(x: number, z: number): void {
     this.#target.set(x, 0, z);
     // your side at the bottom of the screen
