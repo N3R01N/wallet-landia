@@ -30,7 +30,8 @@ import {
   templateDraft,
   type Draft,
 } from '../setup/editor.js';
-import { deleteLoadout, listLoadouts, saveLoadout } from '../setup/loadouts.js';
+import { deleteLoadout, listLoadouts, loadoutCode, readLoadoutCode, saveLoadout } from '../setup/loadouts.js';
+import { decodeReplay, type Replay } from '../core/match.js';
 
 export interface WalletChoice {
   name: string;
@@ -48,6 +49,8 @@ export interface SetupOptions {
   wallets: () => WalletChoice[];
   protocols: () => ReadonlyMap<string, Protocol>;
   onStart: (choice: SetupChoice) => void;
+  /** Watch a replay file. */
+  onWatch?: (replay: Replay) => void;
 }
 
 const NPC_ARCHETYPES: readonly Archetype[] = ['degen', 'whale', 'stable-maxi', 'yield-farmer'];
@@ -64,6 +67,8 @@ export class SetupPanel {
   #archetype: Archetype = 'whale';
   #difficulty: Difficulty = 'normal';
   #message = '';
+  /** The last loadout code made (shown to copy by hand where the clipboard is closed). */
+  #shared = '';
 
   constructor(opts: SetupOptions) {
     this.#opts = opts;
@@ -196,9 +201,68 @@ export class SetupPanel {
         deleteLoadout(l.name);
         this.render();
       });
-      return el('li', {}, el('span', {}, l.name), load, del);
+      // off this device: a code to paste anywhere, or a file
+      const share = el('button', { class: 'btn siege-share', type: 'button', 'aria-label': `Copy ${l.name} as a code` }, 'Code');
+      share.addEventListener('click', () => {
+        const code = loadoutCode(l.name, l.draft);
+        this.#shared = code;
+        void navigator.clipboard?.writeText(code).then(
+          () => {
+            this.#message = `“${l.name}” copied as a code: paste it on another device.`;
+            this.render();
+          },
+          () => this.render(),
+        );
+        this.render();
+      });
+      const file = el('button', { class: 'btn siege-remove', type: 'button', 'aria-label': `Download ${l.name}` }, '⬇');
+      file.addEventListener('click', () => {
+        const url = URL.createObjectURL(new Blob([loadoutCode(l.name, l.draft)], { type: 'text/plain' }));
+        const a = el('a', { href: url, download: `${l.name.replace(/[^\w-]+/g, '-')}.siege.txt` });
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      });
+      return el('li', {}, el('span', {}, l.name), load, share, file, del);
+    });
+    // and back: a pasted code, or a file
+    const codeIn = el('input', { class: 'siege-code-in', type: 'text', placeholder: 'Paste a loadout code', 'aria-label': 'Loadout code' });
+    const importBtn = el('button', { class: 'btn', type: 'button' }, 'Import');
+    const take = (text: string) => {
+      try {
+        const l = readLoadoutCode(text);
+        // someone else's code: the match cap holds as for any import, and custom tokens need a sane price
+        const custom = (l.draft.customAssets ?? []).filter((a) => typeof a.id === 'string' && Number.isFinite(a.price) && a.price > 0);
+        const draft = importDraft(l.draft.portfolio, custom);
+        saveLoadout(l.name, draft, Date.now());
+        this.#draft = draft;
+        this.#source = 'loadout';
+        this.#message = `Imported “${l.name}”.`;
+      } catch {
+        this.#message = 'That isn’t a loadout code.';
+      }
+      this.render();
+    };
+    importBtn.addEventListener('click', () => take(codeIn.value));
+    const codeFile = el('input', { class: 'siege-code-file', type: 'file', accept: '.txt,text/plain', 'aria-label': 'Loadout file' });
+    codeFile.addEventListener('change', () => {
+      const f = codeFile.files?.[0];
+      if (f) void f.text().then(take);
     });
 
+    // a replay file (downloaded after a match): every battle again
+    const replayFile = el('input', { class: 'siege-replay-file', type: 'file', accept: '.json,application/json', 'aria-label': 'Replay file' });
+    replayFile.addEventListener('change', () => {
+      const file = replayFile.files?.[0];
+      if (!file) return;
+      void file.text().then((text) => {
+        try {
+          this.#opts.onWatch?.(decodeReplay(text));
+        } catch (error) {
+          this.#message = `Not a replay file (${error instanceof Error ? error.message : String(error)}).`;
+          this.render();
+        }
+      });
+    });
     const start = el('button', { class: 'btn siege-start', type: 'button' }, '⚔ Start the siege');
     const armyUnits = pv.squads.reduce((s, q) => s + q.count, 0);
     if (armyUnits === 0) start.setAttribute('disabled', '');
@@ -224,8 +288,12 @@ export class SetupPanel {
       el('h3', {}, 'Loadouts'),
       el('div', { class: 'siege-row' }, name, save),
       el('ul', { class: 'siege-list siege-loadouts' }, ...saved),
+      this.#shared ? el('input', { class: 'siege-code-out', type: 'text', readonly: '', value: this.#shared, 'aria-label': 'The loadout’s code' }) : null,
+      el('div', { class: 'siege-row' }, codeIn, importBtn),
+      el('div', { class: 'siege-row' }, el('label', {}, 'or a file: ', codeFile)),
       this.#message ? el('p', { class: 'siege-message', role: 'status' }, this.#message) : null,
       start,
+      ...(this.#opts.onWatch ? [el('div', { class: 'siege-row siege-replay-row' }, el('label', {}, '▶ Watch a replay: ', replayFile))] : []),
     ];
     this.element.replaceChildren(...parts.filter((p): p is Node => p !== null));
   }

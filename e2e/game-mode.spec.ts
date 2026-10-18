@@ -86,6 +86,16 @@ test('match setup: a template, a wallet import, a blank build within its budget,
   await panel.locator('.siege-loadout-name').fill('All in on ETH');
   await panel.getByRole('button', { name: 'Save' }).click();
   await expect(panel.locator('.siege-loadouts li')).toContainText('All in on ETH');
+  // off the device and back: its code, the loadout deleted, the code pasted
+  await panel.locator('.siege-share').first().click();
+  const code = await panel.locator('.siege-code-out').inputValue();
+  expect(code.startsWith('SIEGE1:')).toBe(true);
+  await panel.locator('.siege-loadouts li', { hasText: 'All in on ETH' }).getByRole('button', { name: /Delete/ }).click();
+  await expect(panel.locator('.siege-loadouts li', { hasText: 'All in on ETH' })).toHaveCount(0);
+  await panel.locator('.siege-code-in').fill(code);
+  await panel.getByRole('button', { name: 'Import' }).click();
+  await expect(panel.locator('.siege-message')).toContainText('Imported');
+  await expect(panel.locator('.siege-loadouts li')).toContainText('All in on ETH');
 
   await panel.locator('.siege-start').click();
   await expect(panel.locator('.siege-match')).toContainText('Round 1');
@@ -186,7 +196,8 @@ test('a whole match ends in the recap: charts of the portfolios and keeps, the M
     if (phase === 'ended') break;
     const next = { trade: '.siege-go', battle: '.siege-skip', siege: '.siege-next', market: '.siege-skip' }[phase ?? ''];
     const button = next ? panel.locator(next) : null;
-    if (button && (await button.isEnabled().catch(() => false))) await button.click().catch(() => {});
+    // short waits: the phase may move on between reading it and clicking (its button then never comes back)
+    if (button && (await button.isEnabled({ timeout: 1000 }).catch(() => false))) await button.click({ timeout: 2000 }).catch(() => {});
     await page.waitForTimeout(400);
   }
   await expect(match).toHaveAttribute('data-phase', 'ended', { timeout: 60_000 });
@@ -197,5 +208,21 @@ test('a whole match ends in the recap: charts of the portfolios and keeps, the M
   await expect(recap.locator('.siege-mvp')).toContainText('MVP');
   await recap.locator('.siege-recap-table summary').click();
   await expect(recap.locator('.siege-recap-table tbody tr').first()).toBeVisible();
+
+  // the replay: as a file, and played again
+  const [download] = await Promise.all([page.waitForEvent('download'), panel.locator('.siege-download').click()]);
+  const file = await download.path();
+  await panel.locator('.siege-watch').click();
+  await expect(panel.locator('.siege-replay-panel')).toHaveAttribute('data-phase', 'replay', { timeout: 30_000 });
+  await expect(panel.locator('.siege-round')).toContainText('Replay · round');
+  for (let i = 0; i < 12 && (await panel.locator('.siege-replay-panel').getAttribute('data-phase')) !== 'ended'; i++) {
+    await panel.locator('.siege-replay-next').click().catch(() => {});
+    await page.waitForTimeout(1200);
+  }
+  await expect(panel.locator('.siege-replay-panel')).toHaveAttribute('data-phase', 'ended', { timeout: 30_000 });
+  await panel.locator('.siege-leave').click();
+  // the downloaded file, loaded in the setup
+  await panel.locator('.siege-replay-file').setInputFiles(file!);
+  await expect(panel.locator('.siege-replay-panel')).toBeVisible({ timeout: 30_000 });
   expect(errors).toEqual([]);
 });

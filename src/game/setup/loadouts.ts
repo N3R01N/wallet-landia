@@ -67,3 +67,32 @@ export function saveLoadout(name: string, draft: Draft, now: number, storage: St
 export function deleteLoadout(name: string, storage: Storage | null = defaultStorage()): void {
   writeAll(storage, readAll(storage).filter((r) => r.name !== name));
 }
+
+/**
+ * A loadout to take off this device (spec open question: loadouts beyond
+ * local storage): a short text code to paste anywhere, or the same as a file.
+ * No account or signature: the player carries it.
+ */
+const CODE_PREFIX = 'SIEGE1:';
+
+export function loadoutCode(name: string, draft: Draft): string {
+  const json = JSON.stringify({ name, draft: encodeDraft({ ...draft, notice: null }) });
+  const bytes = new TextEncoder().encode(json);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return CODE_PREFIX + btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** A loadout from a code (or a file's text); throws on anything else. */
+export function readLoadoutCode(text: string): { name: string; draft: Draft } {
+  const t = text.trim();
+  if (!t.startsWith(CODE_PREFIX)) throw new Error('not a loadout code');
+  const b64 = t.slice(CODE_PREFIX.length).replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+  const json = new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+  const parsed = JSON.parse(json) as { name?: unknown; draft?: unknown };
+  if (typeof parsed.name !== 'string' || typeof parsed.draft !== 'string') throw new Error('not a loadout code');
+  const draft = decodeDraft(parsed.draft);
+  if (!draft?.portfolio || !Array.isArray(draft.portfolio.positions)) throw new Error('not a loadout code');
+  return { name: parsed.name.slice(0, 40), draft };
+}

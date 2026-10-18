@@ -9,7 +9,8 @@
 import type { SceneExtension } from '../../castle/scene/castleView.js';
 import type { CastlePlan } from '../../castle/scene/plan.js';
 import { el } from '../../util/dom.js';
-import type { Match } from '../core/match.js';
+import type { Match, Replay } from '../core/match.js';
+import { ReplayPanel } from './replayPanel.js';
 import { MatchClient } from '../sim/matchClient.js';
 import { siegePlan, type SiegePlan } from '../render/siegePlan.js';
 import { TEAM_COLORS } from '../render/battleView.js';
@@ -40,13 +41,14 @@ export class SiegeMode {
   readonly #setup: SetupPanel;
   #plan: SiegePlan | null = null;
   #matchPanel: MatchPanel | null = null;
+  #replayPanel: ReplayPanel | null = null;
 
   constructor(opts: SiegeModeOptions) {
     this.#opts = opts;
     this.#on = opts.on ?? false;
     this.button = el('button', { class: 'btn siege-toggle', type: 'button', 'aria-pressed': 'false' });
     this.button.addEventListener('click', () => this.set(!this.#on));
-    this.#setup = new SetupPanel({ wallets: opts.wallets, protocols: opts.protocols, onStart: (c) => this.start(c) });
+    this.#setup = new SetupPanel({ wallets: opts.wallets, protocols: opts.protocols, onStart: (c) => this.start(c), onWatch: (r) => this.watch(r) });
     this.#body = el('div', { class: 'siege-body' }, this.#setup.element);
     const min = el('button', { class: 'btn siege-min', type: 'button', 'aria-label': 'Fold the panel', 'aria-expanded': 'true' }, '▾');
     min.addEventListener('click', () => {
@@ -99,7 +101,8 @@ export class SiegeMode {
   attach(scene: MatchScene): void {
     this.#scene = scene;
     scene.element.append(this.#panel);
-    if (this.#matchPanel) this.#matchPanel.attach(scene);
+    if (this.#replayPanel) this.#replayPanel.attach(scene);
+    else if (this.#matchPanel) this.#matchPanel.attach(scene);
     else this.#setup.render();
     this.#show();
   }
@@ -116,7 +119,7 @@ export class SiegeMode {
     });
     const f = this.#plan?.field;
     const match = client.replica;
-    this.#matchPanel = new MatchPanel({ client, centre: f ? { x: 0, z: (f.z0 + f.z1) / 2 + 8 } : { x: 0, z: 30 }, onLeave: () => this.leave() });
+    this.#matchPanel = new MatchPanel({ client, centre: f ? { x: 0, z: (f.z0 + f.z1) / 2 + 8 } : { x: 0, z: 30 }, onLeave: () => this.leave(), onWatch: (r) => this.watch(r) });
     this.#body.replaceChildren(this.#matchPanel.element);
     // Test hook (dev server only): an event's look on the town, without touching the match.
     if (import.meta.env.DEV) (window as unknown as { siegePreviewEvent?: (e: string | null) => void }).siegePreviewEvent = (e) => this.#matchPanel?.previewEvent(e);
@@ -124,10 +127,22 @@ export class SiegeMode {
     return match;
   }
 
-  /** Back to the setup (the match is dropped). */
+  /** Watches a whole match again: every battle, rebuilt from its replay. */
+  watch(replay: Replay): void {
+    this.#matchPanel?.dispose();
+    this.#matchPanel = null;
+    this.#replayPanel?.dispose();
+    this.#replayPanel = new ReplayPanel({ replay, onLeave: () => this.leave() });
+    this.#body.replaceChildren(this.#replayPanel.element);
+    if (this.#scene) this.#replayPanel.attach(this.#scene);
+  }
+
+  /** Back to the setup (the match or the replay is dropped). */
   leave(): void {
     this.#matchPanel?.dispose();
     this.#matchPanel = null;
+    this.#replayPanel?.dispose();
+    this.#replayPanel = null;
     this.#body.replaceChildren(this.#setup.element);
     // the keeps stand whole again
     if (this.#scene) showCastleDamage(this.#scene, [0, 0]);

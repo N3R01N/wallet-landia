@@ -478,3 +478,42 @@ export function wallVolley(attackers: readonly Squad[], stableUnits: number): { 
   }
   return { left: left.filter((q) => q.count > 0).map((q) => ({ ...q, stacks: [q.count] })), felled };
 }
+
+/** One battle of a match, as needed to show it again. */
+export interface BattleRecord {
+  round: number;
+  run: BattleRun;
+  armies: [Army, Army];
+  /** Who held the buildings as it began. */
+  owners: Record<string, SideId | null>;
+  /** Keep HP shares before it (the castles' damage while it plays). */
+  keeps: [number, number];
+}
+
+/** Every battle of a replayed match, in order (the same seed and commands play them again exactly). */
+export function replayBattles(r: Replay): { match: Match; battles: BattleRecord[] } {
+  if (r.configVersion !== CONFIG_VERSION) throw new Error(`replay is for rules ${r.configVersion}, these are ${CONFIG_VERSION}`);
+  const m = new Match(r.setup);
+  const battles: BattleRecord[] = [];
+  let guard = 0;
+  while (m.state.phase !== 'ended' && guard++ < 1000) {
+    if (m.state.phase === 'trade') for (const c of r.log) if (c.round === m.state.round) m.command(c.side, c.cmd);
+    const into = m.state.phase === 'trade' || (m.state.phase === 'market' && m.state.suddenDeath);
+    const owners = m.battleCtx().owners;
+    const keeps = m.state.sides.map((x) => x.keepHp / x.keepHpMax) as [number, number];
+    m.advance();
+    if (into && m.state.phase === 'battle' && m.run && m.armies) battles.push({ round: m.state.round, run: m.run, armies: m.armies, owners, keeps });
+  }
+  return { match: m, battles };
+}
+
+/** A replay as a file's text (bigints as "123n"), and back. */
+export function encodeReplay(r: Replay): string {
+  return JSON.stringify(r, (_k, v: unknown) => (typeof v === 'bigint' ? `${v}n` : v));
+}
+
+export function decodeReplay(text: string): Replay {
+  const r = JSON.parse(text, (_k, v: unknown) => (typeof v === 'string' && /^-?\d+n$/.test(v) ? BigInt(v.slice(0, -1)) : v)) as Replay;
+  if (!r || typeof r !== 'object' || !r.setup || !Array.isArray(r.log)) throw new Error('not a replay file');
+  return r;
+}

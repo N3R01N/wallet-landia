@@ -171,7 +171,8 @@ export class BattleView {
   async play(run: BattleRun, armies: [Army, Army], onDone?: () => void, owners: Record<string, SideId | null> = {}): Promise<void> {
     await this.prepare(run.entities.map((e) => e.unit));
     this.#run = run;
-    this.#time = 0;
+    this.#time = this.#skipPending ? run.seconds + 0.01 : 0;
+    this.#skipPending = false;
     this.#done = false;
     this.#onDone = onDone ?? null;
     this.#tracks = run.entities.map((_, i) => ({ strikes: [], death: Infinity, phase: (i * 0.37) % 1 }));
@@ -242,11 +243,16 @@ export class BattleView {
     this.#update(0);
   }
 
-  /** Jumps to the end (the result stands). */
+  /** Jumps to the end (the result stands); asked before the battle has started, it skips it as soon as it does. */
   skip(): void {
-    if (!this.#run) return;
+    if (!this.#run || this.#done) {
+      this.#skipPending = true;
+      return;
+    }
     this.#time = this.#run.seconds + 0.01;
   }
+
+  #skipPending = false;
 
   /** Takes the units off the field. */
   clear(): void {

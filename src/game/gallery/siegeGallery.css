@@ -181,3 +181,20 @@ body {
     bottom: 8px;
   }
 }
+
+.sg-info .siege-fps {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #1d1c22;
+  font: 700 0.9rem ui-monospace, monospace;
+}
+
+.sg-info .siege-fps[data-level='good'] {
+  color: #9fe08a;
+}
+
+.sg-info .siege-fps[data-level='low'] {
+  color: #ff9a85;
+}

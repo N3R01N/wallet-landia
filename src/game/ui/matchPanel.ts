@@ -16,7 +16,7 @@ import { el } from '../../util/dom.js';
 import { unitCount } from '../core/army.js';
 import { gasCost } from '../core/ledger.js';
 import { EVENTS } from '../core/market.js';
-import { damageState, type Match } from '../core/match.js';
+import { damageState, encodeReplay, type Match, type Replay } from '../core/match.js';
 import type { Command, SideId } from '../core/types.js';
 import { BattleView } from '../render/battleView.js';
 import { tradeErrand } from '../render/tradeCouriers.js';
@@ -24,6 +24,7 @@ import type { MatchClient } from '../sim/matchClient.js';
 import { fieldPanel, gauges, portfolio, powersPanel, regimeBadge, rumorCard, ticker, warnAt } from './hud.js';
 import { FieldMarkers } from '../render/fieldMarkers.js';
 import { BattleFx } from '../render/battleFx.js';
+import { FpsMeter } from '../render/fpsMeter.js';
 import { UnitMesh } from '../render/unitMeshes.js';
 import { abilityName } from '../core/depth.js';
 import { proxied } from '../../castle/scene/castleView.js';
@@ -58,6 +59,8 @@ export interface MatchPanelOptions {
   /** The middle of the field, for the camera during the battle. */
   centre: { x: number; z: number };
   onLeave: () => void;
+  /** Watch the whole match again (its replay). */
+  onWatch?: (replay: Replay) => void;
   /** Seconds of a Trade phase (spec: 30), and of one day of the Market week (spec: ~8 s a week). */
   tradeSeconds?: number;
   marketDaySeconds?: number;
@@ -141,6 +144,12 @@ export class MatchPanel {
     // the meshes load while the player trades
     this.#preload();
     this.#showDamage();
+    // `?fps=1`: a frame-rate meter on the field (to check a full battle on a real machine)
+    if (new URLSearchParams(location.search).has('fps')) {
+      const meter = new FpsMeter();
+      scene.element.append(meter.element);
+      scene.stage().onFrame((dt) => meter.tick(dt, this.#view?.playing ? 'battle' : ''));
+    }
     if (m.state.phase === 'trade' || m.state.phase === 'market') this.#overview();
     this.render();
   }
@@ -182,7 +191,7 @@ export class MatchPanel {
     };
     const body: (HTMLElement | null)[] = [];
     if (s.phase === 'market') {
-      body.push(el('p', { class: 'siege-soon' }, `The market moves: day ${Math.max(1, Math.min(7, this.#day))} of 7`), ticker(m, 'A', this.#day));
+      body.push(el('p', { class: 'siege-soon siege-market-day' }, `The market moves: day ${Math.max(1, Math.min(7, this.#day))} of 7`), ticker(m, 'A', this.#day));
       button('⏩ Skip', 'siege-skip', () => this.#endMarket());
     }
     if (s.phase === 'trade') {
@@ -241,6 +250,14 @@ export class MatchPanel {
     if (s.phase === 'ended') {
       body.push(recap(m, this.#mvp()));
       button('New match', 'siege-new', () => this.#opts.onLeave());
+      if (this.#opts.onWatch) button('▶ Watch the match again', 'siege-watch', () => this.#opts.onWatch?.(m.replay()));
+      button('⬇ Download the replay', 'siege-download', () => {
+        // a small file: the seed, the setup and the commands (the battles are simulated again from them)
+        const url = URL.createObjectURL(new Blob([encodeReplay(m.replay())], { type: 'application/json' }));
+        const a = el('a', { href: url, download: `siege-${m.state.seed}.json` });
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      });
     }
     const leave = el('button', { class: 'btn siege-leave', type: 'button' }, 'Leave the match');
     leave.addEventListener('click', () => this.#opts.onLeave());
@@ -318,8 +335,20 @@ export class MatchPanel {
     this.#startClock(this.#opts.marketDaySeconds ?? 8 / 7, () => {
       this.#day++;
       if (this.#day >= 7) this.#endMarket();
-      else this.render();
+      else this.#marketDay();
     });
+  }
+
+  /** A new day of the market week: only the day and the ticker change (the buttons stay put). */
+  #marketDay(): void {
+    const label = this.element.querySelector('.siege-market-day');
+    const tick = this.element.querySelector('.siege-ticker');
+    if (!label || !tick) {
+      this.render();
+      return;
+    }
+    label.textContent = `The market moves: day ${Math.max(1, Math.min(7, this.#day))} of 7`;
+    tick.replaceWith(ticker(this.match, 'A', this.#day));
   }
 
   #endMarket(): void {

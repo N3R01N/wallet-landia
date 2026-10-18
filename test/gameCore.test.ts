@@ -403,3 +403,22 @@ describe('the match history (the recap)', () => {
     expect(h.reduce((n, r) => n + r.liquidations[0] + r.liquidations[1], 0)).toBe(m.liquidationCount);
   }, 60_000);
 });
+
+describe('watching a match again', () => {
+  it('a replay rebuilds every battle exactly, and survives a file', async () => {
+    const { replayBattles, encodeReplay, decodeReplay } = await import('../src/game/core/match.js');
+    const m = new Match({ seed: 'watch', portfolios: [templatePortfolio('balanced', 20000, catalog), templatePortfolio('degen', 20000, catalog)] });
+    const originals: number[] = [];
+    let guard = 0;
+    while (m.state.phase !== 'ended' && guard++ < 100) {
+      if (m.state.phase === 'trade') m.command('A', { t: 'swap', from: 'eth', to: 'usdc', qty: q(0.02) });
+      m.advance();
+      if (m.state.phase === 'battle') originals.push(m.state.lastBattle!.seconds);
+    }
+    const back = decodeReplay(encodeReplay(m.replay()));
+    const { match, battles } = replayBattles(back);
+    expect(battles.map((b) => b.run.seconds)).toEqual(originals);
+    expect(serialize(match.state)).toBe(serialize(m.state));
+    expect(() => decodeReplay('{"nope":1}')).toThrow();
+  }, 60_000);
+});

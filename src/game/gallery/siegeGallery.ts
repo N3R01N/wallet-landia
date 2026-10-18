@@ -20,15 +20,17 @@ import { showDamageParts } from '../../castle/scene/castleView.js';
 import { UNIT_TYPES } from '../core/catalog.js';
 import { TEAM_COLORS } from '../render/battleView.js';
 import { UnitMesh } from '../render/unitMeshes.js';
+import { FpsMeter } from '../render/fpsMeter.js';
 import './siegeGallery.css';
 
 interface Entry {
   name: string;
   label: string;
-  kind: 'unit' | 'fx' | 'castle' | 'marker';
+  kind: 'unit' | 'fx' | 'castle' | 'marker' | 'stress';
 }
 
 const ENTRIES: Entry[] = [
+  { name: 'stress', label: '600 units at once (stress test)', kind: 'stress' },
   ...UNIT_MODELS.map((id): Entry => ({ name: `unit.${id}`, label: UNIT_TYPES[id]?.name ?? id, kind: 'unit' })),
   ...[
     ['fx.hit.spark', 'Hit spark'],
@@ -48,7 +50,7 @@ const ENTRIES: Entry[] = [
   { name: 'fx.capture.ring', label: 'Capture ring', kind: 'marker' },
   { name: 'prop.banner.owner', label: 'Owner banner', kind: 'marker' },
 ];
-const GROUP: Record<Entry['kind'], string> = { unit: 'Units', fx: 'Effects', castle: 'Castle damage states', marker: 'Battlefield markers' };
+const GROUP: Record<Entry['kind'], string> = { stress: 'Performance', unit: 'Units', fx: 'Effects', castle: 'Castle damage states', marker: 'Battlefield markers' };
 const DAMAGE = ['Whole', 'Cracked (≤ 75%)', 'Breached (≤ 50%)', 'Burning (≤ 25%)', 'Collapsed (0)'];
 
 const theme = await loadCastleTheme(import.meta.env.BASE_URL, themeFromUrl(location.search));
@@ -123,6 +125,7 @@ let cur: Current | null = null;
 
 async function show(entry: Entry): Promise<void> {
   if (location.hash.slice(1) !== entry.name) history.replaceState(null, '', `#${entry.name}`);
+  if (entry.kind === 'stress') return stress(entry);
   for (const b of list.querySelectorAll<HTMLButtonElement>('.sg-item')) b.setAttribute('aria-current', String(b.dataset.name === entry.name));
   picker.value = entry.name;
   info.replaceChildren(el('p', {}, `Loading ${entry.label}…`));
@@ -163,6 +166,12 @@ async function show(entry: Entry): Promise<void> {
 }
 
 function clear(): void {
+  if (crowd) {
+    for (const m of crowd.meshes) m.mesh.dispose();
+    crowd = null;
+    stressRoot?.removeFromParent();
+    stressRoot = null;
+  }
   if (!cur) return;
   cur.mixer?.stopAllAction();
   cur.crowd?.dispose();
@@ -357,11 +366,69 @@ function renderPanel(): void {
   controls.replaceChildren(...rows);
 }
 
+// ---------- the stress test ----------
+
+/** 600 units, every type, as a battle draws them (instanced, baked clips), with the frame rate. */
+const meter = new FpsMeter();
+let crowd: { meshes: { mesh: UnitMesh; count: number; clip: string }[]; time: number } | null = null;
+
+async function stress(entry: Entry): Promise<void> {
+  for (const b of list.querySelectorAll<HTMLButtonElement>('.sg-item')) b.setAttribute('aria-current', String(b.dataset.name === entry.name));
+  picker.value = entry.name;
+  clear();
+  info.replaceChildren(el('h2', {}, entry.label), el('p', {}, 'Loading every unit…'));
+  controls.replaceChildren();
+  const root = new THREE.Group();
+  scene.add(root);
+  const total = 600;
+  const per = Math.ceil(total / UNIT_MODELS.length);
+  const meshes: { mesh: UnitMesh; count: number; clip: string }[] = [];
+  const clips = ['walk', 'attack', 'idle', 'cheer'];
+  for (const [k, id] of UNIT_MODELS.entries()) {
+    const loaded = await library.load(`unit.${id}`);
+    if (!loaded) continue;
+    const mesh = new UnitMesh(loaded, per);
+    root.add(mesh.mesh);
+    meshes.push({ mesh, count: Math.min(per, total - k * per), clip: clips[k % clips.length]! });
+  }
+  crowd = { meshes, time: 0 };
+  // a block of 30 × 20, two armies facing each other
+  const cols = 30;
+  let i = 0;
+  for (const m of meshes) {
+    for (let j = 0; j < m.count; j++, i++) {
+      const x = (i % cols) * 1.2 - cols * 0.6;
+      const z = Math.floor(i / cols) * 1.4 - 14;
+      m.mesh.set(j, x, z, z < 0 ? 0 : Math.PI, m.clip, j * 0.1, true, z < 0 ? team.A : team.B);
+    }
+    m.mesh.commit(m.count);
+  }
+  orbit.target.set(0, 0, 0);
+  camera.position.set(22, 26, 34);
+  cur = null;
+  info.replaceChildren(el('h2', {}, entry.label), el('p', { class: 'sg-meta' }, `${i} units of ${meshes.length} types, ${meshes.length * 2} instanced draws (each type's body and team cloth). Orbit and zoom while it runs; the meter reads the frames per second.`), meter.element);
+  stressRoot = root;
+}
+let stressRoot: THREE.Group | null = null;
+
 // ---------- loop ----------
 const team = { A: new THREE.Color(TEAM_COLORS.A), B: new THREE.Color(TEAM_COLORS.B), none: new THREE.Color('#d9d2c2') };
 renderer.setAnimationLoop((now: number) => {
   timer.update(now);
   const dt = Math.min(0.1, timer.getDelta());
+  if (crowd) {
+    crowd.time += dt;
+    let i = 0;
+    for (const m of crowd.meshes) {
+      for (let j = 0; j < m.count; j++, i++) {
+        const x = (i % 30) * 1.2 - 18;
+        const z = Math.floor(i / 30) * 1.4 - 14;
+        m.mesh.set(j, x, z, z < 0 ? 0 : Math.PI, m.clip, crowd.time + j * 0.1, true, z < 0 ? team.A : team.B);
+      }
+      m.mesh.commit(m.count);
+    }
+    meter.tick(dt, `${i} units`);
+  }
   const c = cur;
   if (c && !c.paused) {
     c.time += dt * c.speed;

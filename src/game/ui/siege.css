@@ -731,3 +731,32 @@
   border-bottom: 1px solid rgba(42, 33, 24, 0.1);
   text-align: left;
 }
+
+.siege-code-in,
+.siege-code-out {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+.siege-fps {
+  position: absolute;
+  right: 12px;
+  bottom: 64px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(43, 42, 51, 0.85);
+  color: #f3ead6;
+  font: 700 0.8rem ui-monospace, monospace;
+  pointer-events: none;
+}
+
+.siege-fps[data-level='good'] {
+  color: #9fe08a;
+}
+
+.siege-fps[data-level='low'] {
+  color: #ff9a85;
+}

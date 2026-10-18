@@ -200,3 +200,17 @@ describe('loadouts', () => {
     expect(saveLoadout('x', templateDraft('degen'), 1, null)).toBe(false);
   });
 });
+
+describe('loadouts off the device', () => {
+  it('a loadout code round-trips (names with any letters), and anything else is refused', async () => {
+    const { loadoutCode, readLoadoutCode } = await import('../src/game/setup/loadouts.js');
+    const d = templateDraft('yield-farmer', 5000);
+    const code = loadoutCode('Hodl ⚔ Ü', d);
+    expect(code.startsWith('SIEGE1:')).toBe(true);
+    const back = readLoadoutCode(`  ${code}\n`);
+    expect(back.name).toBe('Hodl ⚔ Ü');
+    expect(back.draft.portfolio).toEqual(d.portfolio);
+    expect(() => readLoadoutCode('hello')).toThrow();
+    expect(() => readLoadoutCode('SIEGE1:bm9wZQ')).toThrow();
+  });
+});
