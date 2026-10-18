@@ -98,6 +98,10 @@ test('a battle in the town: the enemy castle stands past it, the armies fight on
   test.setTimeout(150_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // the match runs in a worker and a replica on the page: they must never disagree
+  page.on('console', (m) => {
+    if (m.type() === 'error' && m.text().includes('desync')) errors.push(m.text());
+  });
   await page.goto('/?mode=siege');
   await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 120_000 });
   const panel = page.locator('.siege-panel');

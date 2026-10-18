@@ -107,7 +107,7 @@ Points the spec left open, settled here (change in config if needed):
 
 ## Battle and rendering (M3)
 
-- **BattleSim** (`core/battle.ts`): 20 Hz on the town's ground plane, metres in world x/z; aggro 6 m, reach 0.8 m + Range, a uniform grid for neighbours; deterministic (no clock, seeded crits and swaps). It runs in a Web Worker (`sim/battle.worker.ts`, inline fallback in `sim/battleClient.ts`) and in Node for tests. Output: survivors, the event stream, and position frames at 10 Hz.
+- **BattleSim** (`core/battle.ts`): 20 Hz on the town's ground plane, metres in world x/z; aggro 6 m, reach 0.8 m + Range, a uniform grid for neighbours; deterministic (no clock, seeded crits and swaps). It runs inside the match worker (below) and in Node for tests. Output: survivors, the event stream, and position frames at 10 Hz.
 - **The field moves at 3.2 m/s per Speed point** (the town is ~110 m gate to gate, a battle at most 45 s); the renderer plays the walk clip faster to match.
 - **The battlefield** (`render/siegePlan.ts`): the enemy castle mirrored 14 m past the town; lanes are the avenue (round the bell tower) and a road each side behind the plots; armies form up 12 m in front of their gates; survivors that reach the enemy gate wait there.
 - **The chain view stays independent:** CastleView only knows a generic `extend` hook (placements, cleared scenery, camera reach, tints, a quiet town) and a `stage()` for a mode's objects; all siege code is in `src/game`.
@@ -156,3 +156,7 @@ Points the spec left open, settled here (change in config if needed):
 **The Stable Maxi trades walls into army** (the user's call, 2026-10-17): while its keep is safe (level or ahead on keep HP, or above 60%), it weighs army over walls and moves up to half of its stables a round into ETH, stETH and WBTC; in danger it turtles again. Before this it never won a battle, so it could never bring a keep down.
 
 **Still open:** the pairwise target (no archetype above 60% against another). The Yield Farmer (pools, staking and lending: every protocol ability and home advantage) is now the strongest, and the Whale still beats the Stable Maxi. See docs/game/BALANCE.md.
+
+## The match in a worker
+
+`sim/match.worker.ts` holds the authoritative Match: commands, phase steps, the NPCs' trades and the battles run there (spec: "Core simulation runs in a Web Worker"). The page (`sim/matchClient.ts`) keeps a replica in lockstep: each command is applied to both, the NPC's trades and each battle's outcome come from the worker, and every reply's state hash is checked against the replica (a desync is logged). The HUD and the trade previews read the replica, so they stay instant. Without a worker the same handler runs inline on a second copy; if the worker dies, the inline copy replays everything sent so far.

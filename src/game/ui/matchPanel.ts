@@ -20,13 +20,12 @@ import { damageState, type Match } from '../core/match.js';
 import type { Command, SideId } from '../core/types.js';
 import { BattleView } from '../render/battleView.js';
 import { tradeErrand } from '../render/tradeCouriers.js';
-import { BattleClient } from '../sim/battleClient.js';
+import type { MatchClient } from '../sim/matchClient.js';
 import { fieldPanel, gauges, portfolio, powersPanel, regimeBadge, rumorCard, ticker } from './hud.js';
 import { FieldMarkers } from '../render/fieldMarkers.js';
 import { BattleFx } from '../render/battleFx.js';
 import { weatherFor, type Weather } from '../../castle/world/sky.js';
 import { TradePanel } from './tradePanel.js';
-import { npcTrade } from '../ai/npcPlanner.js';
 import { qn } from '../core/fixed.js';
 
 /** The castle view, as far as a match uses it. */
@@ -47,7 +46,8 @@ const EVENT_WEATHER: Partial<Record<string, Weather>> = {
 };
 
 export interface MatchPanelOptions {
-  match: Match;
+  /** The match: its replica on the page, the authoritative one in a worker (sim/matchClient.ts). */
+  client: MatchClient;
   /** The middle of the field, for the camera during the battle. */
   centre: { x: number; z: number };
   onLeave: () => void;
@@ -63,7 +63,9 @@ const CASTLE_KEYS: Record<SideId, string[]> = { A: ['castle'], B: ['enemy', 'ene
 export class MatchPanel {
   readonly element = el('div', { class: 'siege-match' });
   readonly #opts: MatchPanelOptions;
-  readonly #client = new BattleClient();
+  readonly #client: MatchClient;
+  /** The NPC is deciding its trades (the player trades after: both copies apply them in the same order). */
+  #npcPending = false;
   readonly #trade: TradePanel;
   #scene: MatchScene | null = null;
   #view: BattleView | null = null;
@@ -86,12 +88,13 @@ export class MatchPanel {
 
   constructor(opts: MatchPanelOptions) {
     this.#opts = opts;
-    this.#trade = new TradePanel({ match: opts.match, onCommand: (cmd) => this.#courier(cmd) });
+    this.#client = opts.client;
+    this.#trade = new TradePanel({ match: opts.client.replica, command: (cmd) => opts.client.command('A', cmd), onCommand: (cmd) => this.#courier(cmd) });
     this.#openTrade();
   }
 
   get match(): Match {
-    return this.#opts.match;
+    return this.#client.replica;
   }
 
   /** The castle view the match plays in (again after every rebuild of the view). */
@@ -164,7 +167,7 @@ export class MatchPanel {
         this.#showPortfolio = !this.#showPortfolio;
         this.render();
       });
-      body.push(toggle, this.#showPortfolio ? portfolio(m) : null, this.#trade.element);
+      body.push(toggle, this.#showPortfolio ? portfolio(m) : null, this.#npcPending ? el('p', { class: 'siege-soon' }, 'Waiting for the enemy’s trades…') : this.#trade.element);
       button(this.#paused ? '▶ Resume' : '⏸ Pause', 'siege-pause', () => {
         this.#paused = !this.#paused;
         this.render();
@@ -179,7 +182,7 @@ export class MatchPanel {
     }
     if (s.phase === 'siege') {
       body.push(fieldPanel(m));
-      button(s.winner ? 'See the result' : 'Next round', 'siege-next', () => this.#nextRound());
+      button(s.winner ? 'See the result' : 'Next round', 'siege-next', () => void this.#nextRound());
       // the run is the battle: played again from it, it plays out the same
       const run = m.run;
       const armies = m.armies;
@@ -211,11 +214,17 @@ export class MatchPanel {
 
   #openTrade(): void {
     const m = this.match;
-    // the NPC trades by the same rules, through the same commands
+    // the NPC trades by the same rules, through the same commands (decided in the worker)
     if (m.side('B').isNpc) {
-      const done = npcTrade(m, 'B');
-      const said = done.map((c) => describe(m, c));
-      this.#enemyMoves = said.length > 0 ? `The enemy traded: ${said.join('; ')}.` : 'The enemy holds.';
+      this.#npcPending = true;
+      this.#enemyMoves = 'The enemy is trading…';
+      void this.#client.npc('B').then((done) => {
+        const said = done.map((c) => describe(m, c));
+        this.#enemyMoves = said.length > 0 ? `The enemy traded: ${said.join('; ')}.` : 'The enemy holds.';
+        this.#npcPending = false;
+        this.#trade.render();
+        this.render();
+      });
     }
     this.#left = this.#opts.tradeSeconds ?? 30;
     this.#paused = false;
@@ -223,7 +232,7 @@ export class MatchPanel {
     this.#trade.render();
     this.render();
     this.#startClock(0.25, () => {
-      if (m.state.phase !== 'trade' || this.#busy) return;
+      if (m.state.phase !== 'trade' || this.#busy || this.#npcPending) return;
       if (!this.#paused) this.#left -= 0.25;
       if (this.#left <= 0) void this.#toBattle();
       else {
@@ -265,39 +274,44 @@ export class MatchPanel {
       void this.#toBattle();
       return;
     }
-    m.advance();
-    this.#openTrade();
+    void this.#client.advance().then(() => this.#openTrade());
   }
 
   async #toBattle(): Promise<void> {
     const m = this.match;
-    if (this.#busy) return;
+    if (this.#busy || this.#npcPending) return;
     if (m.state.phase !== 'trade' && !(m.state.phase === 'market' && m.state.suddenDeath)) return;
     this.#stopClock();
     this.#busy = true;
     // the player's time is up; the opponent ends too
-    m.command('A', { t: 'endTrade' });
-    m.command('B', { t: 'endTrade' });
+    this.#client.command('A', { t: 'endTrade' });
+    this.#client.command('B', { t: 'endTrade' });
     this.render();
     const armies = m.nextArmies();
     const ctx = m.battleCtx();
     this.#ownersBefore = ctx.owners;
-    const run = await this.#client.run(armies, ctx);
-    m.advance(run);
+    // the worker simulates the battle; the page's copy takes its outcome
+    const run = await this.#client.advance();
     this.#busy = false;
+    if (!run) {
+      this.render();
+      return;
+    }
     const units = armies.map(unitCount);
     this.#note = `${units[0]} of yours against ${units[1]}.`;
     this.render();
     const c = this.#opts.centre;
     this.#scene?.focusAt(c.x, c.z, 0.55);
-    await this.#view?.play(run, armies, () => this.#siege(), this.#ownersBefore);
+    await this.#view?.play(run, armies, () => void this.#siege(), this.#ownersBefore);
   }
 
-  #siege(): void {
+  async #siege(): Promise<void> {
     const m = this.match;
-    if (m.state.phase !== 'battle') return;
+    if (m.state.phase !== 'battle' || this.#busy) return;
     const before = m.state.sides.map((s) => s.keepHp);
-    m.advance();
+    this.#busy = true;
+    await this.#client.advance();
+    this.#busy = false;
     const after = m.state.sides.map((s) => s.keepHp);
     this.#note = `Siege: your survivors deal ${Math.round(before[1]! - after[1]!)} to the enemy keep, theirs ${Math.round(before[0]! - after[0]!)} to yours.`;
     const [mine, theirs] = m.state.felled;
@@ -329,10 +343,13 @@ export class MatchPanel {
     this.render();
   }
 
-  #nextRound(): void {
+  async #nextRound(): Promise<void> {
     const m = this.match;
+    if (this.#busy) return;
     this.#view?.clear();
-    m.advance();
+    this.#busy = true;
+    await this.#client.advance();
+    this.#busy = false;
     this.#showDamage();
     if (m.state.phase === 'market') this.#openMarket();
     else this.render();

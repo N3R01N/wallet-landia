@@ -9,7 +9,7 @@
 import { el } from '../../util/dom.js';
 import { STAKES_INTO, UNSTAKES_INTO } from '../core/catalog.js';
 import { qmul, qn } from '../core/fixed.js';
-import { account, holding, swapCostRate } from '../core/ledger.js';
+import { account, holding, swapCostRate, type CommandResult } from '../core/ledger.js';
 import { available, previewCommand, type Match } from '../core/match.js';
 import { warnAt } from './hud.js';
 import type { AssetId, Command } from '../core/types.js';
@@ -34,6 +34,8 @@ const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
 
 export interface TradePanelOptions {
   match: Match;
+  /** Sends a command (through the match's client; the match itself when absent). */
+  command?: (cmd: Command) => CommandResult;
   /** A command was accepted (the courier goes out). */
   onCommand: (cmd: Command) => void;
 }
@@ -56,6 +58,10 @@ export class TradePanel {
 
   get #m(): Match {
     return this.#opts.match;
+  }
+
+  #dispatch(cmd: Command): CommandResult {
+    return this.#opts.command ? this.#opts.command(cmd) : this.#m.command('A', cmd);
   }
 
   render(): void {
@@ -232,7 +238,7 @@ export class TradePanel {
   #send(): void {
     const cmd = this.#command();
     if (!cmd) return;
-    const r = this.#m.command('A', cmd);
+    const r = this.#dispatch(cmd);
     this.#message = r.ok ? 'The courier sets out.' : r.reason;
     if (r.ok) this.#opts.onCommand(cmd);
     this.render();
@@ -258,7 +264,7 @@ export class TradePanel {
       this.render();
       return;
     }
-    const r = m.command('A', cmd);
+    const r = this.#dispatch(cmd);
     this.#message = r.ok ? (how === 'repay' ? 'Half the debt repaid.' : 'Collateral added.') : r.reason;
     if (r.ok) this.#opts.onCommand(cmd);
     this.render();

@@ -9,7 +9,8 @@
 import type { SceneExtension } from '../../castle/scene/castleView.js';
 import type { CastlePlan } from '../../castle/scene/plan.js';
 import { el } from '../../util/dom.js';
-import { Match } from '../core/match.js';
+import type { Match } from '../core/match.js';
+import { MatchClient } from '../sim/matchClient.js';
 import { siegePlan, type SiegePlan } from '../render/siegePlan.js';
 import { TEAM_COLORS } from '../render/battleView.js';
 import { opponentPortfolio } from '../setup/editor.js';
@@ -106,7 +107,7 @@ export class SiegeMode {
   /** Starts a match from the setup's choice, on this town's battlefield. */
   start(choice: SetupChoice): Match {
     const seed = this.#opts.seed?.() ?? randomSeed();
-    const match = new Match({
+    const client = new MatchClient({
       seed,
       portfolios: [choice.draft.portfolio, opponentPortfolio(choice.draft, choice.archetype, choice.difficulty)],
       npc: [undefined, { archetype: choice.archetype, difficulty: choice.difficulty }],
@@ -114,7 +115,8 @@ export class SiegeMode {
       ...(this.#plan ? { map: this.#plan.map } : {}),
     });
     const f = this.#plan?.field;
-    this.#matchPanel = new MatchPanel({ match, centre: f ? { x: 0, z: (f.z0 + f.z1) / 2 + 8 } : { x: 0, z: 30 }, onLeave: () => this.leave() });
+    const match = client.replica;
+    this.#matchPanel = new MatchPanel({ client, centre: f ? { x: 0, z: (f.z0 + f.z1) / 2 + 8 } : { x: 0, z: 30 }, onLeave: () => this.leave() });
     this.#body.replaceChildren(this.#matchPanel.element);
     if (this.#scene) this.#matchPanel.attach(this.#scene);
     return match;
