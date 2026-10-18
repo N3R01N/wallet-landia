@@ -2437,7 +2437,7 @@ async function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /** Shows a model's tier parts up to its tier (`tier.2`, `tier.4`, `tier.6`; the loader strips the dot, userData keeps it). */
-function showTierParts(root: THREE.Object3D, tier: number): void {
+export function showTierParts(root: THREE.Object3D, tier: number): void {
   root.traverse((o) => {
     const m = /^tier\.(\d)$/.exec((o.userData.name as string | undefined) ?? o.name);
     if (m) o.visible = tier >= Number(m[1]);

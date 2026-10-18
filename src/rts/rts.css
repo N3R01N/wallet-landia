@@ -1,0 +1,195 @@
+/* Ledger Wars: the start screen, and the HUD over the full-screen map. */
+
+#app {
+  height: 100dvh;
+}
+
+.rts-start {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 40px 16px;
+}
+
+.rts-start h1 {
+  margin: 0 0 12px;
+}
+
+.rts-kits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.rts {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: #9cbfd4;
+}
+
+.rts-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+}
+
+.rts-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: #2a2118;
+  font-size: 0.88rem;
+}
+
+.rts-hud > * {
+  pointer-events: auto;
+}
+
+.rts-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  padding: 6px 12px;
+  background: rgba(243, 234, 214, 0.92);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+.rts-top .rts-total {
+  font-size: 1rem;
+}
+
+.rts-token b {
+  font-weight: 700;
+}
+
+.rts-build,
+.rts-info {
+  position: absolute;
+  bottom: 10px;
+  width: min(380px, calc(50% - 20px));
+  max-height: 46%;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(243, 234, 214, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.rts-build {
+  left: 10px;
+}
+
+.rts-info {
+  right: 10px;
+}
+
+.rts-hud h2 {
+  margin: 0 0 6px;
+  font-size: 0.98rem;
+}
+
+.rts-hud p {
+  margin: 0 0 6px;
+}
+
+.rts-build-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 6px;
+}
+
+.rts-build-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 48px;
+  padding: 6px 8px;
+  border: 1px solid #c9a24a;
+  border-radius: 8px;
+  background: #fbf5e6;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rts-build-item span {
+  color: #6b5d4a;
+  font-size: 0.8rem;
+}
+
+.rts-build-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.rts-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.rts-progress-row .btn {
+  min-height: 36px;
+}
+
+.rts-bar {
+  flex: 1;
+  min-width: 60px;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, #c9a24a calc(var(--p) * 100%), #e7dbc0 0);
+}
+
+.rts-bar.hp {
+  background: linear-gradient(to right, #5b7a4a calc(var(--p) * 100%), #e7dbc0 0);
+}
+
+.rts-hp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.rts-why,
+.rts-hint {
+  color: #6b5d4a;
+}
+
+.rts-toast {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(42, 33, 24, 0.88);
+  color: #f3ead6;
+}
+
+.rts-toast[hidden] {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .rts-build,
+  .rts-info {
+    width: calc(100% - 20px);
+    max-height: 30%;
+  }
+
+  .rts-info {
+    bottom: calc(30% + 20px);
+  }
+}

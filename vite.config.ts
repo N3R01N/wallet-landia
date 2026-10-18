@@ -56,7 +56,7 @@ export default defineConfig({
     target: 'es2022',
     chunkSizeWarningLimit: 700,
     // Four pages: the castle, the asset gallery, the showroom and the siege gallery.
-    rollupOptions: { input: { main: 'index.html', assets: 'assets.html', showroom: 'showroom.html', siege: 'siege-gallery.html' } },
+    rollupOptions: { input: { main: 'index.html', assets: 'assets.html', showroom: 'showroom.html', siege: 'siege-gallery.html', rts: 'rts.html' } },
   },
   // Pre-bundle the three.js add-ons the castle uses, so the dev server never
   // finds one mid-session and reloads the page.
