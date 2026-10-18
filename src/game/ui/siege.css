@@ -593,3 +593,9 @@
   color: #b07a12;
   font-weight: 700;
 }
+
+.siege-follow {
+  min-height: 36px;
+  font: inherit;
+  font-size: 0.82rem;
+}

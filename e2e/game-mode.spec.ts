@@ -112,6 +112,10 @@ test('a battle in the town: the enemy castle stands past it, the armies fight on
   // squad banners over the field, for both sides
   await expect(page.locator('.siege-banner-A').first()).toBeAttached();
   await expect(page.locator('.siege-banner-B').first()).toBeAttached();
+  // the camera follows a lane, then goes free again
+  await panel.locator('.siege-follow').selectOption('1');
+  await page.waitForTimeout(500);
+  await panel.locator('.siege-follow').selectOption('free');
   await panel.locator('.siege-skip').click();
   await expect(panel.locator('.siege-match')).toHaveAttribute('data-phase', 'siege', { timeout: 30_000 });
   await expect(panel.locator('.siege-note')).toContainText('Siege:');

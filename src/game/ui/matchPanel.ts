@@ -115,10 +115,12 @@ export class MatchPanel {
       symbol: (asset) => (m.catalog.has(asset) ? m.catalog.asset(asset).symbol : asset),
       markers: this.#markers,
       fx: this.#fx,
+      look: (x, z) => this.#scene?.focusAt(x, z),
     });
     // the meshes load while the player trades
     this.#preload();
     this.#showDamage();
+    if (m.state.phase === 'trade' || m.state.phase === 'market') this.#overview();
     this.render();
   }
 
@@ -175,6 +177,21 @@ export class MatchPanel {
       button('⚔ To battle', 'siege-go', () => void this.#toBattle());
     }
     if (s.phase === 'battle') {
+      // the camera: free, or following a lane's fighting
+      const follow = el('select', { class: 'siege-follow', 'aria-label': 'Camera' }, ...[
+        ['free', '🎥 Free camera'],
+        ['0', '🎥 Follow the left lane'],
+        ['1', '🎥 Follow the centre'],
+        ['2', '🎥 Follow the right lane'],
+      ].map(([v, label]) => {
+        const o = el('option', { value: v! }, label!);
+        o.selected = (this.#view?.follow === null ? 'free' : String(this.#view?.follow)) === v;
+        return o;
+      }));
+      follow.addEventListener('change', () => {
+        if (this.#view) this.#view.follow = follow.value === 'free' ? null : Number(follow.value);
+      });
+      controls.push(follow);
       button('⏩ Skip', 'siege-skip', () => this.#view?.skip());
       button('2×', 'siege-fast', () => {
         if (this.#view) this.#view.speed = 2;
@@ -228,6 +245,8 @@ export class MatchPanel {
     }
     this.#left = this.#opts.tradeSeconds ?? 30;
     this.#paused = false;
+    if (this.#view) this.#view.follow = null;
+    this.#overview();
     this.#preload();
     this.#trade.render();
     this.render();
@@ -256,6 +275,7 @@ export class MatchPanel {
       ...liq.map((l) => `💥 Liquidated on day ${l.day + 1}: $${Math.round(l.seized.reduce((s, x) => s + x.value, 0)).toLocaleString('en-US')} of collateral seized. It blows up at the next battle.`),
     ].join(' ');
     this.#day = 0;
+    this.#overview();
     this.render();
     this.#startClock(this.#opts.marketDaySeconds ?? 8 / 7, () => {
       this.#day++;
@@ -362,6 +382,12 @@ export class MatchPanel {
     const m = this.match;
     if (scene) scene.sendNow(tradeErrand(m, cmd, scene.plan.buildings, gasCost({ unitValue: m.state.unitValue, gasMult: m.state.market.gasMult })));
     this.render();
+  }
+
+  /** The camera over the whole field (the Market and Trade phases). */
+  #overview(): void {
+    const c = this.#opts.centre;
+    this.#scene?.focusAt(c.x, c.z, 0.42);
   }
 
   /** Both armies' unit models, loaded while the player trades (the battle then starts at once). */

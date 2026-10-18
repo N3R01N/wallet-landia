@@ -114,8 +114,8 @@ export type BattleEvent =
 
 export interface BattleRun extends BattleResult {
   events: BattleEvent[];
-  /** Entities in spawn order: their side, squad, unit type and stack size. */
-  entities: { side: SideId; squad: number; unit: string; mult: number }[];
+  /** Entities in spawn order: their side, squad, unit type, stack size and lane. */
+  entities: { side: SideId; squad: number; unit: string; mult: number; lane: number }[];
   /**
    * Per frame (every FRAME_EVERY ticks), per entity, 4 floats: x, z, the
    * share of the stack's HP left (0 dead, −1 not on the field) and facing.
@@ -378,7 +378,7 @@ export function simulateBattle(armies: readonly [Army, Army], opts: BattleOption
     survivors,
     seconds: tick * DT,
     events,
-    entities: ents.map((e) => ({ side: e.side, squad: e.squad, unit: e.u.id, mult: e.mult })),
+    entities: ents.map((e) => ({ side: e.side, squad: e.squad, unit: e.u.id, mult: e.mult, lane: e.lane })),
     frames: frames.slice(0, frameCount * nEnt * 4),
     frameCount,
     owners,

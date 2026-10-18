@@ -40,6 +40,8 @@ export interface BattleViewOptions {
   markers?: FieldMarkers;
   /** The effects: sparks, projectiles, puffs, detonations. */
   fx?: BattleFx;
+  /** Points the camera (the lane-follow view). */
+  look?: (x: number, z: number) => void;
 }
 
 /** An effect due at a moment of the battle. */
@@ -98,6 +100,9 @@ export class BattleView {
   readonly #toasts = el('div', { class: 'siege-toasts', 'aria-live': 'polite' });
   #moments: Moment[] = [];
   #cues: Cue[] = [];
+  /** The lane the camera follows (0 left, 1 centre, 2 right; null: free). */
+  follow: number | null = null;
+  readonly #lookAt = { x: 0, z: 0, set: false };
   #cue = 0;
   #captures: CaptureStep[] = [];
   #owners: Record<string, SideId | null> = {};
@@ -347,6 +352,7 @@ export class BattleView {
     }
     this.#playCaptures(t);
     this.#playCues(t, run);
+    this.#followLane(run, f0, n, dt);
     for (const mo of this.#moments) {
       if (mo.shown || mo.at > t) continue;
       mo.shown = true;
@@ -358,6 +364,34 @@ export class BattleView {
       this.#done = true;
       this.#onDone?.();
     }
+  }
+
+  /** The camera eases after the fighting in the followed lane: the middle of its units still standing. */
+  #followLane(run: BattleRun, frame: number, n: number, dt: number): void {
+    const look = this.#opts.look;
+    if (this.follow === null || !look) {
+      this.#lookAt.set = false;
+      return;
+    }
+    let x = 0;
+    let z = 0;
+    let count = 0;
+    for (let i = 0; i < n; i++) {
+      if (run.entities[i]!.lane !== this.follow) continue;
+      const b = (frame * n + i) * 4;
+      if (!(run.frames[b + 2]! > 0)) continue;
+      x += run.frames[b]!;
+      z += run.frames[b + 1]!;
+      count++;
+    }
+    if (count === 0) return;
+    x /= count;
+    z /= count;
+    if (!this.#lookAt.set) Object.assign(this.#lookAt, { x, z, set: true });
+    const k = Math.min(1, dt * 2.5);
+    this.#lookAt.x += (x - this.#lookAt.x) * k;
+    this.#lookAt.z += (z - this.#lookAt.z) * k;
+    look(this.#lookAt.x, this.#lookAt.z);
   }
 
   /** Effects due by now; ones long past (a skip) are dropped rather than all fired at once. */
