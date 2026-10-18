@@ -365,3 +365,28 @@ describe('MatchController', () => {
     expect(unitCount(m.armies![1])).toBeGreaterThan(unitCount(m.armies![0])); // the degen's frogs and dogs are many
   });
 });
+
+describe('price providers', () => {
+  it('a historical replay plays real closes a week a round, through the same match', async () => {
+    const { Match: M } = await import('../src/game/core/match.js');
+    const closes = { eth: [2000, 2010, 2020, 1900, 1800, 1700, 1600, 1500, 1550, 1600] };
+    const m = new M({ seed: 'hist', portfolios: [templatePortfolio('whale', 20000, catalog), templatePortfolio('degen', 20000, catalog)], prices: { kind: 'historical', closes } });
+    expect(m.state.market.prices.eth).toBe(2000);
+    m.advance();
+    m.advance();
+    m.advance(); // round 2's market: days 1–7
+    expect(m.state.market.candles.map((c) => c.close.eth)).toEqual([2010, 2020, 1900, 1800, 1700, 1600, 1500]);
+    // assets the history doesn't cover hold their opening price
+    expect(m.state.market.prices.wbtc).toBe(catalog.asset('wbtc').price);
+  });
+
+  it('the simulated provider is the default and gives the same match as before', () => {
+    const a = new Match({ seed: 'prov', portfolios: [templatePortfolio('whale', 20000, catalog), templatePortfolio('degen', 20000, catalog)] });
+    const b = new Match({ seed: 'prov', portfolios: [templatePortfolio('whale', 20000, catalog), templatePortfolio('degen', 20000, catalog)], prices: { kind: 'sim' } });
+    for (let i = 0; i < 3; i++) {
+      a.advance();
+      b.advance();
+    }
+    expect(serialize(b.state)).toBe(serialize(a.state));
+  });
+});

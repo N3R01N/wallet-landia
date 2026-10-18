@@ -14,7 +14,8 @@ import { buildArmy, unitCount, unitValueFor } from './army.js';
 import { Catalog, UNIT_TYPES } from './catalog.js';
 import { qtyFor } from './fixed.js';
 import { account, applyCommand, gasCost, holding, stableValue, holdingsOf, liquidate, netValue, payYields, rebalancePools, refreshKeep, slash, type CommandResult, type LedgerCtx } from './ledger.js';
-import { drawNext, eventNum, initialMarket, runMarket } from './market.js';
+import { drawNext, eventNum } from './market.js';
+import { providerFor, type PriceProvider, type PriceSource } from './prices.js';
 import { simulateBattle, type BattleMap, type BattleRun } from './battle.js';
 import { armyMods, canShutdown, homeAt, relicTotal, slottedRelics } from './depth.js';
 import type { BattleResolver } from './quickBattle.js';
@@ -29,6 +30,8 @@ export interface MatchSetup {
   customAssets?: readonly Asset[];
   /** The battlefield (the town's lanes); a straight field when absent. */
   map?: BattleMap;
+  /** Where prices come from (core/prices.ts); the seeded simulation when absent. */
+  prices?: PriceSource;
 }
 
 /** The full battle simulation (the default). */
@@ -47,6 +50,7 @@ export class Match {
   readonly log: LoggedCommand[] = [];
   readonly #setup: MatchSetup;
   readonly #resolve: BattleResolver;
+  readonly #prices: PriceProvider;
   /** The armies of the current battle (for the renderer). */
   armies: [Army, Army] | null = null;
   /** The current battle in full, when it came from the simulation (for the renderer). */
@@ -58,7 +62,8 @@ export class Match {
     this.#setup = structuredClone(setup) as MatchSetup;
     this.#resolve = resolve;
     this.catalog = new Catalog(setup.customAssets ?? []);
-    const market = initialMarket(this.catalog, [...setup.portfolios[0].nfts, ...setup.portfolios[1].nfts]);
+    this.#prices = providerFor(setup.prices, setup.seed, this.catalog, [...setup.portfolios[0].nfts, ...setup.portfolios[1].nfts]);
+    const market = this.#prices.snapshot();
     const sides = (['A', 'B'] as const).map((id, i) => newSide(id, setup.portfolios[i]!, setup.npc?.[i])) as [SideState, SideState];
     const unitValue = unitValueFor(sides, this.catalog, market.prices);
     this.state = {
@@ -262,12 +267,13 @@ export class Match {
       side.valueBeforeMarket = netValue(side, s.market.prices);
       payYields(side, s.round, ctx);
     }
-    runMarket(s.market, s.seed, s.round, this.catalog, (candle) => {
+    // a week of daily candles; pools rebalance and loans are checked on every one
+    for (const candle of this.#prices.step(s.market, s.round)) {
       for (const side of s.sides) {
         rebalancePools(side, candle.close);
         this.liquidationCount += liquidate(side, s.round, candle.day, { catalog: this.catalog, prices: candle.close }, relicTotal(this.relics(side.id), 'liq-eye')).length;
       }
-    });
+    }
     const event = s.market.current;
     if (event?.id === 'slashing') for (const side of s.sides) slash(side, eventNum('slashing', 'burn'));
     if (event?.id === 'airdrop') {
