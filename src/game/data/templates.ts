@@ -21,10 +21,9 @@ export const TEMPLATES: Readonly<Record<Archetype, { name: string; slices: Slice
   degen: {
     name: 'Degen',
     slices: [
-      { asset: 'pepe', share: 0.35 },
-      { asset: 'shib', share: 0.25 },
-      { asset: 'ldo', share: 0.15 },
-      { asset: 'ens', share: 0.15 },
+      { asset: 'pepe', share: 0.4 },
+      { asset: 'shib', share: 0.4 },
+      { asset: 'ldo', share: 0.1 },
       { asset: 'usdc', share: 0.1 },
     ],
   },

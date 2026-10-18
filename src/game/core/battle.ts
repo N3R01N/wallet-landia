@@ -619,7 +619,7 @@ function strike(e: Ent, target: Ent, grid: Grid, rng: Rng, atkMult: number, tick
   let atk = e.u.atk * (1 - e.drained);
   if (e.u.ability === 'pack-bonus') {
     const pack = grid.near(e.x, e.z, 3).filter((o) => o.side === e.side && o.pool > 0).reduce((s, o) => s + alive(o), 0);
-    atk += Math.floor(pack / 10);
+    atk += Math.min(BT.packBonusMax, Math.floor(pack / 10));
   }
   // a Construct nearby: +10% ATK
   const buffed = grid.builders.has(e.side) && grid.near(e.x, e.z, 3).some((o) => o.side === e.side && o.pool > 0 && o.u.ability === 'buff-atk' && o !== e);

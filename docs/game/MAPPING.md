@@ -179,3 +179,11 @@ Strength in a mass battle goes roughly with HP × ATK ÷ costMult² (cheaper uni
 
 `ui/guide.ts`, its words in `data/guide.ts` (numbers from the data and `BALANCE`, so it says what the game does). Five tabs: how to play; every unit (a portrait drawn from its model by `render/unitPortraits.ts`, the tokens and categories that field it, its stats against the largest, its ability, what it beats and what beats it, its cost, a link to it in the gallery); what each holding does and the trade that gets it, the protocol abilities and the relics; the battle (counter triangle, roles, buildings and capture, the siege); the market (regimes, events, loans, costs). Opens from "? Guide" on the panel, "New here? How to play", and any unit name in the portfolio tables (`data-guide-unit`).
 
+## Balance, second pass (2026-10-18)
+
+Changed: the Shiba Pack's bonus is capped at +2 ATK (`battle.packBonusMax`; the spec's "+1 per 10 allies" gave a 100-strong pack +10); the Frog has 5.5 HP, the Shiba 6.5; the Bitcoin Titan costs 5 (was 3.3); both Paladins have 27 HP (were 30); the Degen starts 40% PEPE, 40% SHIB, 10% LDO (collateral to borrow against: memecoins aren't), 10% USDC.
+
+Result (docs/game/BALANCE.md, 1000 per pairing): the Degen went from 30–39% against the other archetypes to 33–47%; memecoins 51.8% (was 55.4%); liquidations 30.4%; worst pairing 69.4%, the Yield Farmer over the Stable Maxi (was 70.5%).
+
+What was tried and why it stops here: the pairing results are very non-linear (an ETH Paladin at 2.15 cost instead of 2 swung the Whale against the Yield Farmer from 49% to 16%), and the Flash Loan's size, the walls' volley, the Stable Maxi's safe line and its starting share of stables all left the worst pairing at 67–79%. An untraded Stable Maxi never wins: it lives on trading walls into army, and the matches snowball (the side ahead after a battle keeps more units and hits the keep harder). Reaching 60% would take a design change (e.g. less snowballing, or walls that matter in the battle itself), not a number.
+

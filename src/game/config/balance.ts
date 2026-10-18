@@ -127,6 +127,8 @@ export const BALANCE = {
     /** Counter triangle bonus, and the area bonus against Swarm. */
     counterBonus: 0.5,
     swarmAreaBonus: 0.5,
+    /** The Shiba Pack's bonus: +1 ATK per 10 allies nearby (spec), at most this much (not in the spec: a big pack doubled its attack and more). */
+    packBonusMax: 2,
     /** Siege units deal this much damage to units. */
     siegeVsUnits: 0.5,
     /** HP a second each Ether Paladin heals the allies beside it (spec: 2; M7 balance). */
