@@ -61,7 +61,7 @@ export interface Unit {
 const HP_SCALE = 2;
 
 /** Metres a second per point of a unit type's speed. */
-export const METRES_PER_SPEED = 2.4;
+export const METRES_PER_SPEED = 3.6;
 const RADIUS: Record<Role, number> = { swarm: 0.32, ranged: 0.4, support: 0.42, melee: 0.45, cavalry: 0.6, siege: 0.9 };
 
 export function radiusOf(type: UnitTypeId): number {

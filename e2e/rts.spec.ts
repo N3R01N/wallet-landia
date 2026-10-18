@@ -222,3 +222,27 @@ test('the castle’s topbar opens Ledger Wars', async ({ page }) => {
   await expect(link).toHaveAttribute('href', /rts\.html$/);
 });
 
+test('the edge strips, shown with arrows, move the view while the pointer is on them', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto('/rts.html?seed=e2e&ai=0');
+  await page.locator('.rts-kit[data-kit="usdc"]').click();
+  await expect(page.locator('.rts[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
+  type R = { rts: { view: { cameraState: { x: number; z: number } } } };
+  const cam = () => page.evaluate(() => (window as unknown as R).rts.view.cameraState);
+  const top = page.locator('.rts-edge-top');
+  await expect(top).toBeVisible();
+  await expect(top).toContainText('▲');
+  const before = await cam();
+  await top.hover();
+  await expect.poll(async () => (await cam()).z).toBeLessThan(before.z - 2);
+  // off the strip: it stops
+  await page.mouse.move(600, 400);
+  const stopped = (await cam()).z;
+  await page.waitForTimeout(600);
+  expect(Math.abs((await cam()).z - stopped)).toBeLessThan(0.5);
+  // a corner goes both ways
+  const left = (await cam()).x;
+  await page.locator('.rts-edge-bottom-left').hover();
+  await expect.poll(async () => (await cam()).x).toBeLessThan(left - 2);
+});
+

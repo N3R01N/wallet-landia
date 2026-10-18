@@ -145,7 +145,7 @@ export class Hud {
     if (!s) {
       this.#info.replaceChildren(
         el('p', { class: 'rts-hint' }, 'Click a building or a unit to select it; drag a box round units. Right-click to move or attack. A: attack-move, S: stop, H: hold.'),
-        el('p', { class: 'rts-hint' }, 'The arrows, the screen’s edges or the middle button move the view; the wheel zooms; Q/E turn.'),
+        el('p', { class: 'rts-hint' }, 'The arrow keys, the arrow strips at the edges (point at one) or the middle button move the view; the wheel zooms; Q/E turn.'),
       );
       return;
     }

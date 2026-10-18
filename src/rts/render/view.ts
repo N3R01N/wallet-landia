@@ -2,7 +2,7 @@
  * Ledger Wars' 3D view: the map (ground, river, bridges, scenery), the
  * buildings in their owners' colours and levels, a placement ghost, a
  * selection ring, the rally flag, click markers, and an RTS camera (the
- * arrows, the screen's edges or middle-drag to pan, the wheel to zoom, Q/E
+ * arrow keys, the edge strips (shown, with arrows) or middle-drag to pan, the wheel to zoom, Q/E
  * to turn). It draws what the World says; it changes
  * nothing in it.
  */
@@ -60,8 +60,10 @@ export class RtsView {
   readonly #sun: THREE.DirectionalLight;
   readonly #markers: { obj: THREE.Mesh; age: number }[] = [];
   #flag: THREE.Object3D | null = null;
-  /** The pointer over the canvas (for edge scrolling), or null when it has left. */
-  #pointer: { x: number; y: number } | null = null;
+  /** The edge strips the pointer is over (they pan the view): −1, 0 or 1 across and up/down. */
+  readonly #edge = { x: 0, z: 0 };
+  /** The four edge strips with their arrows, to lay over the view (`edges`). */
+  readonly edges: HTMLElement;
 
   constructor(library: ModelLibrary) {
     this.#library = library;
@@ -87,6 +89,7 @@ export class RtsView {
     this.#ring.visible = false;
     this.#ring.renderOrder = 2;
     this.scene.add(this.#ring);
+    this.edges = this.#edgeStrips();
     this.#bindInput();
     this.renderer.setAnimationLoop((now: number) => this.#loop(now));
   }
@@ -369,8 +372,7 @@ export class RtsView {
     c.addEventListener('keydown', (e) => this.#keys.add(e.key.toLowerCase()));
     c.addEventListener('keyup', (e) => this.#keys.delete(e.key.toLowerCase()));
     c.addEventListener('blur', () => this.#keys.clear());
-    c.addEventListener('pointermove', (e) => (this.#pointer = { x: e.clientX, y: e.clientY }));
-    c.addEventListener('pointerleave', () => (this.#pointer = null));
+
     c.addEventListener(
       'wheel',
       (e) => {
@@ -398,6 +400,44 @@ export class RtsView {
     });
   }
 
+  /**
+   * The edge strips: one along each side of the view, with arrows, that pan
+   * it while the pointer is on them (a corner pans both ways). The wheel
+   * still zooms over them.
+   */
+  #edgeStrips(): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'rts-edges';
+    const sides: [string, number, number, string][] = [
+      ['top', 0, -1, '▲'],
+      ['bottom', 0, 1, '▼'],
+      ['left', -1, 0, '◀'],
+      ['right', 1, 0, '▶'],
+      ['top-left', -1, -1, '◤'],
+      ['top-right', 1, -1, '◥'],
+      ['bottom-left', -1, 1, '◣'],
+      ['bottom-right', 1, 1, '◢'],
+    ];
+    for (const [side, x, z, arrow] of sides) {
+      const strip = document.createElement('div');
+      strip.className = `rts-edge rts-edge-${side}`;
+      strip.dataset.side = side;
+      strip.setAttribute('aria-hidden', 'true');
+      for (let i = 0; i < (side.includes('-') ? 1 : 3); i++) strip.append(Object.assign(document.createElement('span'), { textContent: arrow }));
+      strip.addEventListener('pointerenter', () => {
+        if (x) this.#edge.x = x;
+        if (z) this.#edge.z = z;
+      });
+      strip.addEventListener('pointerleave', () => {
+        this.#edge.x = 0;
+        this.#edge.z = 0;
+      });
+      strip.addEventListener('wheel', (e) => this.canvas.dispatchEvent(new WheelEvent('wheel', e)), { passive: true });
+      wrap.append(strip);
+    }
+    return wrap;
+  }
+
   /** Pans by screen right/up amounts (metres). */
   #pan(right: number, up: number): void {
     const s = Math.sin(this.#yaw);
@@ -415,14 +455,12 @@ export class RtsView {
     const dt = Math.min(0.25, this.#timer.getDelta());
     const k = this.#keys;
     const speed = this.#dist * 0.9 * dt;
-    // the arrows, or the pointer at the canvas's edge
-    const r = this.canvas.getBoundingClientRect();
-    const p = this.#pointer;
-    const edge = 14;
-    if (k.has('arrowup') || (p && p.y < r.top + edge)) this.#pan(0, -speed);
-    if (k.has('arrowdown') || (p && p.y > r.bottom - edge)) this.#pan(0, speed);
-    if (k.has('arrowleft') || (p && p.x < r.left + edge)) this.#pan(-speed, 0);
-    if (k.has('arrowright') || (p && p.x > r.right - edge)) this.#pan(speed, 0);
+    // the arrow keys, or the pointer on an edge strip
+    const e = this.#edge;
+    if (k.has('arrowup') || e.z < 0) this.#pan(0, -speed);
+    if (k.has('arrowdown') || e.z > 0) this.#pan(0, speed);
+    if (k.has('arrowleft') || e.x < 0) this.#pan(-speed, 0);
+    if (k.has('arrowright') || e.x > 0) this.#pan(speed, 0);
     if (k.has('q')) this.#yaw -= dt * 1.5;
     if (k.has('e')) this.#yaw += dt * 1.5;
     this.#pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, this.#pitch));

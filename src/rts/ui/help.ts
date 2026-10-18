@@ -52,7 +52,7 @@ export class Help {
         ['A, then click', 'Attack-move: walk there, fighting whatever is met'],
         ['S / H', 'Stop / hold (stand and strike only what comes in reach)'],
         ['Ctrl + 1–9', 'Make the selection a group; 1–9 selects it again, twice jumps to it'],
-        ['Arrows, screen edges, middle drag', 'Move the view; the wheel zooms; Q/E turn'],
+        ['Arrow keys, the arrow strips at the edges, middle drag', 'Move the view (point at a strip to scroll that way); the wheel zooms; Q/E turn'],
         ['Minimap', 'Click to look there; right-click to send the selected units'],
         ['Esc', 'Clear the selection, stop placing'],
       ];

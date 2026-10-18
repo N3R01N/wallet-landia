@@ -73,7 +73,7 @@
 .rts-build,
 .rts-info {
   position: absolute;
-  bottom: 10px;
+  bottom: 44px;
   width: min(380px, calc(50% - 20px));
   max-height: 46%;
   overflow-y: auto;
@@ -84,11 +84,11 @@
 }
 
 .rts-build {
-  left: 10px;
+  left: 44px;
 }
 
 .rts-info {
-  right: 10px;
+  right: 44px;
 }
 
 .rts-hud h2 {
@@ -169,7 +169,7 @@
 
 .rts-toast {
   position: absolute;
-  top: 52px;
+  top: 76px;
   left: 50%;
   transform: translateX(-50%);
   padding: 6px 14px;
@@ -293,8 +293,8 @@
 
 .rts-minimap {
   position: absolute;
-  top: 44px;
-  right: 10px;
+  top: 74px;
+  right: 44px;
   width: 168px;
   height: 168px;
   border: 2px solid #c9a24a;
@@ -306,8 +306,8 @@
 
 .rts-help-btn {
   position: absolute;
-  top: 44px;
-  right: 190px;
+  top: 74px;
+  right: 224px;
   min-height: 36px;
 }
 
@@ -387,6 +387,88 @@
   }
 
   .rts-help-btn {
-    right: 132px;
+    right: 166px;
   }
+}
+
+/* the edge strips: point at one to scroll the view that way (a corner, both ways) */
+
+.rts-edge {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: rgba(42, 33, 24, 0.14);
+  color: rgba(255, 248, 230, 0.6);
+  font-size: 15px;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+}
+
+.rts-edge:hover {
+  background: rgba(201, 162, 74, 0.5);
+  color: #fff8e6;
+}
+
+.rts-edge-top,
+.rts-edge-bottom {
+  left: 36px;
+  right: 36px;
+  height: 36px;
+}
+
+.rts-edge-top {
+  top: 32px;
+}
+
+.rts-edge-bottom {
+  bottom: 0;
+}
+
+.rts-edge-left,
+.rts-edge-right {
+  top: 68px;
+  bottom: 36px;
+  width: 36px;
+  flex-direction: column;
+}
+
+.rts-edge-left {
+  left: 0;
+}
+
+.rts-edge-right {
+  right: 0;
+}
+
+.rts-edge-top-left,
+.rts-edge-top-right,
+.rts-edge-bottom-left,
+.rts-edge-bottom-right {
+  width: 36px;
+  height: 36px;
+  background: rgba(42, 33, 24, 0.22);
+}
+
+.rts-edge-top-left,
+.rts-edge-top-right {
+  top: 32px;
+}
+
+.rts-edge-bottom-left,
+.rts-edge-bottom-right {
+  bottom: 0;
+}
+
+.rts-edge-top-left,
+.rts-edge-bottom-left {
+  left: 0;
+}
+
+.rts-edge-top-right,
+.rts-edge-bottom-right {
+  right: 0;
 }

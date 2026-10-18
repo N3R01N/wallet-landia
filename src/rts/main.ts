@@ -108,7 +108,7 @@ async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
       if (units.length > 0) send({ t: 'order', units: units.map((u) => u.id), kind: 'move', x, z });
     },
   });
-  app.replaceChildren(el('div', { class: 'rts', 'data-ready': 'false' }, view.canvas, box, hud.element, minimap.element, helpBtn));
+  app.replaceChildren(el('div', { class: 'rts', 'data-ready': 'false' }, view.canvas, box, view.edges, hud.element, minimap.element, helpBtn));
   view.focus(RULES.start[ME].x, RULES.start[ME].z - 10);
   await view.build(world);
   app.querySelector('.rts')!.setAttribute('data-ready', 'true');
