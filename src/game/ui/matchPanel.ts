@@ -21,11 +21,14 @@ import type { Command, SideId } from '../core/types.js';
 import { BattleView } from '../render/battleView.js';
 import { tradeErrand } from '../render/tradeCouriers.js';
 import type { MatchClient } from '../sim/matchClient.js';
-import { fieldPanel, gauges, portfolio, powersPanel, regimeBadge, rumorCard, ticker } from './hud.js';
+import { fieldPanel, gauges, portfolio, powersPanel, regimeBadge, rumorCard, ticker, warnAt } from './hud.js';
 import { FieldMarkers } from '../render/fieldMarkers.js';
 import { BattleFx } from '../render/battleFx.js';
 import { UnitMesh } from '../render/unitMeshes.js';
-import { holdingsOf } from '../core/ledger.js';
+import { abilityName } from '../core/depth.js';
+import { proxied } from '../../castle/scene/castleView.js';
+import { hashString } from '../../util/rng.js';
+import { account, holdingsOf } from '../core/ledger.js';
 import { weatherFor, type Weather } from '../../castle/world/sky.js';
 import { TradePanel } from './tradePanel.js';
 import { qn } from '../core/fixed.js';
@@ -75,6 +78,10 @@ export class MatchPanel {
   #fx: BattleFx | null = null;
   readonly #props: THREE.Object3D[] = [];
   #dancers: UnitMesh | null = null;
+  /** Your keep's max HP as last seen (new walls are celebrated). */
+  #keepMax = 0;
+  #flag: { obj: THREE.Object3D } | null = null;
+  #flagStop: (() => void) | null = null;
   #stopDance: (() => void) | null = null;
   #busy = false;
   #note = '';
@@ -117,9 +124,14 @@ export class MatchPanel {
       stage: scene.stage(),
       overlay: scene.element,
       symbol: (asset) => (m.catalog.has(asset) ? m.catalog.asset(asset).symbol : asset),
+      badge: (asset) => {
+        const a = m.catalog.has(asset) ? m.catalog.asset(asset) : null;
+        return { ...(a?.icon ? { icon: proxied(a.icon) } : {}), color: a?.color ?? `hsl(${hashString(asset) % 360} 55% 50%)` };
+      },
       markers: this.#markers,
       fx: this.#fx,
       look: (x, z) => this.#scene?.focusAt(x, z),
+      abilityName: (side, ability) => abilityName(this.match.side(side), ability),
     });
     // the meshes load while the player trades
     this.#preload();
@@ -136,6 +148,9 @@ export class MatchPanel {
     this.#markers = null;
     this.#fx?.dispose();
     this.#fx = null;
+    this.#flag?.obj.removeFromParent();
+    this.#flagStop?.();
+    this.#flag = null;
     this.#clearProps();
     this.#scene?.setWeather(weatherFor(null));
     this.#client.dispose();
@@ -249,6 +264,8 @@ export class MatchPanel {
     }
     this.#left = this.#opts.tradeSeconds ?? 30;
     this.#paused = false;
+    this.#keepMax = m.side('A').keepHpMax;
+    this.#loanFlag();
     if (this.#view) this.#view.follow = null;
     this.#overview();
     this.#preload();
@@ -341,7 +358,7 @@ export class MatchPanel {
     const [mine, theirs] = m.state.felled;
     if (mine > 0) this.#note += ` 🏹 Your walls' archers felled ${mine} attacker${mine === 1 ? '' : 's'} at the gate.`;
     if (theirs > 0) this.#note += ` 🏹 The enemy walls felled ${theirs} of yours.`;
-    for (const id of m.state.shutdowns) this.#note += ` 🛡 ${id === 'A' ? 'Your' : 'The enemy'} vault called an Emergency Shutdown: the keep took no damage.`;
+    for (const id of m.state.shutdowns) this.#note += ` 🛡 ${id === 'A' ? 'Your' : 'The enemy'} vault called ${abilityName(m.side(id), 'emergency-shutdown')}: the keep took no damage.`;
     this.#markers?.setOwners(m.battleCtx().owners);
     this.#showDamage();
     // stones fly off the walls that were hit
@@ -385,7 +402,80 @@ export class MatchPanel {
     const scene = this.#scene;
     const m = this.match;
     if (scene) scene.sendNow(tradeErrand(m, cmd, scene.plan.buildings, gasCost({ unitValue: m.state.unitValue, gasMult: m.state.market.gasMult })));
+    // new walls: the masons raise them as the courier comes home with the stones
+    const max = m.side('A').keepHpMax;
+    if (max > this.#keepMax + 0.5) {
+      this.#note = `🧱 The masons raise your walls: +${Math.round(max - this.#keepMax)} HP.`;
+      setTimeout(() => this.#raiseWalls(), 2500);
+    }
+    this.#keepMax = max;
+    this.#loanFlag();
     this.render();
+  }
+
+  /** Sparkles along the front wall, where the new stones go in. */
+  #raiseWalls(): void {
+    const scene = this.#scene;
+    if (!scene || !this.#fx) return;
+    const walls = scene
+      .stage()
+      .placed('castle')
+      .filter((o) => o.name === 'castle.wall.segment')
+      .sort((a, b) => b.position.z - a.position.z)
+      .slice(0, 8);
+    walls.forEach((w, i) => setTimeout(() => this.#fx?.burst('fx.sparkle.burst', w.position.x, 2.6, w.position.z), i * 120));
+  }
+
+  /**
+   * A loan in danger (spec: "the courier at that lending building waves a red
+   * flag"): a red banner by the lending building's door while any loan's
+   * health is under the warning line.
+   */
+  #loanFlag(): void {
+    const scene = this.#scene;
+    if (!scene) return;
+    const m = this.match;
+    const me = m.side('A');
+    const ctx = { catalog: m.catalog, prices: m.state.market.prices };
+    const danger = (['lending', 'vault'] as const).some((p) => {
+      const a = account(me, p, ctx);
+      return a.debt > 0 && a.hf < warnAt(m);
+    });
+    const bank = scene.plan.buildings.find((b) => b.protocol.category === 'lending');
+    if (!danger || !bank) {
+      this.#flag?.obj.removeFromParent();
+      this.#flagStop?.();
+      this.#flag = null;
+      this.#flagStop = null;
+      return;
+    }
+    if (this.#flag) return;
+    void scene
+      .stage()
+      .load('prop.banner.owner')
+      .then((loaded) => {
+        if (!loaded || this.#flag || !this.#scene) return;
+        const obj = loaded.scene.clone(true);
+        obj.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          const recolor = (mat: THREE.Material) => {
+            if (mat.name !== 'Tint' || !('color' in mat)) return mat;
+            const c = mat.clone() as THREE.MeshStandardMaterial;
+            c.color.set('#d0302a');
+            return c;
+          };
+          mesh.material = Array.isArray(mesh.material) ? mesh.material.map(recolor) : recolor(mesh.material);
+        });
+        obj.position.set(bank.door.x + Math.sign(bank.door.x || 1) * 0.8, 0, bank.door.z + 0.6);
+        const stage = this.#scene.stage();
+        stage.scene.add(obj);
+        const idle = loaded.clips.find((c) => c.name === 'idle');
+        const mixer = idle ? new THREE.AnimationMixer(obj) : null;
+        if (mixer && idle) mixer.clipAction(idle).play();
+        this.#flag = { obj };
+        this.#flagStop = stage.onFrame((dt) => mixer?.update(dt));
+      });
   }
 
   /** The camera over the whole field (the Market and Trade phases). */

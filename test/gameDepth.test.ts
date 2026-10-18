@@ -216,3 +216,17 @@ describe('walls shoot back', () => {
     expect(wallVolley(attackers, 0).felled).toBe(0);
   });
 });
+
+describe('ability names', () => {
+  it('a curated protocol names its ability; any other protocol of that kind gets a generic name', async () => {
+    const { abilityName } = await import('../src/game/core/depth.js');
+    const lido = sideOf([{ asset: 'steth', qty: q(1), kind: 'staked', protocol: 'staking', venue: 'lido' }]);
+    const rocket = sideOf([{ asset: 'reth', qty: q(1), kind: 'staked', protocol: 'staking', venue: 'rocket-pool' }]);
+    expect(abilityName(lido, 'validator-shield')).toBe('Validator Shield');
+    expect(abilityName(rocket, 'validator-shield')).toBe('Stake Shield');
+    // a position opened in the match is held at the curated protocol of its kind
+    const m = new Match({ seed: 'names', portfolios: [templatePortfolio('balanced', 20000, c), templatePortfolio('whale', 20000, c)] });
+    m.command('A', { t: 'stake', asset: 'eth', qty: q(1) });
+    expect(abilityName(m.side('A'), 'validator-shield')).toBe('Validator Shield');
+  });
+});

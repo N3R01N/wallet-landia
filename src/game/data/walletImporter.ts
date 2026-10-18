@@ -11,6 +11,7 @@
 import type { AssetCategory } from '../../domain/catalog.js';
 import type { Hero, Protocol, StashEntry } from '../../domain/model.js';
 import { BASE_ASSETS } from '../core/catalog.js';
+import { protocolFamily } from '../../castle/assets/manifest.js';
 import { qtyFor } from '../core/fixed.js';
 import type { Asset, AssetId, Category, NftHolding, Portfolio, Position, ProtocolFn } from '../core/types.js';
 
@@ -50,7 +51,7 @@ export function importWallet(hero: Hero, protocols: ReadonlyMap<string, Protocol
    * data that lacks it), so a look-alike token under a known symbol isn't
    * taken for the real one.
    */
-  const assetFor = (symbol: string, category: AssetCategory | null, price: number, address?: string | null): AssetId | null => {
+  const assetFor = (symbol: string, category: AssetCategory | null, price: number, address?: string | null, icon?: string | null): AssetId | null => {
     const contract = address ? address.toLowerCase() : null;
     const known = contract ? BY_ADDRESS.get(contract) : BY_SYMBOL.get(symbol.toLowerCase());
     if (known) return known.id;
@@ -68,6 +69,7 @@ export function importWallet(hero: Hero, protocols: ReadonlyMap<string, Protocol
         collateral: cat !== 'meme',
         price,
         ...(contract ? { address: contract } : {}),
+        ...(icon ? { icon } : {}),
         ...(cat === 'lst' ? { follows: 'eth', curatedUnit: 'paladin.staked' } : {}),
       });
     }
@@ -80,7 +82,7 @@ export function importWallet(hero: Hero, protocols: ReadonlyMap<string, Protocol
       continue;
     }
     if (!(item.quantity > 0) || !(item.usd !== null && item.usd > 0)) continue;
-    const id = assetFor(item.symbol, item.category, item.usd / item.quantity, item.address);
+    const id = assetFor(item.symbol, item.category, item.usd / item.quantity, item.address, item.iconUrl);
     if (id) positions.push({ asset: id, qty: qtyFor(item.quantity, 1), kind: 'spot' });
   }
 
@@ -98,7 +100,7 @@ export function importWallet(hero: Hero, protocols: ReadonlyMap<string, Protocol
       const ia = assetFor(a.symbol, null, Math.abs(a.usd) / a.quantity, a.address);
       const ib = assetFor(b.symbol, null, Math.abs(b.usd) / b.quantity, b.address);
       if (ia && ib && ia !== ib) {
-        positions.push({ asset: ia, qty: qtyFor(a.quantity, 1), kind: 'lp', protocol: 'dex', pairWith: ib, pairQty: qtyFor(b.quantity, 1) });
+        positions.push({ asset: ia, qty: qtyFor(a.quantity, 1), kind: 'lp', protocol: 'dex', pairWith: ib, pairQty: qtyFor(b.quantity, 1), venue: venueOf(stash.protocolId) });
         for (const e of entries) if (e !== a && e !== b) pushEntry(e);
         continue;
       }
@@ -109,10 +111,11 @@ export function importWallet(hero: Hero, protocols: ReadonlyMap<string, Protocol
       const id = assetFor(e.symbol, null, Math.abs(e.usd) / e.quantity, e.address);
       if (!id) return;
       const qty = qtyFor(e.quantity, 1);
-      if (e.kind === 'loan') positions.push({ asset: id, qty, kind: 'borrowed', protocol: fn === 'vault' ? 'vault' : 'lending' });
-      else if (fn === 'restaking') positions.push({ asset: id, qty, kind: 'restaked', protocol: 'restaking' });
-      else if (e.kind === 'staked' || fn === 'staking') positions.push({ asset: id, qty, kind: 'staked', protocol: 'staking' });
-      else if (e.kind === 'deposit' && (fn === 'lending' || fn === 'vault')) positions.push({ asset: id, qty, kind: 'supplied', protocol: fn });
+      const venue = venueOf(stash.protocolId);
+      if (e.kind === 'loan') positions.push({ asset: id, qty, kind: 'borrowed', protocol: fn === 'vault' ? 'vault' : 'lending', venue });
+      else if (fn === 'restaking') positions.push({ asset: id, qty, kind: 'restaked', protocol: 'restaking', venue });
+      else if (e.kind === 'staked' || fn === 'staking') positions.push({ asset: id, qty, kind: 'staked', protocol: 'staking', venue });
+      else if (e.kind === 'deposit' && (fn === 'lending' || fn === 'vault')) positions.push({ asset: id, qty, kind: 'supplied', protocol: fn, venue });
       else positions.push({ asset: id, qty, kind: 'spot' });
     }
   }
@@ -132,6 +135,11 @@ export function importWallet(hero: Hero, protocols: ReadonlyMap<string, Protocol
 
   if (offChain > 0) notes.push(`${offChain} holding${offChain === 1 ? '' : 's'} on other chains left out (Ethereum mainnet only).`);
   return { portfolio: { positions: mergeSpot(positions), nfts: [...nfts.values()], relics: [null, null, null] }, customAssets: [...custom.values()], notes };
+}
+
+/** A protocol's family name ('aave-v3' → 'aave'): what the curated abilities are named after. */
+function venueOf(id: string): string {
+  return protocolFamily(id);
 }
 
 function protocolFn(id: string, category: Protocol['category'] | undefined): ProtocolFn | null {

@@ -9,12 +9,12 @@
 import * as THREE from 'three';
 import type { Stage } from '../../castle/scene/castleView.js';
 
-export type Burst = 'fx.hit.spark' | 'fx.puff' | 'fx.detonation' | 'fx.siege.impact' | 'fx.lightning';
+export type Burst = 'fx.hit.spark' | 'fx.puff' | 'fx.detonation' | 'fx.siege.impact' | 'fx.lightning' | 'fx.sparkle.burst';
 export type Projectile = 'fx.arrow' | 'fx.bolt';
 
-const MODELS: readonly string[] = ['fx.hit.spark', 'fx.puff', 'fx.detonation', 'fx.siege.impact', 'fx.lightning', 'fx.arrow', 'fx.bolt'];
+const MODELS: readonly string[] = ['fx.hit.spark', 'fx.puff', 'fx.detonation', 'fx.siege.impact', 'fx.lightning', 'fx.sparkle.burst', 'fx.arrow', 'fx.bolt'];
 /** At most this many of each at once (the oldest make way). */
-const CAP: Record<string, number> = { 'fx.hit.spark': 40, 'fx.puff': 20, 'fx.arrow': 60, 'fx.bolt': 30, 'fx.detonation': 6, 'fx.siege.impact': 8, 'fx.lightning': 2 };
+const CAP: Record<string, number> = { 'fx.sparkle.burst': 16, 'fx.hit.spark': 40, 'fx.puff': 20, 'fx.arrow': 60, 'fx.bolt': 30, 'fx.detonation': 6, 'fx.siege.impact': 8, 'fx.lightning': 2 };
 /** Metres per second a projectile flies. */
 const PROJECTILE_SPEED = 22;
 

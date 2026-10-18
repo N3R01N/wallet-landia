@@ -51,6 +51,9 @@ export interface Asset {
   price: number;
   /** Its Ethereum mainnet contract (none: native ETH or a sim-only token). */
   address?: string;
+  /** Its brand colour, and its icon (an imported token's, from the wallet data), for the squad banners. */
+  color?: string;
+  icon?: string;
 }
 
 export type Role = 'melee' | 'ranged' | 'cavalry' | 'swarm' | 'siege' | 'support';
@@ -82,6 +85,8 @@ export interface Position {
   pairQty?: bigint;
   /** Unstaking: the round from which it is spot again. */
   unlocksAtRound?: number;
+  /** The protocol it is held at ('lido', 'aave'…): curated ones rename the ability it grants. */
+  venue?: string;
 }
 
 export interface RelicSlot {

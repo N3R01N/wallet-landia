@@ -22,6 +22,41 @@ export const ABILITY_NAME: Record<Ability | 'emergency-shutdown', string> = {
   'emergency-shutdown': 'Emergency Shutdown',
 };
 
+/**
+ * An ability's name for a side: the curated protocol's (spec: "Curated
+ * protocols reskin the building and rename the ability") when the side holds
+ * the position there, else a generic one for the function.
+ */
+const CURATED_VENUE: Record<Ability | 'emergency-shutdown', string[]> = {
+  'validator-shield': ['lido'],
+  'slashing-guard': ['eigenlayer'],
+  'flash-swap': ['uniswap'],
+  'flash-loan': ['aave'],
+  'emergency-shutdown': ['maker', 'sky'],
+};
+const GENERIC_NAME: Record<Ability | 'emergency-shutdown', string> = {
+  'validator-shield': 'Stake Shield',
+  'slashing-guard': 'Restake Guard',
+  'flash-swap': 'Pool Swap',
+  'flash-loan': 'Quick Loan',
+  'emergency-shutdown': 'Vault Lockdown',
+};
+const ABILITY_FN: Record<Ability | 'emergency-shutdown', (p: SideState['portfolio']['positions'][number]) => boolean> = {
+  'validator-shield': (p) => p.kind === 'staked',
+  'slashing-guard': (p) => p.kind === 'restaked',
+  'flash-swap': (p) => p.kind === 'lp',
+  'flash-loan': (p) => p.kind === 'supplied' && p.protocol === 'lending',
+  'emergency-shutdown': (p) => p.protocol === 'vault',
+};
+
+export function abilityName(side: SideState, ability: Ability | 'emergency-shutdown'): string {
+  const curated = side.portfolio.positions.some((p) => ABILITY_FN[ability](p) && p.venue !== undefined && CURATED_VENUE[ability].includes(p.venue));
+  return curated ? ABILITY_NAME[ability] : GENERIC_NAME[ability];
+}
+
+/** The curated venue for a protocol function, where the game puts a position nobody named (templates, the editor). */
+export const DEFAULT_VENUE: Record<string, string> = { staked: 'lido', restaked: 'eigenlayer', lp: 'uniswap', lending: 'aave', vault: 'maker' };
+
 /** Which protocol functions a side has a position in. */
 export function functionsHeld(side: SideState): Set<ProtocolFn> {
   const out = new Set<ProtocolFn>();

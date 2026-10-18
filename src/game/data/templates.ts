@@ -5,6 +5,7 @@
 
 import type { Catalog } from '../core/catalog.js';
 import { qtyFor } from '../core/fixed.js';
+import { DEFAULT_VENUE } from '../core/depth.js';
 import type { Archetype, AssetId, Portfolio, Position, PositionKind, ProtocolFn } from '../core/types.js';
 
 interface Slice {
@@ -85,10 +86,12 @@ export function templatePortfolio(archetype: Archetype, budget: number, catalog:
         protocol: 'dex',
         pairWith: s.pairWith,
         pairQty: qtyFor(dollars / 2, catalog.asset(s.pairWith).price),
+        venue: DEFAULT_VENUE.lp!,
       });
       continue;
     }
-    positions.push({ asset: s.asset, qty: qtyFor(dollars, price), kind: s.kind ?? 'spot', ...(s.protocol ? { protocol: s.protocol } : {}) });
+    const venue = s.kind ? DEFAULT_VENUE[s.kind === 'supplied' ? (s.protocol ?? 'lending') : s.kind] : undefined;
+    positions.push({ asset: s.asset, qty: qtyFor(dollars, price), kind: s.kind ?? 'spot', ...(s.protocol ? { protocol: s.protocol } : {}), ...(venue ? { venue } : {}) });
   }
   return { positions, nfts: [], relics: [null, null, null] };
 }

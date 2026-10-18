@@ -12,7 +12,7 @@ import type { Stage } from '../../castle/scene/castleView.js';
 import { el } from '../../util/dom.js';
 import { FRAME_EVERY, METRES_PER_SPEED, WALK_CLIP_SPEED, type BattleRun } from '../core/battle.js';
 import { UNIT_TYPES } from '../core/catalog.js';
-import { ABILITY_NAME } from '../core/depth.js';
+import { ABILITY_NAME, type Ability } from '../core/depth.js';
 import type { FieldMarkers } from './fieldMarkers.js';
 import type { BattleFx, Burst, Projectile } from './battleFx.js';
 import { BALANCE } from '../config/balance.js';
@@ -36,12 +36,16 @@ export interface BattleViewOptions {
   overlay: HTMLElement;
   /** A token's label for its banner. */
   symbol: (asset: string) => string;
+  /** A token's badge: its icon (an URL the page may load), else a disc in its colour. */
+  badge?: (asset: string) => { icon?: string; color: string };
   /** The battlefield buildings' rings and banners, to play the captures on. */
   markers?: FieldMarkers;
   /** The effects: sparks, projectiles, puffs, detonations. */
   fx?: BattleFx;
   /** Points the camera (the lane-follow view). */
   look?: (x: number, z: number) => void;
+  /** A side's name for an ability (a curated protocol's, or a generic one). */
+  abilityName?: (side: SideId, ability: Ability) => string;
 }
 
 /** An effect due at a moment of the battle. */
@@ -113,7 +117,7 @@ export class BattleView {
   #stopFrame: (() => void) | null = null;
   #onDone: (() => void) | null = null;
   #done = false;
-  #banners: { el: HTMLElement; side: SideId; squad: number; label: string }[] = [];
+  #banners: { el: HTMLElement; text: HTMLElement; side: SideId; squad: number; label: string }[] = [];
 
   constructor(opts: BattleViewOptions) {
     this.#opts = opts;
@@ -175,7 +179,7 @@ export class BattleView {
         const track = this.#tracks[e.id];
         if (track) track.death = Math.min(track.death, e.tick * tickDt);
       }
-      if (e.t === 'side-ability') this.#moments.push({ at: e.tick * tickDt, text: `${ABILITY_NAME[e.ability]}!`, side: e.side, shown: false });
+      if (e.t === 'side-ability') this.#moments.push({ at: e.tick * tickDt, text: `${this.#opts.abilityName?.(e.side, e.ability) ?? ABILITY_NAME[e.ability]}!`, side: e.side, shown: false });
       if (e.t === 'detonate') {
         const side = run.entities[e.id]?.side;
         if (side && !detonated.has(side)) {
@@ -211,10 +215,19 @@ export class BattleView {
     this.#labels.replaceChildren();
     armies.forEach((army) =>
       army.squads.forEach((sq, si) => {
-        const label = this.#opts.symbol(sq.asset);
-        const b = el('div', { class: `siege-banner siege-banner-${army.side}` }, label);
+        // stacked squads fight as entities of ×k units each (spec: "a banner showing N")
+        const k = Math.max(...(sq.stacks.length > 0 ? sq.stacks : [1]));
+        const label = `${this.#opts.symbol(sq.asset)}${k > 1 ? ` ×${k}` : ''}`;
+        const badge = this.#opts.badge?.(sq.asset);
+        const mark = badge?.icon
+          ? el('img', { class: 'siege-banner-icon', src: badge.icon, alt: '', width: '14', height: '14' })
+          : badge
+            ? Object.assign(el('span', { class: 'siege-banner-dot' }), { style: `background: ${badge.color}` })
+            : null;
+        const text = el('span', {}, label);
+        const b = el('div', { class: `siege-banner siege-banner-${army.side}` }, mark, text);
         this.#labels.append(b);
-        this.#banners.push({ el: b, side: army.side, squad: si, label });
+        this.#banners.push({ el: b, text, side: army.side, squad: si, label });
       }),
     );
     this.#stopFrame?.();
@@ -347,7 +360,7 @@ export class BattleView {
       b.el.hidden = !p;
       if (p) {
         b.el.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -100%)`;
-        b.el.textContent = `${b.label} ${sp.alive}`;
+        b.text.textContent = `${b.label} · ${sp.alive}`;
       }
     }
     this.#playCaptures(t);

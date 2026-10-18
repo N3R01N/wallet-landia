@@ -14,7 +14,7 @@ import { account, holdingsOf, positionValue } from '../core/ledger.js';
 import { CALM_RUMOR, EVENTS } from '../core/market.js';
 import type { Match } from '../core/match.js';
 import type { AssetId, Regime, SideId } from '../core/types.js';
-import { ABILITY_NAME, BUILDING_BUFF, BUILDING_NAME, abilitiesOf, canShutdown, homeAt, relicOf } from '../core/depth.js';
+import { BUILDING_BUFF, BUILDING_NAME, abilitiesOf, abilityName, canShutdown, homeAt, relicOf } from '../core/depth.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const usd = (n: number) => (Math.abs(n) >= 1000 ? `$${Math.round(n).toLocaleString('en-US')}` : `$${n.toFixed(n < 10 ? 2 : 0)}`);
@@ -169,8 +169,8 @@ export function fieldPanel(m: Match, side: SideId = 'A'): HTMLElement | null {
 /** Your protocol abilities (from your positions) and slotted relics, at today's tiers. */
 export function powersPanel(m: Match, side: SideId = 'A'): HTMLElement | null {
   const me = m.side(side);
-  const abilities = abilitiesOf(me).map((a) => ABILITY_NAME[a]);
-  if (canShutdown(me)) abilities.push(ABILITY_NAME['emergency-shutdown']);
+  const abilities = abilitiesOf(me).map((a) => abilityName(me, a));
+  if (canShutdown(me)) abilities.push(abilityName(me, 'emergency-shutdown'));
   if (abilities.length === 0 && me.portfolio.nfts.length === 0) return null;
   return el(
     'div',

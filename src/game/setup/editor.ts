@@ -7,6 +7,7 @@
 import { BALANCE } from '../config/balance.js';
 import { armyValue, buildArmy, unitValueFor } from '../core/army.js';
 import { Catalog, STAKES_INTO } from '../core/catalog.js';
+import { DEFAULT_VENUE } from '../core/depth.js';
 import { qmul, qtyFor, value } from '../core/fixed.js';
 import { holdingsOf, keepMaxFor, positionValue } from '../core/ledger.js';
 import type { Archetype, Asset, AssetId, Difficulty, NftHolding, Portfolio, PositionKind, ProtocolFn, SideState, Squad } from '../core/types.js';
@@ -92,7 +93,10 @@ export function addDollars(draft: Draft, assetId: AssetId, dollars: number, kind
   const qty = qtyFor(dollars, cat.asset(id).price);
   const pos = draft.portfolio.positions.find((p) => p.asset === id && p.kind === kind && p.protocol === protocol && p.pairWith === undefined);
   if (pos) pos.qty += qty;
-  else draft.portfolio.positions.push({ asset: id, qty, kind, ...(protocol ? { protocol } : {}) });
+  else {
+    const venue = kind === 'spot' ? undefined : DEFAULT_VENUE[kind === 'supplied' ? (protocol ?? 'lending') : kind];
+    draft.portfolio.positions.push({ asset: id, qty, kind, ...(protocol ? { protocol } : {}), ...(venue ? { venue } : {}) });
+  }
   return { ok: true };
 }
 

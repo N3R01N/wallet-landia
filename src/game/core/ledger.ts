@@ -9,6 +9,7 @@
 
 import { BALANCE } from '../config/balance.js';
 import { STAKES_INTO, UNSTAKES_INTO, type Catalog } from './catalog.js';
+import { DEFAULT_VENUE } from './depth.js';
 import { qmin, qmul, qn, qtyFor, value } from './fixed.js';
 import type { AssetId, Command, Liquidation, Position, PositionKind, ProtocolFn, SideState } from './types.js';
 
@@ -41,7 +42,11 @@ export function addPosition(side: SideState, asset: AssetId, kind: PositionKind,
   if (qty <= 0n) return;
   const p = side.portfolio.positions.find((x) => same(x, asset, kind, protocol));
   if (p) p.qty += qty;
-  else side.portfolio.positions.push({ asset, qty, kind, ...(protocol ? { protocol } : {}) });
+  else {
+    // a position opened in a match is held at the curated protocol of its kind (its ability takes that name)
+    const venue = kind === 'spot' ? undefined : DEFAULT_VENUE[kind === 'supplied' || kind === 'borrowed' ? (protocol ?? 'lending') : kind];
+    side.portfolio.positions.push({ asset, qty, kind, ...(protocol ? { protocol } : {}), ...(venue ? { venue } : {}) });
+  }
 }
 
 /** Takes qty from a position; false if there isn't that much. */
@@ -249,7 +254,7 @@ function run(side: SideState, cmd: Exclude<Command, { t: 'endTrade' }>, ctx: Led
       if (lp) {
         lp.qty += cmd.qty;
         lp.pairQty = (lp.pairQty ?? 0n) + qb;
-      } else side.portfolio.positions.push({ asset: cmd.a, qty: cmd.qty, kind: 'lp', protocol: 'dex', pairWith: cmd.b, pairQty: qb });
+      } else side.portfolio.positions.push({ asset: cmd.a, qty: cmd.qty, kind: 'lp', protocol: 'dex', pairWith: cmd.b, pairQty: qb, venue: DEFAULT_VENUE.lp! });
       return { ok: true };
     }
     case 'lpRemove': {

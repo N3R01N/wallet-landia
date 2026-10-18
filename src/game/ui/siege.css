@@ -599,3 +599,24 @@
   font: inherit;
   font-size: 0.82rem;
 }
+
+.siege-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.siege-banner-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.siege-banner-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+}

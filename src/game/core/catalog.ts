@@ -18,6 +18,7 @@ interface AssetRow {
   stable?: boolean;
   collateral?: boolean;
   address?: string;
+  color?: string;
 }
 
 export const BASE_ASSETS: readonly Asset[] = (assetsJson.assets as AssetRow[]).map((r) => ({
@@ -31,6 +32,7 @@ export const BASE_ASSETS: readonly Asset[] = (assetsJson.assets as AssetRow[]).m
   ...(r.unit ? { curatedUnit: r.unit } : {}),
   ...(r.follows ? { follows: r.follows } : {}),
   ...(r.address ? { address: r.address.toLowerCase() } : {}),
+  ...(r.color ? { color: r.color } : {}),
 }));
 
 export const UNIT_TYPES: Readonly<Record<UnitTypeId, UnitType>> = Object.fromEntries(
