@@ -119,6 +119,9 @@ export const RULES = {
   /** Prices step this often (s), with a game day's moves spread over this many seconds. */
   priceStep: 1,
   daySeconds: 20,
+  /** Units a player may have (alive and in training), and a building's queue. */
+  unitCap: 150,
+  queueMax: 5,
   /** How much of a building's cost comes back when a build is cancelled. */
   refund: 1,
 } as const;

@@ -1,15 +1,25 @@
 /**
  * Ledger Wars (rts.html): the start screen, then the match: the World ticked
- * at a fixed rate, the view drawn every frame, the HUD a few times a second,
- * and the mouse turned into commands (docs/rts/PLAN.md).
+ * at a fixed rate, the view drawn every frame (units between the ticks), the
+ * HUD a few times a second, and the mouse and keys turned into commands
+ * (docs/rts/PLAN.md).
+ *
+ *   left click        select a unit or a building (shift: add units)
+ *   left drag         select your units in the box
+ *   double-click      all your units of that type in view
+ *   right click       move there, or attack what is under the cursor;
+ *                     with a building of yours selected: its rally point
+ *   A then click      attack-move;  S stop;  H hold;  Esc clear
  */
 
 import { ModelLibrary } from '../castle/assets/models.js';
 import { loadCastleTheme, themeFromUrl } from '../castle/assets/theme.js';
 import { el } from '../util/dom.js';
-import { RULES, START_KITS, type BuildingKind, type PlayerId, type StartKit } from './data/rules.js';
+import { RULES, START_KITS, TRAIN, type BuildingKind, type PlayerId, type StartKit } from './data/rules.js';
 import { World, type Command } from './core/world.js';
+import type { OrderKind, Unit } from './core/units.js';
 import { RtsView } from './render/view.js';
+import { UnitLayer } from './render/unitLayer.js';
 import { Hud } from './ui/hud.js';
 import './rts.css';
 
@@ -41,9 +51,24 @@ async function play(kit: StartKit): Promise<void> {
   const seed = new URLSearchParams(location.search).get('seed') ?? Math.random().toString(36).slice(2, 10);
   const world = new World({ seed, kits: { A: kit, B: kit } });
   const view = new RtsView(library);
-  let selected: number | null = null;
+  const layer = new UnitLayer(view);
+  layer.preload(TRAIN.filter((t) => t.level === 1 && t.at === 'hall').map((t) => t.unit));
+  const selection = new Set<number>();
+  let building: number | null = null;
   let placing: BuildingKind | null = null;
+  let armed = false;
   const send = (cmd: Command) => world.command(ME, cmd);
+  const selectedUnits = () => world.units.filter((u) => selection.has(u.id) && u.died < 0);
+  const order = (kind: OrderKind | 'armAttack') => {
+    const units = selectedUnits();
+    if (units.length === 0) return;
+    if (kind === 'armAttack') {
+      armed = true;
+      view.canvas.style.cursor = 'crosshair';
+      return;
+    }
+    send({ t: 'order', units: units.map((u) => u.id), kind });
+  };
   const hud = new Hud({
     world,
     me: ME,
@@ -52,63 +77,183 @@ async function play(kit: StartKit): Promise<void> {
       placing = kind;
       view.canvas.focus();
     },
-    selected: () => world.buildings.find((b) => b.id === selected) ?? null,
+    selection: () => ({ units: selectedUnits(), building: world.buildings.find((b) => b.id === building) ?? null }),
+    order,
   });
-  app.replaceChildren(el('div', { class: 'rts', 'data-ready': 'false' }, view.canvas, hud.element));
+  const box = el('div', { class: 'rts-box' });
+  box.hidden = true;
+  app.replaceChildren(el('div', { class: 'rts', 'data-ready': 'false' }, view.canvas, box, hud.element));
   view.focus(RULES.start[ME].x, RULES.start[ME].z - 10);
   await view.build(world);
   app.querySelector('.rts')!.setAttribute('data-ready', 'true');
   view.canvas.focus();
 
-  // the mouse: placing, or selecting
-  let last: { x: number; y: number } = { x: 0, y: 0 };
+  const clearSelection = () => {
+    selection.clear();
+    building = null;
+  };
+  /** The unit nearest a point of the page, within reach of the pointer (yours first if both). */
+  const unitAt = (x: number, y: number): Unit | null => {
+    let best: Unit | null = null;
+    let bestD = 22;
+    for (const u of world.units) {
+      if (u.died >= 0) continue;
+      const p = view.toScreen(u.x, 1, u.z);
+      if (!p) continue;
+      const d = Math.hypot(p.x - x, p.y - y) - (u.owner === ME ? 4 : 0);
+      if (d < bestD) {
+        bestD = d;
+        best = u;
+      }
+    }
+    return best;
+  };
+  const enemyBuildingAt = (x: number, y: number) => {
+    const id = view.buildingAt(x, y);
+    const b = world.buildings.find((x2) => x2.id === id);
+    return b && b.owner !== ME ? b : null;
+  };
+
+  // the mouse
+  let last = { x: 0, y: 0 };
+  let drag: { x: number; y: number } | null = null;
+  let lastClick = { t: 0, unit: -1 };
   view.canvas.addEventListener('pointermove', (e) => {
     last = { x: e.clientX, y: e.clientY };
+    if (!drag) return;
+    const r = app.getBoundingClientRect();
+    const x0 = Math.min(drag.x, e.clientX);
+    const y0 = Math.min(drag.y, e.clientY);
+    const w = Math.abs(e.clientX - drag.x);
+    const h = Math.abs(e.clientY - drag.y);
+    box.hidden = w < 6 && h < 6;
+    Object.assign(box.style, { left: `${x0 - r.left}px`, top: `${y0 - r.top}px`, width: `${w}px`, height: `${h}px` });
   });
   view.canvas.addEventListener('pointerdown', (e) => {
-    if (e.button === 2 || (e.button === 0 && placing === null)) {
-      if (e.button === 2) {
+    view.canvas.focus();
+    if (e.button === 2) {
+      if (placing || armed) {
         placing = null;
+        armed = false;
+        view.canvas.style.cursor = '';
         void view.ghost(null);
         return;
       }
-      selected = view.buildingAt(e.clientX, e.clientY);
-      view.select(world.buildings.find((b) => b.id === selected) ?? null);
-      hud.render();
+      const units = selectedUnits();
+      if (units.length > 0) {
+        const foe = unitAt(e.clientX, e.clientY);
+        const target = foe && foe.owner !== ME ? foe.id : (enemyBuildingAt(e.clientX, e.clientY)?.id ?? null);
+        if (target !== null) send({ t: 'order', units: units.map((u) => u.id), kind: 'attack', target });
+        else {
+          const at = view.groundAt(e.clientX, e.clientY);
+          if (at) {
+            send({ t: 'order', units: units.map((u) => u.id), kind: 'move', x: at.x, z: at.z });
+            view.marker(at.x, at.z, 0x7cf07c);
+          }
+        }
+        return;
+      }
+      const b = world.buildings.find((x) => x.id === building);
+      const at = view.groundAt(e.clientX, e.clientY);
+      if (b && b.owner === ME && at && TRAIN.some((t) => t.at === b.kind)) {
+        send({ t: 'rally', id: b.id, x: at.x, z: at.z });
+        view.marker(at.x, at.z, 0xffe08a);
+      }
       return;
     }
-    if (e.button !== 0 || !placing) return;
-    const at = view.groundAt(e.clientX, e.clientY);
-    if (!at) return;
-    const r = send({ t: 'place', x: at.x, z: at.z });
-    if (!r.ok) hud.say(r.reason ?? 'not there');
-    else {
-      placing = null;
-      void view.ghost(null);
+    if (e.button !== 0) return;
+    if (armed) {
+      armed = false;
+      view.canvas.style.cursor = '';
+      const units = selectedUnits();
+      const at = view.groundAt(e.clientX, e.clientY);
+      if (units.length > 0 && at) {
+        send({ t: 'order', units: units.map((u) => u.id), kind: 'attackMove', x: at.x, z: at.z });
+        view.marker(at.x, at.z, 0xff6b5a);
+      }
+      return;
     }
+    if (placing) {
+      const at = view.groundAt(e.clientX, e.clientY);
+      if (!at) return;
+      const r = send({ t: 'place', x: at.x, z: at.z });
+      if (!r.ok) hud.say(r.reason ?? 'not there');
+      else {
+        placing = null;
+        void view.ghost(null);
+      }
+      return;
+    }
+    drag = { x: e.clientX, y: e.clientY };
+    view.canvas.setPointerCapture(e.pointerId);
+  });
+  view.canvas.addEventListener('pointerup', (e) => {
+    if (e.button !== 0 || !drag) return;
+    const start = drag;
+    drag = null;
+    box.hidden = true;
+    const boxed = Math.abs(e.clientX - start.x) > 6 || Math.abs(e.clientY - start.y) > 6;
+    if (!e.shiftKey) clearSelection();
+    if (boxed) {
+      const x0 = Math.min(start.x, e.clientX);
+      const x1 = Math.max(start.x, e.clientX);
+      const y0 = Math.min(start.y, e.clientY);
+      const y1 = Math.max(start.y, e.clientY);
+      for (const u of world.units) {
+        if (u.owner !== ME || u.died >= 0) continue;
+        const p = view.toScreen(u.x, 0.8, u.z);
+        if (p && p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) selection.add(u.id);
+      }
+      building = null;
+    } else {
+      const u = unitAt(e.clientX, e.clientY);
+      if (u && u.owner === ME) {
+        const now = performance.now();
+        if (now - lastClick.t < 350 && lastClick.unit === u.id) {
+          // all of that type in view
+          for (const v of world.units) {
+            if (v.owner !== ME || v.type !== u.type || v.died >= 0) continue;
+            const p = view.toScreen(v.x, 0.8, v.z);
+            const r = view.canvas.getBoundingClientRect();
+            if (p && p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom) selection.add(v.id);
+          }
+        } else selection.add(u.id);
+        lastClick = { t: now, unit: u.id };
+        building = null;
+      } else if (selection.size === 0) building = view.buildingAt(e.clientX, e.clientY);
+    }
+    hud.render();
   });
   view.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
+  view.canvas.addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    if (k === 'escape') {
       placing = null;
+      armed = false;
+      view.canvas.style.cursor = '';
       void view.ghost(null);
-      selected = null;
-      view.select(null);
-    }
+      clearSelection();
+    } else if (k === 'a') order('armAttack');
+    else if (k === 's') order('stop');
+    else if (k === 'h') order('hold');
   });
 
   // time: fixed ticks, the view every frame, the HUD five times a second
   let acc = 0;
   let hudClock = 0;
+  const tick = 1 / RULES.tickHz;
   view.onFrame((dt) => {
     acc += dt;
-    while (acc >= 1 / RULES.tickHz) {
+    while (acc >= tick) {
       world.step();
-      acc -= 1 / RULES.tickHz;
+      acc -= tick;
     }
     const events = world.takeEvents();
     if (events.some((e) => e.t === 'placed' || e.t === 'upgraded')) void view.sync(world);
-    for (const e of events) if (e.t === 'built' && e.owner === ME) hud.say(`${e.kind === 'hall' ? 'The hall' : 'A building'} is ready: place it.`);
+    for (const e of events) {
+      if (e.t === 'built' && e.owner === ME) hud.say('A building is ready: place it.');
+      if (e.t === 'liquidated' && e.owner === ME) hud.say('⚠ A loan was liquidated!');
+    }
     if (placing) {
       const at = view.groundAt(last.x, last.y);
       if (at) {
@@ -116,7 +261,11 @@ async function play(kit: StartKit): Promise<void> {
         void view.ghost(placing, s.x, s.z, world.cantPlace(ME, placing, s.x, s.z) === null);
       }
     }
-    view.select(world.buildings.find((b) => b.id === selected) ?? null);
+    for (const id of selection) if (!world.units.some((u) => u.id === id && u.died < 0)) selection.delete(id);
+    const b = world.buildings.find((x) => x.id === building) ?? null;
+    view.select(selection.size === 0 ? b : null);
+    view.rally(selection.size === 0 && b?.owner === ME ? b.rally : null);
+    layer.draw(world.units, acc / tick, dt, selection, ME);
     hudClock += dt;
     if (hudClock > 0.2) {
       hudClock = 0;
@@ -125,7 +274,7 @@ async function play(kit: StartKit): Promise<void> {
   });
   hud.render();
   // test hook (dev server only)
-  if (import.meta.env.DEV) Object.assign(window, { rts: { world, view, send } });
+  if (import.meta.env.DEV) Object.assign(window, { rts: { world, view, send, selection } });
 }
 
 startScreen();

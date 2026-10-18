@@ -2,11 +2,15 @@
  * Ledger Wars' HUD: the treasury along the top (each token, its dollars, the
  * total; the clock and the market), the hall's build menu at the bottom left
  * (C&C style: pick, wait, place), and the selection panel at the bottom
- * right. It reads the World and sends commands through `send`.
+ * right: a building's level, upgrade, money actions and training, or the
+ * selected units and their orders. It reads the World and sends commands
+ * through `send`.
  */
 
 import { el } from '../../util/dom.js';
-import { BUILDINGS, BUILDING_KINDS, TOKEN_IDS, TOKENS, type BuildingKind, type PlayerId } from '../data/rules.js';
+import { BUILDINGS, BUILDING_KINDS, RULES, TOKEN_IDS, TOKENS, TRAIN, type BuildingKind, type PlayerId } from '../data/rules.js';
+import { UNIT_TYPES } from '../../game/core/catalog.js';
+import type { OrderKind, Unit } from '../core/units.js';
 import type { Building, Command, Result, World } from '../core/world.js';
 import { incomePerMinute, positionValue } from '../core/economy.js';
 import { actions, actionsKey, type ActionContext, type Live } from './actions.js';
@@ -17,7 +21,10 @@ export interface HudOptions {
   send: (cmd: Command) => Result;
   /** Start placing what the hall finished (the view shows the ghost). */
   onPlace: (kind: BuildingKind) => void;
-  selected: () => Building | null;
+  /** What is selected: units (yours), or one building. */
+  selection: () => { units: Unit[]; building: Building | null };
+  /** An order for the selected units from the panel (attack-move arms the next click). */
+  order: (kind: OrderKind | 'armAttack') => void;
 }
 
 const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
@@ -73,15 +80,24 @@ export class Hud {
 
     // the hall's construction (rebuilt when what it offers changes; the timers tick in place)
     const whys = BUILDING_KINDS.filter((k) => k !== 'hall').map((k) => w.cantBuild(this.#o.me, k));
-    const s = this.#o.selected();
+    const sel = this.#o.selection();
+    const s = sel.units.length > 0 ? null : sel.building;
     const upWhy = s && s.owner === this.#o.me ? w.cantUpgrade(this.#o.me, s) : null;
     const buildKey = JSON.stringify([me.build?.kind, me.ready, whys]);
-    const infoKey = JSON.stringify(s ? [s.id, s.level, s.upgrading?.to, upWhy, s.owner, s.owner === this.#o.me ? actionsKey(w, this.#o.me, s) : ''] : null);
+    const mine = s?.owner === this.#o.me;
+    const infoKey = JSON.stringify(
+      sel.units.length > 0
+        ? ['units', countByType(sel.units)]
+        : s
+          ? [s.id, s.level, s.upgrading?.to, upWhy, s.owner, mine ? actionsKey(w, this.#o.me, s) : '', s.queue.map((q) => q.unit), mine ? TRAIN.filter((t) => t.at === s.kind).map((t) => w.cantTrain(this.#o.me, s, t.unit)) : []]
+          : null,
+    );
     if (buildKey !== this.#keys.build || infoKey !== this.#keys.info) {
       this.#live = [];
       this.#liveText = [];
       if (buildKey !== this.#keys.build) this.#renderBuild(whys);
-      this.#renderInfo(s, upWhy);
+      if (sel.units.length > 0) this.#renderUnits(sel.units);
+      else this.#renderInfo(s, upWhy);
       this.#keys = { build: buildKey, info: infoKey };
     }
     for (const l of this.#live) {
@@ -127,7 +143,10 @@ export class Hud {
 
   #renderInfo(s: Building | null, why: string | null): void {
     if (!s) {
-      this.#info.replaceChildren(el('p', { class: 'rts-hint' }, 'Click a building to select it. WASD or the arrows to move, the wheel to zoom, Q/E to turn.'));
+      this.#info.replaceChildren(
+        el('p', { class: 'rts-hint' }, 'Click a building or a unit to select it; drag a box round units. Right-click to move or attack. A: attack-move, S: stop, H: hold.'),
+        el('p', { class: 'rts-hint' }, 'The arrows, the screen’s edges or the middle button move the view; the wheel zooms; Q/E turn.'),
+      );
       return;
     }
     const r = BUILDINGS[s.kind];
@@ -159,9 +178,55 @@ export class Hud {
         },
         live: this.#liveText,
       };
-      parts.push(...actions(ctx, s));
+      parts.push(...actions(ctx, s), ...this.#training(s));
     }
     this.#info.replaceChildren(...parts);
+  }
+
+  /** What a building of yours trains: a button each (cost, time, or why not), the queue, and the rally point. */
+  #training(b: Building): HTMLElement[] {
+    const w = this.#o.world;
+    const rules = TRAIN.filter((t) => t.at === b.kind);
+    if (rules.length === 0) return [];
+    const out: HTMLElement[] = [el('h3', {}, 'Train')];
+    const grid = el('div', { class: 'rts-build-grid' });
+    for (const t of rules) {
+      const u = UNIT_TYPES[t.unit]!;
+      const why = w.cantTrain(this.#o.me, b, t.unit);
+      const cost = RULES.unitValue * u.costMult;
+      const btn = el('button', { class: 'rts-build-item rts-train', type: 'button', 'data-unit': t.unit, title: why ?? `${u.name}: ${u.role}, ${u.hp} HP, ${u.atk} attack` }, el('strong', {}, u.name), el('span', {}, `${usd(cost)} in ${TOKENS[t.token].symbol} · ${t.time} s`));
+      btn.toggleAttribute('disabled', why !== null);
+      btn.addEventListener('click', () => this.#send({ t: 'train', id: b.id, unit: t.unit }));
+      grid.append(btn);
+    }
+    out.push(grid);
+    if (b.queue.length > 0) {
+      const first = b.queue[0]!;
+      const text = el('span', {});
+      const bar = progress(0);
+      this.#live.push({ text, bar, read: () => (b.queue[0] === first ? [`${UNIT_TYPES[first.unit]!.name} ${Math.ceil(first.left)} s`, 1 - first.left / first.total] : null) });
+      const cancel = el('button', { class: 'btn rts-tap', type: 'button' }, 'Cancel last');
+      cancel.addEventListener('click', () => this.#send({ t: 'cancelTrain', id: b.id }));
+      out.push(el('div', { class: 'rts-progress-row rts-queue' }, text, bar, cancel), el('p', { class: 'rts-why' }, `Queue: ${b.queue.map((q) => UNIT_TYPES[q.unit]!.name).join(', ')}`));
+    }
+    out.push(el('p', { class: 'rts-why' }, b.rally ? 'New units walk to the rally flag. Right-click the ground to move it.' : 'Right-click the ground to set where new units go.'));
+    return out;
+  }
+
+  /** The selected units: how many of each, and their orders. */
+  #renderUnits(units: Unit[]): void {
+    const counts = countByType(units);
+    const btn = (label: string, kind: OrderKind | 'armAttack', cls: string) => {
+      const b = el('button', { class: `btn rts-tap ${cls}`, type: 'button' }, label);
+      b.addEventListener('click', () => this.#o.order(kind));
+      return b;
+    };
+    this.#info.replaceChildren(
+      el('h2', {}, `${units.length} unit${units.length === 1 ? '' : 's'}`),
+      el('div', { class: 'rts-unit-list' }, ...counts.map(([type, n]) => el('span', { class: 'rts-unit-count' }, `${n} × ${UNIT_TYPES[type]!.name}`))),
+      el('div', { class: 'rts-row' }, btn('⚔ Attack-move (A)', 'armAttack', 'rts-attack-move'), btn('■ Stop (S)', 'stop', 'rts-stop'), btn('⛨ Hold (H)', 'hold', 'rts-hold')),
+      el('p', { class: 'rts-why' }, 'Right-click the ground to move, an enemy to attack it. Attack-move fights whatever it meets on the way; hold stands and fights only what comes in reach.'),
+    );
   }
 
   #send(cmd: Command): void {
@@ -175,4 +240,10 @@ function progress(fraction: number, cls = ''): HTMLElement {
   return Object.assign(el('span', { class: `rts-bar ${cls}`, role: 'progressbar', 'aria-valuenow': String(Math.round(fraction * 100)), 'aria-valuemin': '0', 'aria-valuemax': '100' }), {
     style: `--p: ${Math.max(0, Math.min(1, fraction))}`,
   });
+}
+
+function countByType(units: readonly Unit[]): [string, number][] {
+  const m = new Map<string, number>();
+  for (const u of units) m.set(u.type, (m.get(u.type) ?? 0) + 1);
+  return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 }

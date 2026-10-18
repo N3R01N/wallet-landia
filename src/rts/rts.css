@@ -243,3 +243,23 @@
   color: #3f6a2e;
   font-weight: 600;
 }
+
+/* the selection box, and the units' panel */
+
+.rts-box {
+  position: absolute;
+  border: 1px solid #7cf07c;
+  background: rgba(124, 240, 124, 0.12);
+  pointer-events: none;
+}
+
+.rts-box[hidden] {
+  display: none;
+}
+
+.rts-unit-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+}

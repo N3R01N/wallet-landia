@@ -86,3 +86,50 @@ test('the economy: at the Exchange a swap, at the Staking House a stake that ear
   expect(errors).toEqual([]);
 });
 
+test('units: trained at the hall, box-selected, sent across the map with a right click', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/rts.html?seed=e2e');
+  await page.locator('.rts-kit[data-kit="usdc"]').click();
+  await expect(page.locator('.rts[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
+  type R = { rts: { world: { step(): void; units: { id: number; x: number; z: number; owner: string; order: { t: string } }[] }; selection: Set<number>; view: { toScreen(x: number, y: number, z: number): { x: number; y: number } | null; buildingAt(x: number, y: number): number | null } } };
+  const screen = (x: number, y: number, z: number) => page.evaluate(([a, b, c]) => (window as unknown as R).rts.view.toScreen(a, b, c), [x, y, z] as const);
+  // the hall, selected: its Train buttons
+  const hall = (await screen(0, 3, 62))!;
+  await expect.poll(() => page.evaluate(([x, y]) => (window as unknown as R).rts.view.buildingAt(x, y), [hall.x, hall.y] as const)).not.toBeNull();
+  await page.mouse.click(hall.x, hall.y);
+  const train = page.locator('.rts-train[data-unit="militia"]');
+  for (let i = 0; i < 3; i++) await train.click();
+  await expect(page.locator('.rts-queue')).toContainText('Militia');
+  await page.evaluate(() => {
+    const w = (window as unknown as R).rts.world;
+    for (let i = 0; i < 20 * 20; i++) w.step();
+  });
+  await expect.poll(() => page.evaluate(() => (window as unknown as R).rts.world.units.length)).toBe(3);
+  // a box round them
+  const pts = await page.evaluate(() => (window as unknown as R).rts.world.units.map((u) => (window as unknown as R).rts.view.toScreen(u.x, 0.8, u.z)!));
+  const x0 = Math.min(...pts.map((p) => p.x)) - 30;
+  const y0 = Math.min(...pts.map((p) => p.y)) - 30;
+  const x1 = Math.max(...pts.map((p) => p.x)) + 30;
+  const y1 = Math.max(...pts.map((p) => p.y)) + 30;
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  await page.mouse.move(x1, y1, { steps: 4 });
+  await page.mouse.up();
+  await expect(page.locator('.rts-info h2')).toContainText('3 units');
+  // right click the ground ahead: they go
+  const goal = (await screen(0, 0, 40))!;
+  await page.mouse.click(goal.x, goal.y, { button: 'right' });
+  await page.evaluate(() => {
+    const w = (window as unknown as R).rts.world;
+    for (let i = 0; i < 15 * 20; i++) w.step();
+  });
+  const units = await page.evaluate(() => (window as unknown as R).rts.world.units.map((u) => ({ z: u.z, order: u.order.t })));
+  for (const u of units) {
+    expect(u.order).toBe('idle');
+    expect(Math.abs(u.z - 40)).toBeLessThan(5);
+  }
+  expect(errors).toEqual([]);
+});
+

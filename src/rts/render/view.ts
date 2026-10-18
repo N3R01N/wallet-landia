@@ -1,8 +1,9 @@
 /**
  * Ledger Wars' 3D view: the map (ground, river, bridges, scenery), the
  * buildings in their owners' colours and levels, a placement ghost, a
- * selection ring, and an RTS camera (WASD or arrows or middle-drag to pan,
- * the wheel to zoom, Q/E to turn). It draws what the World says; it changes
+ * selection ring, the rally flag, click markers, and an RTS camera (the
+ * arrows, the screen's edges or middle-drag to pan, the wheel to zoom, Q/E
+ * to turn). It draws what the World says; it changes
  * nothing in it.
  */
 
@@ -57,6 +58,10 @@ export class RtsView {
   readonly #ray = new THREE.Raycaster();
   readonly #groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   readonly #sun: THREE.DirectionalLight;
+  readonly #markers: { obj: THREE.Mesh; age: number }[] = [];
+  #flag: THREE.Object3D | null = null;
+  /** The pointer over the canvas (for edge scrolling), or null when it has left. */
+  #pointer: { x: number; y: number } | null = null;
 
   constructor(library: ModelLibrary) {
     this.#library = library;
@@ -243,6 +248,34 @@ export class RtsView {
     this.#ring.scale.setScalar(r);
   }
 
+  /** A ring that shrinks away where an order went. */
+  marker(x: number, z: number, color: number): void {
+    const obj = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.9, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false }));
+    obj.position.set(x, 0.08, z);
+    obj.renderOrder = 3;
+    this.scene.add(obj);
+    this.#markers.push({ obj, age: 0 });
+  }
+
+  /** The rally flag of the selected building (null: none). */
+  rally(at: { x: number; z: number } | null): void {
+    if (!at) {
+      if (this.#flag) this.#flag.visible = false;
+      return;
+    }
+    if (!this.#flag) {
+      const loaded = this.#loaded.get('prop.banner.owner');
+      if (loaded === undefined) {
+        void this.load('prop.banner.owner');
+        return;
+      }
+      this.#flag = loaded ? loaded.scene.clone(true) : new THREE.Mesh(new THREE.ConeGeometry(0.3, 1.6), new THREE.MeshStandardMaterial({ color: 0xffe08a }));
+      this.scene.add(this.#flag);
+    }
+    this.#flag.visible = true;
+    this.#flag.position.set(at.x, 0, at.z);
+  }
+
   /** The point on the ground under a point of the page (null: none). */
   groundAt(clientX: number, clientY: number): { x: number; z: number } | null {
     this.#aim(clientX, clientY);
@@ -294,6 +327,8 @@ export class RtsView {
     c.addEventListener('keydown', (e) => this.#keys.add(e.key.toLowerCase()));
     c.addEventListener('keyup', (e) => this.#keys.delete(e.key.toLowerCase()));
     c.addEventListener('blur', () => this.#keys.clear());
+    c.addEventListener('pointermove', (e) => (this.#pointer = { x: e.clientX, y: e.clientY }));
+    c.addEventListener('pointerleave', () => (this.#pointer = null));
     c.addEventListener(
       'wheel',
       (e) => {
@@ -337,10 +372,14 @@ export class RtsView {
     const dt = Math.min(0.1, this.#timer.getDelta());
     const k = this.#keys;
     const speed = this.#dist * 0.9 * dt;
-    if (k.has('w') || k.has('arrowup')) this.#pan(0, -speed);
-    if (k.has('s') || k.has('arrowdown')) this.#pan(0, speed);
-    if (k.has('a') || k.has('arrowleft')) this.#pan(-speed, 0);
-    if (k.has('d') || k.has('arrowright')) this.#pan(speed, 0);
+    // the arrows, or the pointer at the canvas's edge
+    const r = this.canvas.getBoundingClientRect();
+    const p = this.#pointer;
+    const edge = 14;
+    if (k.has('arrowup') || (p && p.y < r.top + edge)) this.#pan(0, -speed);
+    if (k.has('arrowdown') || (p && p.y > r.bottom - edge)) this.#pan(0, speed);
+    if (k.has('arrowleft') || (p && p.x < r.left + edge)) this.#pan(-speed, 0);
+    if (k.has('arrowright') || (p && p.x > r.right - edge)) this.#pan(speed, 0);
     if (k.has('q')) this.#yaw -= dt * 1.5;
     if (k.has('e')) this.#yaw += dt * 1.5;
     this.#pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, this.#pitch));
@@ -350,6 +389,16 @@ export class RtsView {
     this.#sun.position.set(t.x + 30, 60, t.z + 20);
     this.#sun.target.position.copy(t);
     for (const m of this.#mixers) m.update(dt);
+    for (const m of [...this.#markers]) {
+      m.age += dt;
+      m.obj.scale.setScalar(Math.max(0.05, 1 - m.age * 1.6));
+      if (m.age > 0.6) {
+        m.obj.removeFromParent();
+        m.obj.geometry.dispose();
+        (m.obj.material as THREE.Material).dispose();
+        this.#markers.splice(this.#markers.indexOf(m), 1);
+      }
+    }
     for (const f of [...this.#frame]) f(dt);
     const w = this.canvas.clientWidth || 1;
     const h = this.canvas.clientHeight || 1;

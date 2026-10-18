@@ -7,9 +7,13 @@
  */
 
 import { streamOf, type Rng } from '../../game/core/detmath.js';
-import { BUILDINGS, aName, RULES, START_KITS, STABLES, TOKEN_IDS, TOKENS, type BuildingKind, type PlayerId, type StartKit, type TokenId } from '../data/rules.js';
+import { BUILDINGS, aName, RULES, TRAIN, type TrainRule, START_KITS, STABLES, TOKEN_IDS, TOKENS, type BuildingKind, type PlayerId, type StartKit, type TokenId } from '../data/rules.js';
 import { generateMap, markRect, type GameMap, cellOf } from './map.js';
 import { openingMarket, stepMarket, type Market } from './market.js';
+import { Paths } from './path.js';
+import { formation, newUnit, separate, walk, type OrderKind, type Unit } from './units.js';
+import { UNIT_TYPES } from '../../game/core/catalog.js';
+import type { UnitTypeId } from '../../game/core/types.js';
 import { accrue, applyEcon, ECON_COMMANDS, liquidate, type EconCommand, type EconWorld, type Position } from './economy.js';
 
 export interface Building {
@@ -23,6 +27,10 @@ export interface Building {
   maxHp: number;
   /** An upgrade under way: the level it goes to and the seconds left. */
   upgrading: { to: number; left: number; total: number } | null;
+  /** Units in training, the first one under way. */
+  queue: { unit: UnitTypeId; left: number; total: number }[];
+  /** Where its new units walk to (null: they stay by the door). */
+  rally: { x: number; z: number } | null;
 }
 
 export interface Player {
@@ -41,7 +49,12 @@ export type BuildCommand =
   | { t: 'build'; kind: BuildingKind }
   | { t: 'cancelBuild' }
   | { t: 'place'; x: number; z: number }
-  | { t: 'upgrade'; id: number };
+  | { t: 'upgrade'; id: number }
+  | { t: 'train'; id: number; unit: UnitTypeId }
+  | { t: 'cancelTrain'; id: number }
+  | { t: 'rally'; id: number; x: number; z: number }
+  /** Units ordered: to a point (move, attack-move), at a target (attack), or to stop or hold. */
+  | { t: 'order'; units: number[]; kind: OrderKind; x?: number; z?: number; target?: number };
 
 export type Command = BuildCommand | EconCommand;
 
@@ -56,7 +69,8 @@ export type WorldEvent =
   | { t: 'built'; owner: PlayerId; kind: BuildingKind }
   | { t: 'upgraded'; id: number }
   | { t: 'paid'; owner: PlayerId; usd: number }
-  | { t: 'liquidated'; owner: PlayerId; count: number };
+  | { t: 'liquidated'; owner: PlayerId; count: number }
+  | { t: 'trained'; id: number };
 
 export interface WorldSetup {
   seed: string;
@@ -73,6 +87,8 @@ export class World {
   readonly market: Market;
   readonly players: Record<PlayerId, Player>;
   readonly buildings: Building[] = [];
+  readonly units: Unit[] = [];
+  readonly paths: Paths;
   tick = 0;
   winner: PlayerId | null = null;
   readonly log: { tick: number; player: PlayerId; cmd: Command }[] = [];
@@ -86,6 +102,7 @@ export class World {
   constructor(setup: WorldSetup) {
     this.seed = setup.seed;
     this.map = generateMap(setup.seed);
+    this.paths = new Paths(this.map);
     this.market = openingMarket();
     this.#rng = streamOf(setup.seed, 'rts-world');
     this.still = setup.still ?? false;
@@ -241,7 +258,76 @@ export class World {
         b.upgrading = { to: b.level + 1, left: r.upgradeTime, total: r.upgradeTime };
         return { ok: true };
       }
+      case 'train': {
+        const b = this.buildings.find((x) => x.id === c.id);
+        if (!b) return { ok: false, reason: 'no such building' };
+        const why = this.cantTrain(p, b, c.unit);
+        if (why) return { ok: false, reason: why };
+        const rule = TRAIN.find((t) => t.unit === c.unit)!;
+        me.tokens[rule.token] -= this.unitCost(rule);
+        b.queue.push({ unit: c.unit, left: rule.time, total: rule.time });
+        return { ok: true };
+      }
+      case 'cancelTrain': {
+        const b = this.buildings.find((x) => x.id === c.id && x.owner === p);
+        const last = b?.queue.pop();
+        if (!last) return { ok: false, reason: 'nothing in training' };
+        const rule = TRAIN.find((t) => t.unit === last.unit)!;
+        me.tokens[rule.token] += this.unitCost(rule);
+        return { ok: true };
+      }
+      case 'rally': {
+        const b = this.buildings.find((x) => x.id === c.id && x.owner === p);
+        if (!b) return { ok: false, reason: 'not your building' };
+        b.rally = { x: c.x, z: c.z };
+        return { ok: true };
+      }
+      case 'order': {
+        const mine = c.units.map((id) => this.units.find((u) => u.id === id)).filter((u): u is Unit => !!u && u.owner === p && u.died < 0);
+        if (mine.length === 0) return { ok: false, reason: 'no units' };
+        this.#order(mine, c);
+        return { ok: true };
+      }
     }
+  }
+
+  /** A unit's price in its token at today's price. */
+  unitCost(rule: TrainRule): number {
+    return (RULES.unitValue * UNIT_TYPES[rule.unit]!.costMult) / this.market.prices[rule.token];
+  }
+
+  /** Why this building can't train this unit now (null: it can). */
+  cantTrain(p: PlayerId, b: Building, unit: UnitTypeId): string | null {
+    const rule = TRAIN.find((t) => t.unit === unit);
+    if (!rule || rule.at !== b.kind) return `not trained at the ${BUILDINGS[b.kind].name}`;
+    if (b.owner !== p) return 'not yours';
+    if (b.level < rule.level) return `needs the ${BUILDINGS[b.kind].name} at level ${rule.level}`;
+    if (b.queue.length >= RULES.queueMax) return 'the queue is full';
+    if (this.units.filter((u) => u.owner === p && u.died < 0).length + this.buildings.filter((x) => x.owner === p).reduce((s, x) => s + x.queue.length, 0) >= RULES.unitCap) return `at most ${RULES.unitCap} units`;
+    if (this.players[p].tokens[rule.token] < this.unitCost(rule) - 1e-12) return `needs ${TOKENS[rule.token].symbol}`;
+    return null;
+  }
+
+  /** Spreads a group's order: moves into a formation round the point, the rest as they are. */
+  #order(units: Unit[], c: Extract<BuildCommand, { t: 'order' }>): void {
+    units.sort((a, b) => a.id - b.id);
+    for (const u of units) {
+      u.target = null;
+      u.best = Infinity;
+      u.stall = 0;
+    }
+    if ((c.kind === 'move' || c.kind === 'attackMove') && c.x !== undefined && c.z !== undefined) {
+      const cell = this.paths.nearestOpen(c.x, c.z, 16);
+      if (cell < 0) return;
+      const slots = formation(units, c.x, c.z, this.paths, this.map);
+      units.forEach((u, i) => (u.order = { t: 'move', x: slots[i]!.x, z: slots[i]!.z, cell, attack: c.kind === 'attackMove' }));
+      return;
+    }
+    if (c.kind === 'attack' && c.target !== undefined) {
+      for (const u of units) u.order = { t: 'attack', target: c.target };
+      return;
+    }
+    for (const u of units) u.order = c.kind === 'hold' ? { t: 'hold' } : { t: 'idle' };
   }
 
   /** One tick. */
@@ -279,14 +365,63 @@ export class World {
         this.#events.push({ t: 'upgraded', id: b.id });
       }
     }
+    // training: the first in each queue
+    for (const b of this.buildings) {
+      const first = b.queue[0];
+      if (!first || b.hp <= 0) continue;
+      first.left -= DT;
+      if (first.left > 1e-9) continue;
+      b.queue.shift();
+      this.#spawn(b, first.unit);
+    }
+    this.#moveUnits();
+  }
+
+  /** The units' walking (combat comes before it, in combat.ts's turn). */
+  #moveUnits(): void {
+    for (const u of this.units) {
+      u.px = u.x;
+      u.pz = u.z;
+      u.moving = false;
+      if (u.died >= 0) continue;
+      if (u.order.t === 'move' && walk(u, DT, this.paths)) u.order = { t: 'idle' };
+    }
+    separate(this.units, this.map);
+  }
+
+  /** A trained unit steps out of its building (on the side towards its rally point, or the middle) and walks to the rally point. */
+  #spawn(b: Building, type: UnitTypeId): void {
+    const toward = b.rally ?? { x: 0, z: 0 };
+    const f = BUILDINGS[b.kind].footprint;
+    let best: { x: number; z: number } | null = null;
+    let bestD = Infinity;
+    for (let r = f / 2 + 0.5; r < f / 2 + 4 && !best; r += 1) {
+      for (let a = 0; a < 24; a++) {
+        const x = b.x + Math.cos((a / 24) * Math.PI * 2) * r;
+        const z = b.z + Math.sin((a / 24) * Math.PI * 2) * r;
+        const c = cellOf(this.map, x, z);
+        if (c < 0 || this.map.blocked[c] !== 0) continue;
+        const d = Math.hypot(toward.x - x, toward.z - z);
+        if (d < bestD) {
+          bestD = d;
+          best = { x, z };
+        }
+      }
+    }
+    const at = best ?? { x: b.x, z: b.z + f };
+    const u = newUnit(this.#nextId++, type, b.owner, at.x, at.z);
+    this.units.push(u);
+    if (b.rally) this.#order([u], { t: 'order', units: [u.id], kind: 'move', x: b.rally.x, z: b.rally.z });
+    this.#events.push({ t: 'trained', id: u.id });
   }
 
   #add(kind: BuildingKind, owner: PlayerId, x: number, z: number): Building {
     const r = BUILDINGS[kind];
-    const b: Building = { id: this.#nextId++, kind, owner, x, z, level: 1, hp: r.hp, maxHp: r.hp, upgrading: null };
+    const b: Building = { id: this.#nextId++, kind, owner, x, z, level: 1, hp: r.hp, maxHp: r.hp, upgrading: null, queue: [], rally: null };
     this.buildings.push(b);
     const f = r.footprint;
     markRect(this.map, x - f / 2, z - f / 2, x + f / 2, z + f / 2, 2);
+    this.paths?.invalidate();
     this.#events.push({ t: 'placed', id: b.id });
     return b;
   }
