@@ -106,6 +106,8 @@ export interface Errand {
   collateralBack?: Goods;
   /** How fast its courier walks, against the usual pace (a game mode's: the siege's gas spike); 1 when absent. */
   pace?: number;
+  /** Its courier carries a lantern (the siege's gas spike: crowded roads, long days). */
+  lantern?: boolean;
 }
 
 export interface ErrandStep {

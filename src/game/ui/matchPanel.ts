@@ -24,6 +24,8 @@ import type { MatchClient } from '../sim/matchClient.js';
 import { fieldPanel, gauges, portfolio, powersPanel, regimeBadge, rumorCard, ticker } from './hud.js';
 import { FieldMarkers } from '../render/fieldMarkers.js';
 import { BattleFx } from '../render/battleFx.js';
+import { UnitMesh } from '../render/unitMeshes.js';
+import { holdingsOf } from '../core/ledger.js';
 import { weatherFor, type Weather } from '../../castle/world/sky.js';
 import { TradePanel } from './tradePanel.js';
 import { qn } from '../core/fixed.js';
@@ -72,6 +74,8 @@ export class MatchPanel {
   #markers: FieldMarkers | null = null;
   #fx: BattleFx | null = null;
   readonly #props: THREE.Object3D[] = [];
+  #dancers: UnitMesh | null = null;
+  #stopDance: (() => void) | null = null;
   #busy = false;
   #note = '';
   /** The Trade phase's seconds left, and whether its clock is stopped. */
@@ -396,12 +400,18 @@ export class MatchPanel {
     void this.#view?.prepare(['militia', ...units]);
   }
 
+  /** Shows an event's look on the town (no change to the match: for checking the visuals). */
+  previewEvent(event: string | null): void {
+    this.#eventLook(event);
+  }
+
   /** What the week's event looks like on the town: a storm, golden light, a cart of airdropped goods at each gate. */
   #eventLook(event: string | null): void {
     const scene = this.#scene;
     if (!scene) return;
     scene.setWeather(EVENT_WEATHER[event ?? ''] ?? weatherFor(null));
     this.#clearProps();
+    if (event === 'meme-mania') void this.#danceOnRoofs();
     const gates = this.match.battleCtx().map?.gates;
     if (event === 'airdrop' && gates) {
       void scene
@@ -426,6 +436,52 @@ export class MatchPanel {
   #clearProps(): void {
     for (const p of this.#props) p.removeFromParent();
     this.#props.length = 0;
+    this.#dancers?.dispose();
+    this.#dancers = null;
+    this.#stopDance?.();
+    this.#stopDance = null;
+  }
+
+  /** Meme Mania: goblins dancing on the town's rooftops for the week. */
+  async #danceOnRoofs(): Promise<void> {
+    const scene = this.#scene;
+    if (!scene) return;
+    const stage = scene.stage();
+    const goblin = await stage.load('unit.swarm.goblin');
+    if (!goblin || !this.#scene) return;
+    // the biggest buildings' roofs, two goblins on each: a ray straight down finds the roof itself
+    const ray = new THREE.Raycaster();
+    const down = new THREE.Vector3(0, -1, 0);
+    const visible = (o: THREE.Object3D) => {
+      for (let x: THREE.Object3D | null = o; x; x = x.parent) if (!x.visible) return false;
+      return true;
+    };
+    const spots: { x: number; z: number; y: number }[] = [];
+    const buildings = stage
+      .placed('building')
+      .map((b) => ({ b, box: new THREE.Box3().setFromObject(b) }))
+      .filter(({ box }) => !box.isEmpty())
+      .sort((p, q) => q.box.getSize(new THREE.Vector3()).x * q.box.getSize(new THREE.Vector3()).z - p.box.getSize(new THREE.Vector3()).x * p.box.getSize(new THREE.Vector3()).z)
+      .slice(0, 6);
+    for (const { b, box } of buildings) {
+      const c = box.getCenter(new THREE.Vector3());
+      for (const dx of [-0.7, 0.7]) {
+        ray.set(new THREE.Vector3(c.x + dx, box.max.y + 5, c.z), down);
+        const hit = ray.intersectObject(b, true).find((h) => visible(h.object));
+        if (hit) spots.push({ x: hit.point.x, z: hit.point.z, y: hit.point.y });
+      }
+    }
+    const dancers = new UnitMesh(goblin, spots.length);
+    stage.scene.add(dancers.mesh);
+    this.#dancers = dancers;
+    const neutral = new THREE.Color('#d9b23a');
+    let t = 0;
+    this.#stopDance = stage.onFrame((dt) => {
+      t += dt;
+      // a little bigger than life, to be seen from the overview
+      spots.forEach((p, i) => dancers.set(i, p.x, p.z, t * 0.8 + i, 'cheer', t + i * 0.3, true, neutral, p.y, 1.6));
+      dancers.commit(spots.length);
+    });
   }
 
   #startClock(seconds: number, fn: () => void): void {
@@ -442,7 +498,12 @@ export class MatchPanel {
   #showDamage(): void {
     const scene = this.#scene;
     if (!scene) return;
-    showCastleDamage(scene, this.match.state.sides.map((s) => damageState(s.keepHp, s.keepHpMax)) as [number, number]);
+    const s = this.match.state;
+    // a depeg crumbles wall sections of every castle that holds the stablecoin
+    const ev = s.market.current;
+    const depegged = ev?.id === 'depeg' ? ev.target : undefined;
+    const crumble = s.sides.map((x) => depegged !== undefined && holdingsOf(x).some((h) => h.asset === depegged)) as [boolean, boolean];
+    showCastleDamage(scene, s.sides.map((x) => damageState(x.keepHp, x.keepHpMax)) as [number, number], crumble);
   }
 }
 
@@ -452,7 +513,7 @@ export class MatchPanel {
  * mirrored and one in three runs a state behind: the damage doesn't read as a
  * repeating pattern. The keep and the towers show the state itself.
  */
-export function showCastleDamage(scene: Pick<MatchScene, 'stage' | 'setDamage'>, states: readonly [number, number]): void {
+export function showCastleDamage(scene: Pick<MatchScene, 'stage' | 'setDamage'>, states: readonly [number, number], crumble: readonly [boolean, boolean] = [false, false]): void {
   const stage = scene.stage();
   (['A', 'B'] as const).forEach((side, si) => {
     const state = states[si]!;
@@ -462,7 +523,10 @@ export function showCastleDamage(scene: Pick<MatchScene, 'stage' | 'setDamage'>,
         const segment = obj.name === 'castle.wall.segment';
         const n = segment ? wall++ : 0;
         if (segment) obj.scale.x = Math.abs(obj.scale.x) * (state > 0 && n % 2 === 1 ? -1 : 1);
-        scene.setDamage(obj, segment && n % 3 === 2 ? Math.max(0, state - 1) : state);
+        let shown = segment && n % 3 === 2 ? Math.max(0, state - 1) : state;
+        // a depeg: every fourth wall section breached
+        if (crumble[si] && segment && n % 4 === 1) shown = Math.max(shown, 2);
+        scene.setDamage(obj, shown);
       }
     }
   });

@@ -125,3 +125,18 @@ describe('the town as the battlefield', () => {
     expect(run.seconds).toBeGreaterThan(0);
   });
 });
+
+describe('rug pull', () => {
+  it('a rugged token’s squad runs for home and leaves the field: it never fights and never survives', () => {
+    const run = simulateBattle(
+      [army('A', [squad('floki', 'swarm.goblin', 12), squad('eth', 'paladin.eth', 8)]), army('B', [squad('eth', 'paladin.eth', 8)])],
+      { seed: 'rug', round: 2, flee: ['floki'] },
+    );
+    const goblins = run.entities.map((e, i) => ({ e, i })).filter(({ e }) => e.unit === 'swarm.goblin').map(({ i }) => i);
+    expect(goblins.length).toBeGreaterThan(0);
+    // none of them attacks; all of them leave
+    expect(run.events.some((e) => e.t === 'attack' && goblins.includes(e.id))).toBe(false);
+    for (const g of goblins) expect(run.events.some((e) => e.t === 'vanish' && e.id === g)).toBe(true);
+    expect(run.survivors[0].some((s) => s.asset === 'floki')).toBe(false);
+  });
+});

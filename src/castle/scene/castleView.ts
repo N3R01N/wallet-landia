@@ -66,7 +66,7 @@ export interface Stage {
   load(name: string): Promise<Loaded | null>;
   /** Called every frame once the scene is ready, with the frame's seconds. Returns the way to stop it. */
   onFrame(fn: (dt: number) => void): () => void;
-  /** The placed objects by placement key ('keep', 'castle' for the player's own pieces, an extension's keys). */
+  /** The placed objects by placement key ('keep', 'castle' for the player's own pieces, 'building' for the town's, an extension's keys). */
   placed(key: string): THREE.Object3D[];
   /** A point on the page (CSS px in the view) for a world point, or null off screen. */
   screen(p: THREE.Vector3): { x: number; y: number } | null;
@@ -939,7 +939,7 @@ export class CastleView {
       this.#layout.add(obj);
       if (p === plan.keep) this.#placedByKey.set('keep', [obj]);
       // by key, and the player's own castle pieces (unkeyed) as 'castle'
-      const group = p.key ?? (p.name.startsWith('castle.') ? 'castle' : null);
+      const group = p.key ?? (p.name.startsWith('castle.') ? 'castle' : 'protocol' in p ? 'building' : null);
       if (group) {
         const list = this.#placedByKey.get(group);
         if (list) list.push(obj);
@@ -1406,6 +1406,17 @@ export class CastleView {
     else {
       cargo.position.set(0, 1, -0.3);
       figure.object.add(cargo);
+    }
+    // a lantern in the other hand when the errand asks for one
+    if (errand.lantern && this.#loaded.get('prop.lamp')) {
+      const lamp = this.#make('prop.lamp');
+      lamp.scale.setScalar(0.22);
+      const left = figure.object.getObjectByName('hand_L');
+      if (left) left.add(lamp);
+      else {
+        lamp.position.set(0.35, 0.9, 0.1);
+        figure.object.add(lamp);
+      }
     }
     // an invisible, generous target to tap (a walking figure is small on a phone)
     const target = new THREE.Mesh(HIT_GEOMETRY, HIT_MATERIAL);

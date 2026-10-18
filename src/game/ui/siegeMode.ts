@@ -118,6 +118,8 @@ export class SiegeMode {
     const match = client.replica;
     this.#matchPanel = new MatchPanel({ client, centre: f ? { x: 0, z: (f.z0 + f.z1) / 2 + 8 } : { x: 0, z: 30 }, onLeave: () => this.leave() });
     this.#body.replaceChildren(this.#matchPanel.element);
+    // Test hook (dev server only): an event's look on the town, without touching the match.
+    if (import.meta.env.DEV) (window as unknown as { siegePreviewEvent?: (e: string | null) => void }).siegePreviewEvent = (e) => this.#matchPanel?.previewEvent(e);
     if (this.#scene) this.#matchPanel.attach(this.#scene);
     return match;
   }

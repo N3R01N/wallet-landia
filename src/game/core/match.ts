@@ -133,15 +133,17 @@ export class Match {
   }
 
   /** The battle's seed, round and map, who holds the buildings, and where each side is at home (for simulating it elsewhere). */
-  battleCtx(): { seed: string; round: number; map?: BattleMap; owners: Record<string, SideId | null>; home: Record<SideId, string[]> } {
+  battleCtx(): { seed: string; round: number; map?: BattleMap; owners: Record<string, SideId | null>; home: Record<SideId, string[]>; flee?: string[] } {
     const s = this.state;
     const home = (id: SideId) => s.buildings.filter((b) => homeAt(this.side(id), b.kind)).map((b) => b.id);
+    const rugged = s.market.current?.id === 'rug-pull' ? s.market.current.target : undefined;
     return {
       seed: s.seed,
       round: s.round,
       ...(this.#setup.map ? { map: this.#setup.map } : {}),
       owners: Object.fromEntries(s.buildings.map((b) => [b.id, b.owner])),
       home: { A: home('A'), B: home('B') },
+      ...(rugged ? { flee: [rugged] } : {}),
     };
   }
 

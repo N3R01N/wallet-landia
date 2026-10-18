@@ -83,6 +83,6 @@ export function tradeErrand(m: Match, cmd: Command, buildings: readonly Building
     time: 0,
     label: cmd.t,
     // a gas spike: the roads are full, the courier trudges
-    ...(m.state.market.gasMult > 1 ? { pace: 0.45 } : {}),
+    ...(m.state.market.gasMult > 1 ? { pace: 0.45, lantern: true } : {}),
   };
 }

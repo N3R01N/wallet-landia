@@ -157,6 +157,8 @@ interface Ent {
   /** A Flash Loan's borrowed unit: off the field until the loan, gone after it. */
   reserve: boolean;
   active: boolean;
+  /** Its token was rugged: it runs for home and leaves the field. */
+  flees: boolean;
 }
 
 const alive = (e: Ent) => (e.pool <= 0 ? 0 : Math.ceil(e.pool / e.hp - 1e-9));
@@ -169,6 +171,8 @@ export interface BattleOptions {
   owners?: Record<string, SideId | null>;
   /** The buildings where each side has home advantage (a position in that protocol). */
   home?: Record<SideId, string[]>;
+  /** Tokens rugged this week: their squads flee the field instead of fighting (spec: Rug Pull). */
+  flee?: string[];
 }
 
 interface SideCtx {
@@ -192,7 +196,7 @@ export function simulateBattle(armies: readonly [Army, Army], opts: BattleOption
   };
   const has = (side: SideId, a: Ability) => sides[side].mods?.abilities.includes(a) ?? false;
   const owns = (side: SideId, kind: BuildingKind) => points.some((p) => p.kind === kind && owners[p.id] === side);
-  spawn(armies, paths, ents, events);
+  spawn(armies, paths, ents, events, new Set(opts.flee ?? []));
 
   const nEnt = ents.length;
   const maxFrames = Math.floor(MAX_TICKS / FRAME_EVERY) + 2;
@@ -299,6 +303,22 @@ export function simulateBattle(armies: readonly [Army, Army], opts: BattleOption
         }
       }
 
+      // a rugged squad runs for home and leaves the field
+      if (e.flees) {
+        const home = map.gates?.[e.side] ?? paths[e.side][e.lane]![0]!;
+        const dx = home.x - e.x;
+        const dz = home.z - e.z;
+        const d = Math.sqrt(dx * dx + dz * dz);
+        if (d < 1.5) {
+          e.active = false;
+          e.pool = 0;
+          events.push({ t: 'vanish', tick, id: e.id });
+        } else {
+          e.face = facing(dx, dz, e.face);
+          step(e, dx / d, dz / d, d, e.u.speed * METRES_PER_SPEED * 1.3);
+        }
+        continue;
+      }
       const sc = sides[e.side];
       const range = e.u.range + (e.u.role === 'ranged' ? (sc.mods?.rangedRange ?? 0) + (owns(e.side, 'oracle') ? 1 : 0) : 0);
       const speed = e.u.speed * METRES_PER_SPEED * (t < EARLY ? (sc.mods?.earlySpeed ?? 1) : 1) * (owns(e.side, 'exchange') ? 1.2 : 1);
@@ -370,7 +390,7 @@ export function simulateBattle(armies: readonly [Army, Army], opts: BattleOption
   armies.forEach((army, ai) => {
     army.squads.forEach((sq, si) => {
       if (sq.detonates) return;
-      const n = ents.filter((e) => e.side === army.side && e.squad === si && !e.reserve && e.pool > 0).reduce((s, e) => s + alive(e), 0);
+      const n = ents.filter((e) => e.side === army.side && e.squad === si && !e.reserve && !e.flees && e.pool > 0).reduce((s, e) => s + alive(e), 0);
       if (n > 0) survivors[ai]!.push({ ...sq, count: n, stacks: [n] });
     });
   });
@@ -390,7 +410,7 @@ export function simulateBattle(armies: readonly [Army, Army], opts: BattleOption
 /** Rows from the front: Melee, then Ranged and Support, Siege at the back; cavalry on the flanks. */
 const ROW: Record<Role, number> = { melee: 0, swarm: 0, cavalry: 1, ranged: 2, support: 2, siege: 3 };
 
-function spawn(armies: readonly [Army, Army], paths: Record<SideId, LanePoint[][]>, ents: Ent[], events: BattleEvent[]): void {
+function spawn(armies: readonly [Army, Army], paths: Record<SideId, LanePoint[][]>, ents: Ent[], events: BattleEvent[], flee: ReadonlySet<string>): void {
   for (const army of armies) {
     const mods = army.mods;
     // lanes round-robin by role: cavalry on the flanks, siege in the centre
@@ -440,6 +460,7 @@ function spawn(armies: readonly [Army, Army], paths: Record<SideId, LanePoint[][
         timer: 0,
         reserve,
         active: !reserve,
+        flees: flee.has(sq.asset),
       });
       events.push({ t: 'spawn', tick: 0, id, side: army.side, squad: si, unit: u.id, mult });
     };
