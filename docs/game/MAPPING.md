@@ -164,3 +164,13 @@ Points the spec left open, settled here (change in config if needed):
 ### Unit and ability tuning (2026-10-18)
 
 Strength in a mass battle goes roughly with HP × ATK ÷ costMult² (cheaper units come in larger numbers), and the ETH units were far ahead. Changed in config: the Ether Paladin heals 1 HP/s (spec 2), the Staked Paladin has 30 HP (spec 34), the swarms have more HP (Frog 5, Shiba 6, Goblin 6), the Validator Shield gives 6 HP (spec 10), a Flash Loan adds a third of the largest squad (spec half), the Bitcoin Titan costs 3.3 (spec 3), the walls' volley is 3 HP per UNIT_VALUE of stables, restaking yields 2% and pool fees 0.6% a round; the Yield Farmer template holds 15% in stables (its supplied USDC became supplied LINK) and a Stable Maxi may move up to three quarters of its stables in a round. The worst pairing went from 90% to about 82%; see docs/game/BALANCE.md.
+
+## After M7 (2026-10-18)
+
+- **Prices** come through a `PriceProvider` (`core/prices.ts`): the seeded simulation, or a historical replay of real daily closes; the source is part of the match setup.
+- **Imports match tokens by contract** (`assets.json` lists the mainnet contracts); by symbol only without one.
+- **Camera:** an overview of the field in the Market and Trade phases; in battle, follow a lane or stay free.
+- **Event looks:** goblins dancing on the roofs (Meme Mania), wall sections breached on castles holding a depegged stablecoin, a rugged squad fleeing the field (in the simulation), couriers with lanterns (Gas Spike).
+- **Details:** curated ability names (Lido's Validator Shield…, generic names elsewhere; positions keep their venue), a red banner by the bank while a loan is in danger, the masons' sparkles when walls rise, token badges and the stack size on squad banners.
+- **The spec's open questions:** the battle can be paused; a post-match recap (charts of the portfolios and keeps, MVPs, events, a table); a whole match can be watched again, from the recap or a downloaded replay file; loadouts leave the device as a code or a file.
+- **Performance:** the gallery's stress test (600 units, every type) and `?fps=1` in the game show the frame rate, to check the spec's 60 fps on a real machine.

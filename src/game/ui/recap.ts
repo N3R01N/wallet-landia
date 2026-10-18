@@ -69,7 +69,7 @@ export function recap(m: Match, mvp: { A: Mvp | null; B: Mvp | null }): HTMLElem
 function lineChart(title: string, h: readonly RoundRecord[], pick: (r: RoundRecord) => [number, number], fmt: (v: number) => string, domain?: [number, number]): HTMLElement {
   const w = 320;
   const ht = 120;
-  const pad = { l: 34, r: 42, t: 10, b: 18 };
+  const pad = { l: 44, r: 42, t: 10, b: 18 };
   const values = h.map(pick);
   const all = values.flat();
   let lo = domain?.[0] ?? Math.min(0, ...all);

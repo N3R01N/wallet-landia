@@ -271,7 +271,8 @@ export class MatchPanel {
         keepBar('Enemy keep', b, 'siege-keep-B'),
         momentum,
         this.#note ? el('p', { class: 'siege-note', role: 'status' }, this.#note) : null,
-        winner ? el('p', { class: 'siege-winner' }, winner) : null,
+        // the recap says it at the end
+        winner && s.phase !== 'ended' ? el('p', { class: 'siege-winner' }, winner) : null,
         ...body,
         el('div', { class: 'siege-row' }, ...controls),
         leave,
