@@ -29,7 +29,7 @@ export const HELD_AT: Record<PositionKind, BuildingKind> = { staked: 'staking', 
 
 export const ECON = {
   /** Per minute, at level 1: what each position earns (or a debt grows). */
-  perMinute: { staked: 0.05, restaked: 0.08, lp: 0.06, supplied: 0.02, borrowed: 0.03, vault: 0.015 } as Record<PositionKind, number>,
+  perMinute: { staked: 0.12, restaked: 0.18, lp: 0.16, supplied: 0.05, borrowed: 0.06, vault: 0.03 } as Record<PositionKind, number>,
   /** Each level above 1 adds this share to a building's yield. */
   levelBonus: 0.5,
   swapFee: 0.003,
@@ -51,12 +51,12 @@ export const COLLATERAL: readonly TokenId[] = ['eth', 'steth', 'wbtc', 'link', '
 export type EconCommand =
   | { t: 'swap'; from: TokenId; to: TokenId; qty: number }
   | { t: 'lpAdd'; a: TokenId; b: TokenId; qty: number }
-  | { t: 'lpRemove'; id: number }
+  | { t: 'lpRemove'; id: number; share?: number }
   | { t: 'stake'; qty: number }
-  | { t: 'unstake'; id: number }
+  | { t: 'unstake'; id: number; share?: number }
   | { t: 'restake'; qty: number }
   | { t: 'supply'; token: TokenId; qty: number }
-  | { t: 'withdraw'; id: number }
+  | { t: 'withdraw'; id: number; share?: number }
   | { t: 'borrow'; token: TokenId; qty: number }
   | { t: 'repay'; id: number; qty: number }
   | { t: 'vaultOpen'; eth: number; dai: number }
@@ -80,6 +80,8 @@ export interface EconResult {
 }
 
 const no = (reason: string): EconResult => ({ ok: false, reason });
+/** A share of a position to take out: (0, 1], all when not given. */
+const part = (share: number | undefined) => (share === undefined || !(share > 0) ? 1 : Math.min(1, share));
 const EPS = 1e-12;
 
 export function frozen(w: EconWorld, p: PlayerId, pos: Position): boolean {
@@ -165,9 +167,14 @@ export function applyEcon(w: EconWorld, p: PlayerId, cmd: EconCommand): EconResu
       const pos = find(cmd.id, 'lp');
       if (!pos) return no('no such pool position');
       if (frozen(w, p, pos)) return no('frozen until the Exchange is rebuilt');
-      tokens[pos.token] += pos.qty;
-      tokens[pos.pair!] += pos.pairQty ?? 0;
-      drop(pos);
+      const share = part(cmd.share);
+      tokens[pos.token] += pos.qty * share;
+      tokens[pos.pair!] += (pos.pairQty ?? 0) * share;
+      if (share >= 1) drop(pos);
+      else {
+        pos.qty *= 1 - share;
+        pos.pairQty = (pos.pairQty ?? 0) * (1 - share);
+      }
       return { ok: true };
     }
     case 'stake': {
@@ -185,13 +192,16 @@ export function applyEcon(w: EconWorld, p: PlayerId, cmd: EconCommand): EconResu
       const pos = find(cmd.id, cmd.t === 'unstake' ? 'staked' : 'supplied') ?? (cmd.t === 'unstake' ? find(cmd.id, 'restaked') : null);
       if (!pos) return no('no such position');
       if (frozen(w, p, pos)) return no(`frozen until the ${BUILDINGS[HELD_AT[pos.kind]].name} is rebuilt`);
+      const share = part(cmd.share);
+      const qty = pos.qty * share;
       if (pos.kind === 'supplied') {
         const acc = bankAccount(w, p);
-        const after = (acc.collateral - (COLLATERAL.includes(pos.token) ? pos.qty * w.prices[pos.token] : 0)) * ECON.ltv;
+        const after = (acc.collateral - (COLLATERAL.includes(pos.token) ? qty * w.prices[pos.token] : 0)) * ECON.ltv;
         if (acc.debt > after + EPS) return no('repay first: the loan would be over its limit');
       }
-      tokens[pos.token] += pos.qty;
-      drop(pos);
+      tokens[pos.token] += qty;
+      if (share >= 1) drop(pos);
+      else pos.qty -= qty;
       return { ok: true };
     }
     case 'restake': {

@@ -23,6 +23,7 @@ import { RtsView } from './render/view.js';
 import { UnitLayer } from './render/unitLayer.js';
 import { FightFx } from './render/fightFx.js';
 import { Hud } from './ui/hud.js';
+import type { Difficulty } from './ai/opponent.js';
 import './rts.css';
 
 const ME: PlayerId = 'A';
@@ -31,9 +32,14 @@ const theme = loadCastleTheme(import.meta.env.BASE_URL, themeFromUrl(location.se
 const library = new ModelLibrary(theme);
 
 function startScreen(): void {
+  const level = el(
+    'select',
+    { class: 'rts-select rts-difficulty', 'aria-label': 'Opponent' },
+    ...(['easy', 'normal', 'hard'] as const).map((d) => Object.assign(el('option', { value: d }, d[0]!.toUpperCase() + d.slice(1)), { selected: d === 'normal' })),
+  );
   const kits = (Object.keys(START_KITS) as StartKit[]).map((k) => {
     const b = el('button', { class: 'btn rts-kit', type: 'button', 'data-kit': k }, START_KITS[k].name);
-    b.addEventListener('click', () => void play(k));
+    b.addEventListener('click', () => void play(k, level.value as Difficulty));
     return b;
   });
   app.replaceChildren(
@@ -42,6 +48,7 @@ function startScreen(): void {
       { class: 'rts-start' },
       el('h1', {}, '⚔ Ledger Wars'),
       el('p', {}, 'You start with your wallet hall and a little money. Build an exchange to trade, stake and pool to earn, train units with the tokens they need, and bring down the enemy’s hall.'),
+      el('p', { class: 'rts-row' }, el('strong', {}, 'The computer plays:'), level),
       el('p', {}, el('strong', {}, 'Start with:')),
       el('div', { class: 'rts-kits' }, ...kits),
       el('p', {}, el('a', { href: './' }, '← Back to the castle')),
@@ -49,9 +56,11 @@ function startScreen(): void {
   );
 }
 
-async function play(kit: StartKit): Promise<void> {
-  const seed = new URLSearchParams(location.search).get('seed') ?? Math.random().toString(36).slice(2, 10);
-  const world = new World({ seed, kits: { A: kit, B: kit } });
+async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
+  const params = new URLSearchParams(location.search);
+  const seed = params.get('seed') ?? Math.random().toString(36).slice(2, 10);
+  // ?ai=0: no opponent (a sandbox; the tests use it)
+  const world = new World({ seed, kits: { A: kit, B: kit }, ai: params.get('ai') === '0' ? [] : ['B'], difficulty });
   const view = new RtsView(library);
   const layer = new UnitLayer(view);
   const fx = new FightFx(view, world);

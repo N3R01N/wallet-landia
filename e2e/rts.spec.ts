@@ -13,7 +13,7 @@ test('a match starts from a kit; the hall builds an exchange that is placed besi
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/rts.html?seed=e2e');
+  await page.goto('/rts.html?seed=e2e&ai=0');
   await page.locator('.rts-kit[data-kit="usdc"]').click();
   await expect(page.locator('.rts[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
   await expect(page.locator('.rts-top')).toContainText('USDC');
@@ -49,7 +49,7 @@ test('the economy: at the Exchange a swap, at the Staking House a stake that ear
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/rts.html?seed=e2e');
+  await page.goto('/rts.html?seed=e2e&ai=0');
   await page.locator('.rts-kit[data-kit="usdc"]').click();
   await expect(page.locator('.rts[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
   // two buildings, built and placed through the hook (the placing itself is tested above)
@@ -90,7 +90,7 @@ test('units: trained at the hall, box-selected, sent across the map with a right
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/rts.html?seed=e2e');
+  await page.goto('/rts.html?seed=e2e&ai=0');
   await page.locator('.rts-kit[data-kit="usdc"]').click();
   await expect(page.locator('.rts[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
   type R = { rts: { world: { step(): void; units: { id: number; x: number; z: number; owner: string; order: { t: string } }[] }; selection: Set<number>; view: { toScreen(x: number, y: number, z: number): { x: number; y: number } | null; buildingAt(x: number, y: number): number | null } } };
@@ -137,7 +137,7 @@ test('combat: an attack order, effects as they fight, and victory when the enemy
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/rts.html?seed=e2e');
+  await page.goto('/rts.html?seed=e2e&ai=0');
   await page.locator('.rts-kit[data-kit="usdc"]').click();
   await expect(page.locator('.rts[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
   type R = { rts: { world: { step(): void; winner: string | null; units: { id: number; owner: string; died: number }[]; hallOf(p: string): { id: number; x: number; z: number } }; send(c: unknown): { ok: boolean }; spawn(o: string, t: string, x: number, z: number): void } };
@@ -158,6 +158,25 @@ test('combat: an attack order, effects as they fight, and victory when the enemy
     for (let i = 0; i < 200 * 20 && !w.winner; i++) w.step();
   });
   await expect(page.locator('.rts-over')).toContainText('Victory', { timeout: 10_000 });
+  expect(errors).toEqual([]);
+});
+
+test('the computer opponent builds and trains by the same rules (Easy, Normal or Hard on the start screen)', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/rts.html?seed=e2e');
+  await page.locator('.rts-difficulty').selectOption('hard');
+  await page.locator('.rts-kit[data-kit="usdc"]').click();
+  await expect(page.locator('.rts[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
+  type R = { rts: { world: { step(): void; has(p: string, k: string): boolean; units: { owner: string }[]; ai: Map<string, { difficulty: string }> } } };
+  expect(await page.evaluate(() => (window as unknown as R).rts.world.ai.get('B')?.difficulty)).toBe('hard');
+  await page.evaluate(() => {
+    const w = (window as unknown as R).rts.world;
+    for (let i = 0; i < 90 * 20; i++) w.step();
+  });
+  expect(await page.evaluate(() => (window as unknown as R).rts.world.has('B', 'exchange'))).toBe(true);
+  expect(await page.evaluate(() => (window as unknown as R).rts.world.units.filter((u) => u.owner === 'B').length)).toBeGreaterThan(3);
   expect(errors).toEqual([]);
 });
 

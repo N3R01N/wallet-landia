@@ -49,7 +49,8 @@ describe('the economy', () => {
     expect(pos.kind).toBe('staked');
     const q0 = pos.qty;
     run(w, 60);
-    expect(pos.qty / q0).toBeCloseTo(1 + ECON.perMinute.staked, 2);
+    // paid each second: compounded over the minute
+    expect(pos.qty / q0).toBeCloseTo((1 + ECON.perMinute.staked / 60) ** 60, 3);
     expect(w.players.A.tokens.eth).toBeCloseTo(eth / 2, 9);
     expect(incomePerMinute(w.econ, 'A')).toBeGreaterThan(0);
     // the building falls: frozen, nothing earned, nothing taken out

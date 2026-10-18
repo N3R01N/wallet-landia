@@ -26,11 +26,11 @@ export const COMBAT = {
   /** Units' HP is the unit type's × this (fights last a few seconds, not one blow). */
   hpScale: 2,
   /** Against a building: this share of a unit's attack, plus this much per point of Siege. */
-  buildingAtk: 0.5,
-  buildingSiege: 4,
+  buildingAtk: 0.8,
+  buildingSiege: 6,
   /** A wallet hall's arrows: reach, damage a second, by level. */
   hallRange: 10,
-  hallAtk: [6, 9, 12, 16] as readonly number[],
+  hallAtk: [8, 11, 14, 18] as readonly number[],
   /** Seconds a dead unit lies before it is gone. */
   corpse: 3,
 } as const;

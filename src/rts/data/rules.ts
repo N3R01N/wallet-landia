@@ -56,7 +56,7 @@ export interface BuildingRule {
 }
 
 export const BUILDINGS: Readonly<Record<BuildingKind, BuildingRule>> = {
-  hall: { name: 'Wallet Hall', blurb: 'Your seat. Builds every other building; trains Militia.', models: ['castle.hall.wallet.t0', 'castle.hall.wallet.t2', 'castle.hall.wallet.t4', 'castle.hall.wallet.t6'], footprint: 6, cost: 0, upgrade: [1500, 3000, 6000], time: 0, upgradeTime: 40, hp: 3000, hpPerLevel: 750, maxLevel: 4, hallLevel: 0, needs: [] },
+  hall: { name: 'Wallet Hall', blurb: 'Your seat. Builds every other building; trains Militia.', models: ['castle.hall.wallet.t0', 'castle.hall.wallet.t2', 'castle.hall.wallet.t4', 'castle.hall.wallet.t6'], footprint: 6, cost: 0, upgrade: [1500, 3000, 6000], time: 0, upgradeTime: 40, hp: 4000, hpPerLevel: 1000, maxLevel: 4, hallLevel: 0, needs: [] },
   exchange: { name: 'Exchange', blurb: 'Uniswap: swap tokens, and pools that earn fees. Trains Swap Mages (UNI).', models: ['building.protocol.uniswap'], footprint: 5, cost: 800, upgrade: [1200, 2400], time: 20, upgradeTime: 25, hp: 1000, hpPerLevel: 300, maxLevel: 3, hallLevel: 1, needs: [] },
   staking: { name: 'Staking House', blurb: 'Lido: stake ETH for stETH that grows. Trains Lido Lancers (LDO), then Staked Paladins (stETH).', models: ['building.protocol.lido'], footprint: 5, cost: 800, upgrade: [1200, 2400], time: 20, upgradeTime: 25, hp: 1000, hpPerLevel: 300, maxLevel: 3, hallLevel: 1, needs: [] },
   restaking: { name: 'Restaking Hall', blurb: 'EigenLayer: restake stETH for more yield.', models: ['building.protocol.eigenlayer'], footprint: 5, cost: 1500, upgrade: [2000], time: 30, upgradeTime: 30, hp: 1000, hpPerLevel: 300, maxLevel: 2, hallLevel: 2, needs: ['staking'] },
@@ -115,7 +115,7 @@ export const RULES = {
   /** A new building goes within this many metres of one of yours (centre to centre). */
   buildRadius: 20,
   /** A unit's dollar cost: this × its costMult. */
-  unitValue: 100,
+  unitValue: 200,
   /** Prices step this often (s), with a game day's moves spread over this many seconds. */
   priceStep: 1,
   daySeconds: 20,

@@ -13,6 +13,7 @@ import { openingMarket, stepMarket, type Market } from './market.js';
 import { Paths } from './path.js';
 import { formation, newUnit, separate, walk, type OrderKind, type Unit } from './units.js';
 import { COMBAT, fight, type FightEvent } from './combat.js';
+import { newOpponent, opponentTick, type Difficulty, type OpponentState } from '../ai/opponent.js';
 import { UNIT_TYPES } from '../../game/core/catalog.js';
 import type { UnitTypeId } from '../../game/core/types.js';
 import { accrue, applyEcon, ECON_COMMANDS, liquidate, type EconCommand, type EconWorld, type Position } from './economy.js';
@@ -83,6 +84,10 @@ export interface WorldSetup {
   kits: Record<PlayerId, StartKit>;
   /** Prices hold still (tests, a tutorial). */
   still?: boolean;
+  /** The sides the computer plays (ai/opponent.ts); it thinks inside the ticks, so a match replays exactly. */
+  ai?: PlayerId[];
+  /** How well the computer plays (default normal). */
+  difficulty?: Difficulty;
 }
 
 const DT = 1 / RULES.tickHz;
@@ -104,6 +109,8 @@ export class World {
   #priceClock = 0;
   /** Prices hold still (the setup's `still`). */
   still: boolean;
+  /** The computer's sides and their state. */
+  readonly ai = new Map<PlayerId, OpponentState>();
 
   constructor(setup: WorldSetup) {
     this.seed = setup.seed;
@@ -112,6 +119,7 @@ export class World {
     this.market = openingMarket();
     this.#rng = streamOf(setup.seed, 'rts-world');
     this.still = setup.still ?? false;
+    for (const id of setup.ai ?? []) this.ai.set(id, newOpponent(setup.difficulty));
     const player = (id: PlayerId): Player => {
       const tokens = Object.fromEntries(TOKEN_IDS.map((t) => [t, 0])) as Record<TokenId, number>;
       for (const [t, usd] of Object.entries(START_KITS[setup.kits[id]].dollars) as [TokenId, number][]) tokens[t] = usd / TOKENS[t].price;
@@ -353,6 +361,7 @@ export class World {
         if (count > 0) this.#events.push({ t: 'liquidated', owner: id, count });
       }
     }
+    for (const [id, state] of this.ai) opponentTick(this, id, state, DT);
     for (const p of Object.values(this.players)) {
       if (!p.build) continue;
       p.build.left -= DT;
