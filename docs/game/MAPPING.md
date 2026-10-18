@@ -120,7 +120,7 @@ Points the spec left open, settled here (change in config if needed):
 
 - **The HUD** (`ui/matchPanel.ts`, `ui/hud.ts`): round, phase and its timer, the regime badge, both keeps' HP, the price ticker with the week's daily candles (played day by day in the Market phase), the rumor card, Health Factor gauges (amber under 1.2), and the portfolio (positions → squads, stables → walls). A column on the left on desktop, a sheet at the bottom on phones; it folds away.
 - **The trade panel** (`ui/tradePanel.ts`): every command of the spec, amounts as shares of what is available (`available`: "all" ETH leaves the gas behind; a borrow, the room under the LTV limit), and a dry-run preview (`previewCommand`) with gas, fee and slippage, the army's units, the walls and the loans' health. One-tap "Repay half" and "Add collateral" when a loan is under 1.2.
-- **Couriers** (`render/tradeCouriers.ts`): each accepted command sends the town's courier to a building of its kind (swaps to the exchange, loans to the bank, a vault to Maker/Sky, staking to the staking house), else to the town's end; during a gas spike they walk at less than half pace (`Errand.pace`).
+- **Trades are instant, shown as coins** (`render/tradeCoins.ts`; the user's call, 2026-10-18: the couriers were too slow). What a command gives flies as coins from your gate to a building of its kind (swaps to the exchange, loans to the bank, a vault to Maker/Sky, staking to the staking house) and what it gets flies back, through the town's `Exchange` (`CastleView.flyGoods`), at twice the town's coin size. When your gate is out of sight the coins leave from the ground beside the trade panel. The NPC's trades fly from its own gate, one after another.
 - **30 s of trading** with pause, then the battle; the Market week is ~8 s; sudden death skips the trade.
 
 ## Depth systems (M5)
@@ -170,7 +170,12 @@ Strength in a mass battle goes roughly with HP × ATK ÷ costMult² (cheaper uni
 - **Prices** come through a `PriceProvider` (`core/prices.ts`): the seeded simulation, or a historical replay of real daily closes; the source is part of the match setup.
 - **Imports match tokens by contract** (`assets.json` lists the mainnet contracts); by symbol only without one.
 - **Camera:** an overview of the field in the Market and Trade phases; in battle, follow a lane or stay free.
-- **Event looks:** goblins dancing on the roofs (Meme Mania), wall sections breached on castles holding a depegged stablecoin, a rugged squad fleeing the field (in the simulation), couriers with lanterns (Gas Spike).
+- **Event looks:** goblins dancing on the roofs (Meme Mania), wall sections breached on castles holding a depegged stablecoin, a rugged squad fleeing the field (in the simulation). (Gas Spike's lantern couriers went with the couriers.)
 - **Details:** curated ability names (Lido's Validator Shield…, generic names elsewhere; positions keep their venue), a red banner by the bank while a loan is in danger, the masons' sparkles when walls rise, token badges and the stack size on squad banners.
 - **The spec's open questions:** the battle can be paused; a post-match recap (charts of the portfolios and keeps, MVPs, events, a table); a whole match can be watched again, from the recap or a downloaded replay file; loadouts leave the device as a code or a file.
 - **Performance:** the gallery's stress test (600 units, every type) and `?fps=1` in the game show the frame rate, to check the spec's 60 fps on a real machine.
+
+## The guide (2026-10-18)
+
+`ui/guide.ts`, its words in `data/guide.ts` (numbers from the data and `BALANCE`, so it says what the game does). Five tabs: how to play; every unit (a portrait drawn from its model by `render/unitPortraits.ts`, the tokens and categories that field it, its stats against the largest, its ability, what it beats and what beats it, its cost, a link to it in the gallery); what each holding does and the trade that gets it, the protocol abilities and the relics; the battle (counter triangle, roles, buildings and capture, the siege); the market (regimes, events, loans, costs). Opens from "? Guide" on the panel, "New here? How to play", and any unit name in the portfolio tables (`data-guide-unit`).
+

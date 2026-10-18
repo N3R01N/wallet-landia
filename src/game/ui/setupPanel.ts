@@ -9,6 +9,7 @@ import type { Hero, Protocol } from '../../domain/model.js';
 import { el } from '../../util/dom.js';
 import { BALANCE } from '../config/balance.js';
 import { UNIT_TYPES } from '../core/catalog.js';
+import { unitLink } from './hud.js';
 import type { Archetype, Difficulty, Squad } from '../core/types.js';
 import nftJson from '../data/nftCollections.json';
 import { TEMPLATES } from '../data/templates.js';
@@ -130,7 +131,8 @@ export class SetupPanel {
         removePosition(d, i);
         this.render();
       });
-      const units = typeof what === 'number' ? `${what} ${UNIT_TYPES[cat.unitOf(pos.asset)?.id ?? '']?.name ?? 'units'}` : what === 'dust' ? 'too small: no units' : what === 'walls' ? 'walls' : 'debt';
+      const unitId = cat.unitOf(pos.asset)?.id;
+      const units = typeof what === 'number' ? (unitId ? unitLink(unitId, what) : `${what} units`) : what === 'dust' ? 'too small: no units' : what === 'walls' ? 'walls' : 'debt';
       const pair = pos.pairWith ? ` + ${cat.asset(pos.pairWith).symbol}` : '';
       return el(
         'tr',

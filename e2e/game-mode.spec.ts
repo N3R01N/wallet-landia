@@ -141,7 +141,7 @@ test('a battle in the town: the enemy castle stands past it, the armies fight on
   expect(errors).toEqual([]);
 });
 
-test('the trade phase: the timer pauses, a swap goes out with its courier, the rumor and the ticker show, the market week plays', async ({ page }) => {
+test('the trade phase: the timer pauses, a swap is done at once with flying coins, the rumor and the ticker show, the market week plays', async ({ page }) => {
   test.setTimeout(150_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -155,14 +155,16 @@ test('the trade phase: the timer pauses, a swap goes out with its courier, the r
   await expect(timer).toHaveText('⏸');
   await expect(panel.locator('.siege-rumor')).toContainText('Rumor');
   await expect(panel.locator('.siege-tick')).not.toHaveCount(0);
-  // a swap: the preview, then the courier
+  // a swap: the preview, then done at once: coins fly (no courier)
   await panel.locator('.siege-action').selectOption('swap');
   await panel.locator('.siege-quick', { hasText: '25%' }).click();
   await expect(panel.locator('.siege-preview-line')).toContainText('gas');
   await expect(panel.locator('.siege-preview-line')).toContainText('fee and slippage');
   await panel.locator('.siege-send').click();
-  await expect(panel.locator('.siege-message')).toContainText('courier sets out');
-  await expect.poll(() => page.evaluate(() => (window as unknown as { castleView: { state(): { couriers: number } } }).castleView.state().couriers), { timeout: 20_000 }).toBeGreaterThan(0);
+  await expect(panel.locator('.siege-message')).toContainText('Done');
+  type View = { castleView: { state(): { couriers: number; coins: number } } };
+  await expect.poll(() => page.evaluate(() => (window as unknown as View).castleView.state().coins), { timeout: 5_000 }).toBeGreaterThan(0);
+  expect(await page.evaluate(() => (window as unknown as View).castleView.state().couriers)).toBe(0);
   // the portfolio folds open
   await panel.locator('.siege-portfolio-toggle').click();
   await expect(panel.locator('.siege-portfolio tr')).not.toHaveCount(0);
@@ -224,5 +226,42 @@ test('a whole match ends in the recap: charts of the portfolios and keeps, the M
   // the downloaded file, loaded in the setup
   await panel.locator('.siege-replay-file').setInputFiles(file!);
   await expect(panel.locator('.siege-replay-panel')).toBeVisible({ timeout: 30_000 });
+  expect(errors).toEqual([]);
+});
+
+test('the guide: how to play, every unit with its portrait, where it comes from and what it beats; a unit name opens it there', async ({ page }) => {
+  test.setTimeout(150_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/?mode=siege');
+  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 120_000 });
+  const panel = page.locator('.siege-panel');
+  const guide = page.locator('dialog.siege-guide');
+  await panel.locator('.siege-guide-open').click();
+  await expect(guide).toBeVisible();
+  await expect(guide.locator('.siege-guide-step')).not.toHaveCount(0);
+  // every unit, each with its portrait (the theme's model, drawn)
+  await guide.locator('.siege-guide-tab', { hasText: 'Units' }).click();
+  await expect(guide.locator('.siege-guide-unit')).toHaveCount(18);
+  await expect(guide.locator('.siege-guide-portrait img')).toHaveCount(18, { timeout: 30_000 });
+  const paladin = guide.locator('[data-unit="paladin.eth"]');
+  await expect(paladin).toContainText('ETH');
+  await expect(paladin).toContainText('Strong against Cavalry');
+  // a role's units only
+  await guide.locator('.siege-guide-chip', { hasText: 'Swarm' }).click();
+  await expect(guide.locator('.siege-guide-unit')).toHaveCount(3);
+  for (const tab of ['Your holdings', 'Battle', 'Market']) {
+    await guide.locator('.siege-guide-tab', { hasText: tab }).click();
+    await expect(guide.locator('.siege-guide-body h3').first()).toBeVisible();
+  }
+  await guide.locator('.siege-guide-close').click();
+  await expect(guide).toBeHidden();
+  // a unit's name in the setup's portfolio opens the guide at it
+  const link = panel.locator('.siege-unit-link').first();
+  const unit = await link.getAttribute('data-guide-unit');
+  await link.click();
+  await expect(guide.locator(`[data-unit="${unit}"]`)).toHaveClass(/siege-guide-marked/);
+  await page.keyboard.press('Escape');
+  await expect(guide).toBeHidden();
   expect(errors).toEqual([]);
 });

@@ -760,3 +760,318 @@
 .siege-fps[data-level='low'] {
   color: #ff9a85;
 }
+
+/* ---------- the guide ---------- */
+
+.siege-panel .siege-guide-open {
+  position: absolute;
+  top: 6px;
+  right: 44px;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 0.85rem;
+}
+
+.siege-panel h2 {
+  padding-right: 120px;
+}
+
+.siege-link,
+.siege-unit-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.siege-link {
+  color: #6b4d12;
+  font-weight: 600;
+}
+
+.siege-guide {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(86dvh, 900px);
+  padding: 0;
+  border: 2px solid var(--gold);
+  border-radius: 12px;
+  background: var(--parchment);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.siege-guide[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.siege-guide::backdrop {
+  background: rgba(20, 18, 24, 0.55);
+}
+
+.siege-guide-head,
+.siege-guide-tabs {
+  flex-shrink: 0;
+}
+
+.siege-guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 4px;
+}
+
+.siege-guide-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.siege-guide-close {
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.siege-guide-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px 16px 0;
+  border-bottom: 1px solid var(--parchment-2);
+  overflow-x: auto;
+}
+
+.siege-guide-tab {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.siege-guide-tab[aria-selected='true'] {
+  border-bottom-color: var(--gold);
+  color: var(--ink);
+}
+
+.siege-guide-body {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px 20px;
+  overflow-y: auto;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.siege-guide-body h3 {
+  margin: 16px 0 6px;
+  font-size: 1rem;
+}
+
+.siege-guide-body h4 {
+  margin: 0 0 2px;
+  font-size: 0.95rem;
+}
+
+.siege-guide-body p {
+  margin: 0 0 6px;
+}
+
+.siege-guide-step {
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-left: 3px solid var(--gold);
+  background: var(--parchment-2);
+  border-radius: 0 8px 8px 0;
+}
+
+.siege-guide-step h3 {
+  margin: 0 0 2px;
+}
+
+.siege-guide-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.siege-guide-chip {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.siege-guide-chip[aria-pressed='true'] {
+  background: var(--gold);
+  color: #2a2118;
+}
+
+.siege-guide-units {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px;
+}
+
+.siege-guide-unit {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--parchment-2);
+  border-radius: 10px;
+  background: var(--parchment-2);
+}
+
+.siege-guide-unit.siege-guide-marked {
+  outline: 3px solid var(--gold);
+}
+
+.siege-guide-portrait {
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 40%, #fbf5e6, #d9c9a3);
+  font-size: 2.2rem;
+}
+
+.siege-guide-portrait img {
+  width: 88px;
+  height: 88px;
+}
+
+.siege-guide-unit h3 {
+  margin: 0 0 4px;
+}
+
+.siege-guide-role {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--parchment);
+  font-size: 0.78rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.siege-guide-from {
+  font-size: 0.85rem;
+}
+
+.siege-guide-stats {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0;
+  font-size: 0.8rem;
+}
+
+.siege-guide-stat {
+  display: grid;
+  grid-template-columns: 52px 1fr 32px;
+  align-items: center;
+  gap: 6px;
+}
+
+.siege-guide-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--gold) calc(var(--v) * 100%), var(--parchment) 0);
+}
+
+.siege-guide-stat .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.siege-guide-counter {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.siege-guide-watch {
+  color: inherit;
+  font-size: 0.85rem;
+}
+
+.siege-guide-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+
+.siege-guide-list section {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--parchment-2);
+}
+
+.siege-guide-how {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.siege-guide-triangle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.siege-guide-role-big {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--parchment-2);
+  font-weight: 600;
+}
+
+.siege-guide-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.siege-guide-table th,
+.siege-guide-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--parchment-2);
+  text-align: left;
+}
+
+.siege-guide-events dt {
+  font-weight: 600;
+}
+
+.siege-guide-events dd {
+  margin: 0 0 6px;
+}
+
+@media (max-width: 560px) {
+  .siege-guide-units {
+    grid-template-columns: 1fr;
+  }
+
+  .siege-guide-unit {
+    grid-template-columns: 64px 1fr;
+  }
+
+  .siege-guide-portrait,
+  .siege-guide-portrait img {
+    width: 64px;
+    height: 64px;
+  }
+}

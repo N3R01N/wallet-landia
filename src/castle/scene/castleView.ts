@@ -611,6 +611,17 @@ export class CastleView {
     return { x: rect.left + ((this.#scratch.x + 1) / 2) * rect.width, y: rect.top + ((1 - this.#scratch.y) / 2) * rect.height };
   }
 
+  /** The point on the ground under a point of the page (client px), or null: above the horizon, or off the view. */
+  groundPoint(clientX: number, clientY: number): { x: number; z: number } | null {
+    const rect = this.#canvas.getBoundingClientRect();
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.#camera);
+    const hit = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+    return hit ? { x: hit.x, z: hit.z } : null;
+  }
+
   /** Test hook: the page coordinates of the first courier out (null: none out). */
   courierPoint(): { x: number; y: number } | null {
     const run = this.#runs[0];
@@ -658,6 +669,8 @@ export class CastleView {
     barrierAngle: number;
     courier: { x: number; z: number } | null;
     couriers: number;
+    /** Coins and frames in flight. */
+    coins: number;
     queued: number;
     zoom: number;
     /** The camera's angles (radians): which way it faces (−π … π) and how far above the horizon it looks down. */
@@ -676,6 +689,7 @@ export class CastleView {
       barrierAngle: this.#barrierAngle,
       courier: c ? { x: c.x, z: c.z } : null,
       couriers: this.#runs.length,
+      coins: this.#exchange?.flying ?? 0,
       queued: this.#queue.length,
       zoom: this.#zoom,
       yaw: wrapAngle(this.#angles.yaw),
@@ -724,6 +738,17 @@ export class CastleView {
     if (this.#runs.some((r) => r.errand === errand)) return;
     this.#spawn(errand);
     this.#lastSpawn = this.#time;
+  }
+
+  /**
+   * Goods flying from one point on the ground to another, no courier (the
+   * game's trades): coins for tokens, frames for NFTs. `incoming`: the
+   * receiving side's look (a rising sound, a green label, a sparkle). Returns
+   * how long until the last lands (s). `size`: the coins this many times
+   * their usual size.
+   */
+  flyGoods(from: { x: number; z: number }, to: { x: number; z: number }, goods: readonly Goods[], incoming: boolean, delay = 0, size = 1): number {
+    return this.#exchange?.send(new THREE.Vector3(from.x, 0, from.z), new THREE.Vector3(to.x, 0, to.z), goods, incoming, delay, size) ?? 0;
   }
 
   /** Forget the couriers waiting to set out (those out finish their errands). */
@@ -1396,7 +1421,7 @@ export class CastleView {
       // and brings the repayment home
       const back = !!errand.collateralBack && errand.direction === 'in';
       if (back) route = route.map(({ stop, ...p }) => (stop === 'toll' ? p : { ...p, ...(stop ? { stop } : {}) }));
-      script = buildCourierScript(route, errand.pace ? { ...DEFAULT_TIMING, speed: DEFAULT_TIMING.speed * errand.pace } : DEFAULT_TIMING, back ? 'out' : errand.direction, { failed: errand.failed });
+      script = buildCourierScript(route, DEFAULT_TIMING, back ? 'out' : errand.direction, { failed: errand.failed });
     }
     const figure = new Figure(this.#make('courier.base'), this.#loaded.get('courier.base')?.clips ?? [], [TAP_CLIP]);
     // its goods, sized by value, in its right hand (on the standin's back)
@@ -1406,17 +1431,6 @@ export class CastleView {
     else {
       cargo.position.set(0, 1, -0.3);
       figure.object.add(cargo);
-    }
-    // a lantern in the other hand when the errand asks for one
-    if (errand.lantern && this.#loaded.get('prop.lamp')) {
-      const lamp = this.#make('prop.lamp');
-      lamp.scale.setScalar(0.22);
-      const left = figure.object.getObjectByName('hand_L');
-      if (left) left.add(lamp);
-      else {
-        lamp.position.set(0.35, 0.9, 0.1);
-        figure.object.add(lamp);
-      }
     }
     // an invisible, generous target to tap (a walking figure is small on a phone)
     const target = new THREE.Mesh(HIT_GEOMETRY, HIT_MATERIAL);

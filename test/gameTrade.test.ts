@@ -4,7 +4,7 @@ import { q, qn } from '../src/game/core/fixed.js';
 import { holding } from '../src/game/core/ledger.js';
 import { available, Match, previewCommand } from '../src/game/core/match.js';
 import { templatePortfolio } from '../src/game/data/templates.js';
-import { buildingFor, tradeErrand } from '../src/game/render/tradeCouriers.js';
+import { buildingFor, holdingsNow, tradeFlight } from '../src/game/render/tradeCoins.js';
 import type { BuildingPlacement } from '../src/castle/scene/plan.js';
 
 const c = new Catalog();
@@ -42,16 +42,35 @@ describe('the Trade phase', () => {
     expect(available(m, 'A', 'repay', 'usdc')).toBeGreaterThan(0n);
   });
 
-  it('each command’s courier goes to a building of its kind (a vault to Maker/Sky), else to the town’s end', () => {
-    const b = (id: string, category: string) => ({ protocol: { id, name: id, category } }) as unknown as BuildingPlacement;
+  it('each command’s coins go to a building of its kind (a vault to Maker/Sky), else nowhere in particular', () => {
+    const b = (id: string, category: string) => ({ protocol: { id, name: id, category }, npc: { x: 1, z: 2 } }) as unknown as BuildingPlacement;
     const town = [b('aave', 'lending'), b('uniswap', 'dex'), b('lido', 'staking'), b('maker', 'lending')];
     expect(buildingFor({ t: 'swap', from: 'eth', to: 'usdc', qty: 1n }, town)?.protocol.id).toBe('uniswap');
     expect(buildingFor({ t: 'borrow', asset: 'usdc', qty: 1n }, town)?.protocol.id).toBe('aave');
     expect(buildingFor({ t: 'borrow', asset: 'dai', qty: 1n, via: 'vault' }, town)?.protocol.id).toBe('maker');
     expect(buildingFor({ t: 'stake', asset: 'eth', qty: 1n }, town)?.protocol.id).toBe('lido');
     expect(buildingFor({ t: 'slotRelic', nft: 'x', slot: 0 }, town)).toBeNull();
-    const e = tradeErrand(match(), { t: 'swap', from: 'eth', to: 'usdc', qty: q(1) }, town, 12);
-    expect(e).toMatchObject({ protocolId: 'uniswap', direction: 'out', verb: 'swap', feeUsd: 12 });
-    expect(e.steps[0]!.give[0]).toMatchObject({ symbol: 'ETH', quantity: 1, usd: 3000 });
+  });
+
+  it('a trade’s coins: what it gave goes out, what it got comes back (gas not shown)', () => {
+    const town = [{ protocol: { id: 'uniswap', name: 'Uniswap', category: 'dex' }, npc: { x: 1, z: 2 } }] as unknown as BuildingPlacement[];
+    const m = match();
+    const swap = { t: 'swap', from: 'eth', to: 'usdc', qty: q(1) } as const;
+    const before = holdingsNow(m, 'A');
+    expect(m.command('A', swap).ok).toBe(true);
+    const f = tradeFlight(m, 'A', swap, before, town);
+    expect(f.at).toEqual({ x: 1, z: 2 });
+    expect(f.give).toEqual([expect.objectContaining({ symbol: 'ETH', quantity: 1 })]);
+    expect(f.get).toHaveLength(1);
+    expect(f.get[0]!.symbol).toBe('USDC');
+    expect(f.get[0]!.quantity).toBeGreaterThan(2900);
+    // staking: ETH goes in, stETH comes back
+    const stake = { t: 'stake', asset: 'eth', qty: q(0.5) } as const;
+    const b2 = holdingsNow(m, 'A');
+    expect(m.command('A', stake).ok).toBe(true);
+    const s = tradeFlight(m, 'A', stake, b2, town);
+    expect(s.at).toBeNull();
+    expect(s.give.map((g) => g.symbol)).toEqual(['ETH']);
+    expect(s.get.map((g) => g.symbol)).toEqual(['stETH']);
   });
 });

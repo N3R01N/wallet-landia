@@ -22,7 +22,7 @@ export interface BattleCtx {
 export type BattleResolver = (armies: readonly [Army, Army], ctx: BattleCtx) => BattleResult;
 
 /** Cavalry beats Ranged, Ranged beats Melee, Melee beats Cavalry. */
-const BEATS: Partial<Record<Role, Role>> = { cavalry: 'ranged', ranged: 'melee', melee: 'cavalry' };
+export const BEATS: Partial<Record<Role, Role>> = { cavalry: 'ranged', ranged: 'melee', melee: 'cavalry' };
 
 export function damageMult(attacker: Role, defender: Role, area = false): number {
   let m = 1;

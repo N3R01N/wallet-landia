@@ -44,16 +44,16 @@ const PERSONAL = 0.7;
 export const FRAME_EVERY = 2;
 
 /** Capturing: this many units, uncontested, for this long (half with home advantage). */
-const CAPTURE_UNITS = 5;
-const CAPTURE_SECONDS = 4;
+export const CAPTURE_UNITS = 5;
+export const CAPTURE_SECONDS = 4;
 /** A capture point's reach. */
 export const CAPTURE_RADIUS = 5;
 
 /** Protocol abilities' timings (spec: "Battle ability"). */
-const SHIELD_AT = 10;
-const SWAP_EVERY = 12;
-const LOAN_AT = 20;
-const LOAN_FOR = 8;
+export const SHIELD_AT = 10;
+export const SWAP_EVERY = 12;
+export const LOAN_AT = 20;
+export const LOAN_FOR = 8;
 const EARLY = 10;
 
 export interface LanePoint {

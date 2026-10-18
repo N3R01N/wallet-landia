@@ -42,6 +42,8 @@ interface Flying {
   done: () => void;
   /** An NFT frame: it turns once round on the way. */
   frame?: boolean;
+  /** Bigger than usual (a coin seen from far off). */
+  size?: number;
 }
 
 /** Coins and frames fly bigger than life (as in collecting games): readable from the game's camera. */
@@ -115,23 +117,29 @@ export class Exchange {
     this.#host = host;
   }
 
+  /** Coins and frames in flight. */
+  get flying(): number {
+    return this.#flying.length;
+  }
+
   /**
    * Goods from one place to another: coins for tokens (by value), frames for
    * NFTs. `incoming`: the guild receives (brighter, rising sound; a green label).
-   * Returns how long until the last lands (s).
+   * Returns how long until the last lands (s). `size`: coins this many times
+   * their usual size (to be seen from a camera far off).
    */
-  send(from: THREE.Vector3, to: THREE.Vector3, goods: readonly Goods[], incoming: boolean, delay = 0): number {
+  send(from: THREE.Vector3, to: THREE.Vector3, goods: readonly Goods[], incoming: boolean, delay = 0, size = 1): number {
     let end = 0;
     let at = delay;
     for (const g of goods.slice(0, 3)) {
-      const took = g.isNft ? this.#frame(from, to, g, at, incoming) : this.#coins(from, to, g, at, incoming);
+      const took = g.isNft ? this.#frame(from, to, g, at, incoming) : this.#coins(from, to, g, at, incoming, size);
       end = Math.max(end, took);
       at += 0.25;
     }
     return end;
   }
 
-  #coins(from: THREE.Vector3, to: THREE.Vector3, g: Goods, delay: number, incoming: boolean): number {
+  #coins(from: THREE.Vector3, to: THREE.Vector3, g: Goods, delay: number, incoming: boolean, size: number): number {
     const n = coinCount(g.usd);
     const silver = STABLES.has(g.symbol.toUpperCase());
     let last = 0;
@@ -139,7 +147,7 @@ export class Exchange {
       const model = this.#host.model('fx.coin');
       if (model) this.#dressCoin(model, g.symbol, silver);
       const obj = model ?? new THREE.Mesh(COIN, silver ? SILVER : GOLD);
-      obj.scale.setScalar(COIN_SCALE);
+      obj.scale.setScalar(COIN_SCALE * size);
       obj.visible = false;
       this.#host.add(obj);
       // a fountain first: each coin pops a little sideways, then streams
@@ -157,6 +165,7 @@ export class Exchange {
         duration,
         age: 0,
         spin: 10 + Math.random() * 6,
+        size,
         done: () => {
           this.#host.onCoin(i, n, incoming);
           if (i === n - 1) {
@@ -394,7 +403,7 @@ export class Exchange {
         f.obj.scale.setScalar(FRAME_SCALE * (0.8 + Math.sin(Math.PI * t) * 0.5));
       } else {
         f.obj.rotation.y += f.spin * dt;
-        f.obj.scale.setScalar(COIN_SCALE * (t > 0.85 ? 1 - (t - 0.85) * 4 : 1));
+        f.obj.scale.setScalar(COIN_SCALE * (f.size ?? 1) * (t > 0.85 ? 1 - (t - 0.85) * 4 : 1));
       }
     }
     for (const l of [...this.#labels]) {

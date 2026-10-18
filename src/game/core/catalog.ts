@@ -39,7 +39,8 @@ export const UNIT_TYPES: Readonly<Record<UnitTypeId, UnitType>> = Object.fromEnt
   Object.entries(unitsJson.units).map(([id, u]) => [id, { id, ...u } as UnitType]),
 );
 
-const FALLBACK = unitsJson.fallback as Record<string, UnitTypeId>;
+/** The unit an asset with no curated one fields, by its category. */
+export const UNIT_FALLBACK = unitsJson.fallback as Readonly<Record<string, UnitTypeId>>;
 
 export class Catalog {
   readonly #assets = new Map<AssetId, Asset>();
@@ -67,7 +68,7 @@ export class Catalog {
   unitOf(id: AssetId): UnitType | null {
     const a = this.asset(id);
     if (a.isStable) return null;
-    const unitId = a.curatedUnit ?? FALLBACK[a.category] ?? 'militia';
+    const unitId = a.curatedUnit ?? UNIT_FALLBACK[a.category] ?? 'militia';
     const u = UNIT_TYPES[unitId];
     if (!u) throw new Error(`unknown unit ${unitId}`);
     return u;

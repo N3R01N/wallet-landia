@@ -131,7 +131,7 @@ export function portfolio(m: Match, side: SideId = 'A'): HTMLElement {
     .map(({ p, v }) => {
       const a = m.catalog.asset(p.asset);
       const sq = units.get(p.asset);
-      const what = p.kind === 'borrowed' ? 'debt' : a.isStable ? 'walls' : sq ? `${sq.count} ${UNIT_TYPES[sq.unit]?.name ?? ''}` : 'no units';
+      const what = p.kind === 'borrowed' ? 'debt' : a.isStable ? 'walls' : sq ? unitLink(sq.unit, sq.count) : 'no units';
       return el(
         'tr',
         {},
@@ -141,6 +141,11 @@ export function portfolio(m: Match, side: SideId = 'A'): HTMLElement {
       );
     });
   return el('table', { class: 'siege-portfolio' }, el('tbody', {}, ...rows));
+}
+
+/** A count of a unit, its name a button that opens the guide at it (siegeMode listens). */
+export function unitLink(unit: string, count: number): HTMLElement {
+  return el('span', {}, `${count} `, el('button', { class: 'siege-unit-link', type: 'button', 'data-guide-unit': unit, title: 'What this unit does' }, UNIT_TYPES[unit]?.name ?? unit));
 }
 
 /** The battlefield buildings: who holds each, what it gives its holder, and where you have home advantage. */

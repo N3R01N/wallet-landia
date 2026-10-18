@@ -36,7 +36,7 @@ export interface TradePanelOptions {
   match: Match;
   /** Sends a command (through the match's client; the match itself when absent). */
   command?: (cmd: Command) => CommandResult;
-  /** A command was accepted (the courier goes out). */
+  /** A command was accepted (its coins fly). */
   onCommand: (cmd: Command) => void;
 }
 
@@ -148,7 +148,7 @@ export class TradePanel {
       return b;
     });
     const previewEl = el('p', { class: 'siege-preview-line', role: 'status' });
-    const sendBtn = el('button', { class: 'btn siege-send', type: 'button' }, 'Send the courier');
+    const sendBtn = el('button', { class: 'btn siege-send', type: 'button' }, 'Confirm');
     sendBtn.addEventListener('click', () => this.#send());
     this.#refreshPreview(previewEl, sendBtn, pctLabel);
 
@@ -239,7 +239,7 @@ export class TradePanel {
     const cmd = this.#command();
     if (!cmd) return;
     const r = this.#dispatch(cmd);
-    this.#message = r.ok ? 'The courier sets out.' : r.reason;
+    this.#message = r.ok ? '✓ Done.' : r.reason;
     if (r.ok) this.#opts.onCommand(cmd);
     this.render();
   }

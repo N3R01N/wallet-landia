@@ -3,7 +3,7 @@
  * timer, the regime, both keeps' HP, and per phase what it shows. The Market
  * week plays its candles day by day; the Trade phase has 30 seconds (paused at
  * will, against an NPC), the rumor, the loans' health, the portfolio and the
- * trade panel, a courier for every action; the battle is simulated in the
+ * trade panel, coins flying for every action; the battle is simulated in the
  * worker and played on the streets; the keeps show their damage after each
  * Siege phase.
  */
@@ -11,15 +11,14 @@
 import * as THREE from 'three';
 import type { Stage } from '../../castle/scene/castleView.js';
 import type { BuildingPlacement } from '../../castle/scene/plan.js';
-import type { Errand } from '../../castle/world/world.js';
+import type { Goods } from '../../domain/model.js';
 import { el } from '../../util/dom.js';
 import { unitCount } from '../core/army.js';
-import { gasCost } from '../core/ledger.js';
 import { EVENTS } from '../core/market.js';
 import { damageState, encodeReplay, type Match, type Replay } from '../core/match.js';
 import type { Command, SideId } from '../core/types.js';
 import { BattleView } from '../render/battleView.js';
-import { tradeErrand } from '../render/tradeCouriers.js';
+import { holdingsNow, tradeFlight, type Holdings } from '../render/tradeCoins.js';
 import type { MatchClient } from '../sim/matchClient.js';
 import { fieldPanel, gauges, portfolio, powersPanel, regimeBadge, rumorCard, ticker, warnAt } from './hud.js';
 import { FieldMarkers } from '../render/fieldMarkers.js';
@@ -43,9 +42,13 @@ export interface MatchScene {
   setDamage(obj: THREE.Object3D, state: number): void;
   focusAt(x: number, z: number, zoom?: number): void;
   readonly plan: { buildings: BuildingPlacement[] };
-  sendNow(errand: Errand): void;
+  flyGoods(from: { x: number; z: number }, to: { x: number; z: number }, goods: readonly Goods[], incoming: boolean, delay?: number, size?: number): number;
+  groundPoint(clientX: number, clientY: number): { x: number; z: number } | null;
   setWeather(w: Weather): void;
 }
+
+/** Trade coins fly twice their town size: the overview's camera is far off. */
+const COIN_SIZE = 2;
 
 /** The weather a market event brings over the town (spec: "Battlefield look"). */
 const EVENT_WEATHER: Partial<Record<string, Weather>> = {
@@ -102,13 +105,23 @@ export class MatchPanel {
   /** Damage dealt per squad over the match, for the recap's MVPs. */
   readonly #damage = new Map<string, { side: SideId; label: string; damage: number }>();
 
+  /** Your holdings just before your last command (what it moved shows as coins). */
+  #before: Holdings | null = null;
+
   /** Who held the buildings as the last battle began (its replay starts from there). */
   #ownersBefore: Record<string, SideId | null> = {};
 
   constructor(opts: MatchPanelOptions) {
     this.#opts = opts;
     this.#client = opts.client;
-    this.#trade = new TradePanel({ match: opts.client.replica, command: (cmd) => opts.client.command('A', cmd), onCommand: (cmd) => this.#courier(cmd) });
+    this.#trade = new TradePanel({
+      match: opts.client.replica,
+      command: (cmd) => {
+        this.#before = holdingsNow(opts.client.replica, 'A');
+        return opts.client.command('A', cmd);
+      },
+      onCommand: (cmd) => this.#traded(cmd),
+    });
     this.#openTrade();
   }
 
@@ -289,7 +302,13 @@ export class MatchPanel {
     if (m.side('B').isNpc) {
       this.#npcPending = true;
       this.#enemyMoves = 'The enemy is trading…';
-      void this.#client.npc('B').then((done) => {
+      let i = 0;
+      const each = (cmd: Command) => {
+        const before = holdingsNow(m, 'B');
+        const at = i++ * 0.7;
+        return () => this.#coins('B', cmd, before, at);
+      };
+      void this.#client.npc('B', each).then((done) => {
         const said = done.map((c) => describe(m, c));
         this.#enemyMoves = said.length > 0 ? `The enemy traded: ${said.join('; ')}.` : 'The enemy holds.';
         this.#npcPending = false;
@@ -461,19 +480,59 @@ export class MatchPanel {
 
   // ---------- helpers ----------
 
-  #courier(cmd: Command): void {
-    const scene = this.#scene;
+  #traded(cmd: Command): void {
     const m = this.match;
-    if (scene) scene.sendNow(tradeErrand(m, cmd, scene.plan.buildings, gasCost({ unitValue: m.state.unitValue, gasMult: m.state.market.gasMult })));
-    // new walls: the masons raise them as the courier comes home with the stones
+    const lands = this.#before ? this.#coins('A', cmd, this.#before) : 0;
+    this.#before = null;
+    // new walls: the masons raise them as the coins land
     const max = m.side('A').keepHpMax;
     if (max > this.#keepMax + 0.5) {
       this.#note = `🧱 The masons raise your walls: +${Math.round(max - this.#keepMax)} HP.`;
-      setTimeout(() => this.#raiseWalls(), 2500);
+      setTimeout(() => this.#raiseWalls(), lands * 1000);
     }
     this.#keepMax = max;
     this.#loanFlag();
     this.render();
+  }
+
+  /**
+   * A trade, shown as coins (no courier: it is done at once): what it gave
+   * flies from the side's gate to the building of its kind, what it got flies
+   * back. Returns how long until the last coin lands (s).
+   */
+  #coins(side: SideId, cmd: Command, before: Holdings, delay = 0): number {
+    const scene = this.#scene;
+    if (!scene) return 0;
+    const m = this.match;
+    const gate = m.battleCtx().map?.gates?.[side];
+    if (!gate) return 0;
+    const f = tradeFlight(m, side, cmd, before, scene.plan.buildings);
+    // your gate out of sight (the overview frames the town): the coins leave from beside the trade panel instead
+    const from = side === 'A' && !this.#inSight(gate) ? (this.#besidePanel() ?? gate) : gate;
+    // no building of its kind in town: the goods go up the street a little and back
+    const at = f.at ?? { x: gate.x + 2, z: gate.z + (side === 'A' ? 6 : -6) };
+    const out = f.give.length > 0 ? scene.flyGoods(from, at, f.give, false, delay, COIN_SIZE) : delay;
+    const back = f.get.length > 0 ? scene.flyGoods(at, from, f.get, true, Math.max(delay, out * 0.6) + 0.2, COIN_SIZE) : 0;
+    return Math.max(out, back);
+  }
+
+  /** Whether a point on the ground shows in the view, clear of the panel. */
+  #inSight(p: { x: number; z: number }): boolean {
+    const scene = this.#scene;
+    const at = scene?.stage().screen(new THREE.Vector3(p.x, 0, p.z));
+    if (!scene || !at) return false;
+    const view = scene.element.getBoundingClientRect();
+    const panel = (this.element.closest('.siege-panel') ?? this.element).getBoundingClientRect();
+    // well inside: not at the very edge
+    const m = 0.12;
+    return at.x > panel.right - view.left + view.width * m && at.x < view.width * (1 - m) && at.y > view.height * m && at.y < view.height * (1 - m);
+  }
+
+  /** The ground just right of the panel, level with the trade controls. */
+  #besidePanel(): { x: number; z: number } | null {
+    const panel = (this.element.closest('.siege-panel') ?? this.element).getBoundingClientRect();
+    const trade = this.#trade.element.getBoundingClientRect();
+    return this.#scene?.groundPoint(panel.right + 48, trade.height > 0 ? trade.top + trade.height / 2 : panel.top + panel.height / 2) ?? null;
   }
 
   /** Sparkles along the front wall, where the new stones go in. */

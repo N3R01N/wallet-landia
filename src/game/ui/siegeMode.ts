@@ -15,6 +15,7 @@ import { MatchClient } from '../sim/matchClient.js';
 import { siegePlan, type SiegePlan } from '../render/siegePlan.js';
 import { TEAM_COLORS } from '../render/battleView.js';
 import { opponentPortfolio } from '../setup/editor.js';
+import { Guide } from './guide.js';
 import { MatchPanel, showCastleDamage, type MatchScene } from './matchPanel.js';
 import { SetupPanel, type SetupChoice, type SetupOptions } from './setupPanel.js';
 import './siege.css';
@@ -41,6 +42,7 @@ export class SiegeMode {
   readonly #setup: SetupPanel;
   #plan: SiegePlan | null = null;
   #matchPanel: MatchPanel | null = null;
+  readonly #guide = new Guide({ load: () => (this.#scene ? (name) => this.#scene!.stage().load(name) : null) });
   #replayPanel: ReplayPanel | null = null;
 
   constructor(opts: SiegeModeOptions) {
@@ -56,14 +58,24 @@ export class SiegeMode {
       min.textContent = folded ? '▸' : '▾';
       min.setAttribute('aria-expanded', String(!folded));
     });
+    const help = el('button', { class: 'btn siege-guide-open', type: 'button', 'aria-label': 'Open the guide' }, '? Guide');
+    help.addEventListener('click', () => this.#guide.show());
+    const howTo = el('button', { class: 'siege-link', type: 'button' }, 'New here? How to play');
+    howTo.addEventListener('click', () => this.#guide.show('play'));
     this.#panel = el(
       'div',
       { class: 'siege-panel', role: 'region', 'aria-label': 'Siege of the Ledger' },
       min,
+      help,
       el('h2', {}, '⚔ Siege of the Ledger'),
-      el('p', { class: 'siege-intro' }, 'Your portfolio is your army. Trade between battles and bring down the enemy keep.'),
+      el('p', { class: 'siege-intro' }, 'Your portfolio is your army. Trade between battles and bring down the enemy keep. ', howTo),
       this.#body,
     );
+    // a unit's name anywhere in the panel opens the guide at that unit
+    this.#panel.addEventListener('click', (e) => {
+      const at = (e.target as HTMLElement).closest<HTMLElement>('[data-guide-unit]');
+      if (at?.dataset.guideUnit) this.#guide.show('units', at.dataset.guideUnit);
+    });
     this.#show();
   }
 

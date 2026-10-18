@@ -68,11 +68,20 @@ export class MatchClient {
     return r;
   }
 
-  /** The NPC's trades for this Trade phase, decided by the worker's planner; the replica takes the same commands. */
-  async npc(side: SideId): Promise<Command[]> {
+  /**
+   * The NPC's trades for this Trade phase, decided by the worker's planner;
+   * the replica takes the same commands. `each` is called
+   * just before the replica takes each one; what it returns, just after (to
+   * see what the trade changed).
+   */
+  async npc(side: SideId, each?: (cmd: Command) => (() => void) | void): Promise<Command[]> {
     const reply = await this.#send({ t: 'npc', side });
     const commands = reply.ok ? (reply.commands ?? []) : [];
-    for (const c of commands) this.replica.command(side, c);
+    for (const c of commands) {
+      const after = each?.(c);
+      this.replica.command(side, c);
+      after?.();
+    }
     this.#check(reply, stateHash(this.replica));
     return commands;
   }
