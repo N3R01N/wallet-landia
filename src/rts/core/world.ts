@@ -7,9 +7,10 @@
  */
 
 import { streamOf, type Rng } from '../../game/core/detmath.js';
-import { BUILDINGS, RULES, START_KITS, STABLES, TOKEN_IDS, TOKENS, type BuildingKind, type PlayerId, type StartKit, type TokenId } from '../data/rules.js';
+import { BUILDINGS, aName, RULES, START_KITS, STABLES, TOKEN_IDS, TOKENS, type BuildingKind, type PlayerId, type StartKit, type TokenId } from '../data/rules.js';
 import { generateMap, markRect, type GameMap, cellOf } from './map.js';
 import { openingMarket, stepMarket, type Market } from './market.js';
+import { accrue, applyEcon, ECON_COMMANDS, liquidate, type EconCommand, type EconWorld, type Position } from './economy.js';
 
 export interface Building {
   id: number;
@@ -31,13 +32,18 @@ export interface Player {
   build: { kind: BuildingKind; left: number; total: number } | null;
   /** A finished building waiting to be placed. */
   ready: BuildingKind | null;
+  /** What it holds at the protocols (economy.ts). */
+  positions: Position[];
 }
 
-export type Command =
+/** The commands of building (the economy's are in economy.ts). */
+export type BuildCommand =
   | { t: 'build'; kind: BuildingKind }
   | { t: 'cancelBuild' }
   | { t: 'place'; x: number; z: number }
   | { t: 'upgrade'; id: number };
+
+export type Command = BuildCommand | EconCommand;
 
 export interface Result {
   ok: boolean;
@@ -49,11 +55,14 @@ export type WorldEvent =
   | { t: 'placed'; id: number }
   | { t: 'built'; owner: PlayerId; kind: BuildingKind }
   | { t: 'upgraded'; id: number }
-  | { t: 'paid'; owner: PlayerId; usd: number };
+  | { t: 'paid'; owner: PlayerId; usd: number }
+  | { t: 'liquidated'; owner: PlayerId; count: number };
 
 export interface WorldSetup {
   seed: string;
   kits: Record<PlayerId, StartKit>;
+  /** Prices hold still (tests, a tutorial). */
+  still?: boolean;
 }
 
 const DT = 1 / RULES.tickHz;
@@ -71,16 +80,19 @@ export class World {
   #events: WorldEvent[] = [];
   readonly #rng: Rng;
   #priceClock = 0;
+  /** Prices hold still (the setup's `still`). */
+  still: boolean;
 
   constructor(setup: WorldSetup) {
     this.seed = setup.seed;
     this.map = generateMap(setup.seed);
     this.market = openingMarket();
     this.#rng = streamOf(setup.seed, 'rts-world');
+    this.still = setup.still ?? false;
     const player = (id: PlayerId): Player => {
       const tokens = Object.fromEntries(TOKEN_IDS.map((t) => [t, 0])) as Record<TokenId, number>;
       for (const [t, usd] of Object.entries(START_KITS[setup.kits[id]].dollars) as [TokenId, number][]) tokens[t] = usd / TOKENS[t].price;
-      return { id, tokens, build: null, ready: null };
+      return { id, tokens, build: null, ready: null, positions: [] };
     };
     this.players = { A: player('A'), B: player('B') };
     for (const id of ['A', 'B'] as const) this.#add('hall', id, RULES.start[id].x, RULES.start[id].z);
@@ -124,7 +136,7 @@ export class World {
     if (!hall) return 'no wallet hall';
     if (hall.level < r.hallLevel) return `needs the wallet hall at level ${r.hallLevel}`;
     const missing = r.needs.find((n) => !this.has(p, n));
-    if (missing) return `needs a ${BUILDINGS[missing].name}`;
+    if (missing) return `needs ${aName(missing)}`;
     if (me.build || me.ready) return 'the hall is busy';
     if (this.spendable(p) < r.cost) return `needs $${r.cost.toLocaleString('en-US')} in stablecoins or ETH`;
     return null;
@@ -172,16 +184,34 @@ export class World {
     return r;
   }
 
+  /** The economy's view of this world. */
+  get econ(): EconWorld {
+    return {
+      prices: this.market.prices,
+      tokens: (p) => this.players[p].tokens,
+      positions: (p) => this.players[p].positions,
+      level: (p, kind) => this.level(p, kind),
+      nextId: () => this.#nextId++,
+    };
+  }
+
+  /** The highest level of this kind of building the player has standing (0: none). */
+  level(p: PlayerId, kind: BuildingKind): number {
+    return this.buildings.reduce((m, b) => (b.owner === p && b.kind === kind && b.hp > 0 ? Math.max(m, b.level) : m), 0);
+  }
+
   #apply(p: PlayerId, cmd: Command): Result {
     if (this.winner) return { ok: false, reason: 'the match is over' };
+    if (ECON_COMMANDS.has(cmd.t)) return applyEcon(this.econ, p, cmd as EconCommand);
     const me = this.players[p];
-    switch (cmd.t) {
+    const c = cmd as BuildCommand;
+    switch (c.t) {
       case 'build': {
-        const why = this.cantBuild(p, cmd.kind);
+        const why = this.cantBuild(p, c.kind);
         if (why) return { ok: false, reason: why };
-        const r = BUILDINGS[cmd.kind];
+        const r = BUILDINGS[c.kind];
         this.#pay(p, r.cost);
-        me.build = { kind: cmd.kind, left: r.time, total: r.time };
+        me.build = { kind: c.kind, left: r.time, total: r.time };
         return { ok: true };
       }
       case 'cancelBuild': {
@@ -194,7 +224,7 @@ export class World {
       }
       case 'place': {
         if (!me.ready) return { ok: false, reason: 'nothing ready to place' };
-        const at = this.snap(me.ready, cmd.x, cmd.z);
+        const at = this.snap(me.ready, c.x, c.z);
         const why = this.cantPlace(p, me.ready, at.x, at.z);
         if (why) return { ok: false, reason: why };
         this.#add(me.ready, p, at.x, at.z);
@@ -202,7 +232,7 @@ export class World {
         return { ok: true };
       }
       case 'upgrade': {
-        const b = this.buildings.find((x) => x.id === cmd.id);
+        const b = this.buildings.find((x) => x.id === c.id);
         if (!b) return { ok: false, reason: 'no such building' };
         const why = this.cantUpgrade(p, b);
         if (why) return { ok: false, reason: why };
@@ -221,7 +251,12 @@ export class World {
     this.#priceClock += DT;
     if (this.#priceClock >= RULES.priceStep - 1e-9) {
       this.#priceClock = 0;
-      stepMarket(this.market, this.#rng);
+      if (!this.still) stepMarket(this.market, this.#rng);
+      for (const id of ['A', 'B'] as const) {
+        accrue(this.econ, id, RULES.priceStep);
+        const count = liquidate(this.econ, id);
+        if (count > 0) this.#events.push({ t: 'liquidated', owner: id, count });
+      }
     }
     for (const p of Object.values(this.players)) {
       if (!p.build) continue;

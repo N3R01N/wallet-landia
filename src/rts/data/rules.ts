@@ -131,3 +131,9 @@ export const START_KITS: Readonly<Record<StartKit, { name: string; dollars: Part
   eth: { name: '$10,000 in ETH', dollars: { eth: 10000 } },
   mix: { name: 'A basic mix', dollars: { usdc: 4000, eth: 4000, link: 1000, uni: 1000 } },
 };
+
+/** A building's name with its article ("an Exchange", "a Bank"). */
+export function aName(kind: BuildingKind): string {
+  const n = BUILDINGS[kind].name;
+  return `${/^[AEIOU]/.test(n) ? 'an' : 'a'} ${n}`;
+}

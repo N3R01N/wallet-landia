@@ -8,6 +8,8 @@
 import { el } from '../../util/dom.js';
 import { BUILDINGS, BUILDING_KINDS, TOKEN_IDS, TOKENS, type BuildingKind, type PlayerId } from '../data/rules.js';
 import type { Building, Command, Result, World } from '../core/world.js';
+import { incomePerMinute, positionValue } from '../core/economy.js';
+import { actions, actionsKey, type ActionContext, type Live } from './actions.js';
 
 export interface HudOptions {
   world: World;
@@ -34,6 +36,9 @@ export class Hud {
   #keys = { build: '', info: '' };
   /** Live parts updated in place between rebuilds. */
   #live: { text: HTMLElement; bar: HTMLElement; read: () => [string, number] | null }[] = [];
+  #liveText: Live[] = [];
+  /** The panel's token choices (they outlive its rebuilds). */
+  readonly #choice: ActionContext['choice'] = { from: 'usdc', to: 'eth', pool: 'eth', pair: 'usdc', supply: 'eth', borrow: 'usdc' };
 
   constructor(o: HudOptions) {
     this.#o = o;
@@ -53,13 +58,17 @@ export class Hud {
     if (performance.now() > this.#toastUntil) this.#toast.hidden = true;
 
     // the treasury
-    const held = TOKEN_IDS.filter((t) => me.tokens[t] * w.market.prices[t] >= 0.5);
-    const total = TOKEN_IDS.reduce((s, t) => s + w.usd(this.#o.me, t), 0);
+    const tokensHeld = TOKEN_IDS.filter((t) => me.tokens[t] * w.market.prices[t] >= 0.5);
+    const spot = TOKEN_IDS.reduce((s, t) => s + w.usd(this.#o.me, t), 0);
+    const held = me.positions.reduce((s, x) => s + positionValue(w.econ, x), 0);
+    const income = incomePerMinute(w.econ, this.#o.me);
     this.#top.replaceChildren(
       el('span', { class: 'rts-clock' }, `⏱ ${clock(w.time)}`),
       el('span', { class: 'rts-market' }, `${REGIME[w.market.regime] ?? ''} · day ${w.market.day + 1}`),
-      el('span', { class: 'rts-total' }, el('strong', {}, usd(total))),
-      ...held.map((t) => el('span', { class: 'rts-token', title: `${me.tokens[t].toPrecision(4)} ${TOKENS[t].symbol} at ${usd(w.market.prices[t])}` }, el('b', {}, TOKENS[t].symbol), ` ${usd(w.usd(this.#o.me, t))}`)),
+      el('span', { class: 'rts-total', title: 'Your tokens and your positions' }, el('strong', {}, usd(spot + held))),
+      el('span', { class: 'rts-income', title: 'What your positions earn a minute' }, `📈 ${income >= 0 ? '+' : '−'}${usd(Math.abs(income))}/min`),
+      held !== 0 ? el('span', { class: 'rts-held' }, `in positions ${usd(held)}`) : '',
+      ...tokensHeld.map((t) => el('span', { class: 'rts-token', title: `${me.tokens[t].toPrecision(4)} ${TOKENS[t].symbol} at ${usd(w.market.prices[t])}` }, el('b', {}, TOKENS[t].symbol), ` ${usd(w.usd(this.#o.me, t))}`)),
     );
 
     // the hall's construction (rebuilt when what it offers changes; the timers tick in place)
@@ -67,9 +76,10 @@ export class Hud {
     const s = this.#o.selected();
     const upWhy = s && s.owner === this.#o.me ? w.cantUpgrade(this.#o.me, s) : null;
     const buildKey = JSON.stringify([me.build?.kind, me.ready, whys]);
-    const infoKey = JSON.stringify(s ? [s.id, s.level, s.upgrading?.to, upWhy, s.owner] : null);
+    const infoKey = JSON.stringify(s ? [s.id, s.level, s.upgrading?.to, upWhy, s.owner, s.owner === this.#o.me ? actionsKey(w, this.#o.me, s) : ''] : null);
     if (buildKey !== this.#keys.build || infoKey !== this.#keys.info) {
       this.#live = [];
+      this.#liveText = [];
       if (buildKey !== this.#keys.build) this.#renderBuild(whys);
       this.#renderInfo(s, upWhy);
       this.#keys = { build: buildKey, info: infoKey };
@@ -80,6 +90,7 @@ export class Hud {
       l.text.textContent = v[0];
       l.bar.style.setProperty('--p', String(Math.max(0, Math.min(1, v[1]))));
     }
+    for (const l of this.#liveText) l.text.textContent = l.read();
   }
 
   #renderBuild(whys: (string | null)[]): void {
@@ -137,6 +148,18 @@ export class Hud {
         parts.push(up);
         if (why) parts.push(el('p', { class: 'rts-why' }, why));
       } else parts.push(el('p', { class: 'rts-why' }, 'At its highest level.'));
+      const ctx: ActionContext = {
+        world: this.#o.world,
+        me: this.#o.me,
+        send: (cmd) => this.#send(cmd),
+        choice: this.#choice,
+        refresh: () => {
+          this.#keys.info = '';
+          this.render();
+        },
+        live: this.#liveText,
+      };
+      parts.push(...actions(ctx, s));
     }
     this.#info.replaceChildren(...parts);
   }

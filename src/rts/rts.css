@@ -193,3 +193,53 @@
     bottom: calc(30% + 20px);
   }
 }
+
+/* the economy's actions in the selection panel */
+
+.rts-hud h3 {
+  margin: 10px 0 4px;
+  font-size: 0.9rem;
+}
+
+.rts-row,
+.rts-taps,
+.rts-pos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.rts-taps > span {
+  min-width: 96px;
+}
+
+.rts-hud .rts-tap {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.rts-select {
+  min-height: 34px;
+  border: 1px solid #c9a24a;
+  border-radius: 6px;
+  background: #fbf5e6;
+  font: inherit;
+}
+
+.rts-pos {
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: #e7dbc0;
+}
+
+.rts-pos > span:first-child {
+  flex: 1;
+  font-weight: 600;
+}
+
+.rts-income {
+  color: #3f6a2e;
+  font-weight: 600;
+}
