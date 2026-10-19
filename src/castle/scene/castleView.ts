@@ -22,7 +22,7 @@ import { ModelLibrary, disposeTree, type Loaded } from '../assets/models.js';
 import { artTheme, loadThemeImage, themeFileUrl, type CastleTheme } from '../assets/theme.js';
 import { crestColors } from '../../util/rng.js';
 import { DEFAULT_TIMING, buildCourierScript, courierAt, type CourierScript, type CourierState, type NpcClip } from './courier.js';
-import { pathRow, pathShape, planCastle, routeBetweenWallets, routeFromHome, routeTo, type BuildingPlacement, type CastleLayout, type CastlePlan, type Placement, type WalletPlacement } from './plan.js';
+import { GATE_GUARDS, pathRow, pathShape, planCastle, routeBetweenWallets, routeFromHome, routeTo, type BuildingPlacement, type CastleLayout, type CastlePlan, type Placement, type WalletPlacement } from './plan.js';
 import type { CastleWorld, Errand } from '../world/world.js';
 import { lightAt, type Weather } from '../world/sky.js';
 import { logoPath } from '../world/logos.js';
@@ -43,6 +43,18 @@ import {
 } from './cameraRig.js';
 
 export type CastleFocus = 'castle' | 'town';
+
+/** A guard outside the gate who invites the player to a game mode (CastleViewOptions.guards). */
+export interface GateGuard {
+  /** What they call out now and then. */
+  teasers: readonly string[];
+  /** Tapped: the invitation, and its button. */
+  invite: string;
+  action: string;
+  go: () => void;
+  /** Their cloth's colour. */
+  tint?: string;
+}
 
 /** What a game mode adds to the scene (CastleViewOptions.extend). */
 export interface SceneExtension {
@@ -118,6 +130,8 @@ export interface CastleViewOptions {
    * castle). The chain view itself never depends on it (REDESIGN §8).
    */
   extend?: (plan: CastlePlan) => SceneExtension;
+  /** The two guards outside the gate, by the bridge (left out while a game mode clears the town). */
+  guards?: readonly GateGuard[];
   /** In build mode, a tap on a building (its protocol) or on an empty plot. */
   onArrangeTap?: (tap: { protocolId: string } | { slot: number }) => void;
 }
@@ -206,8 +220,15 @@ const CARRY_FRAME_SCALE = 1.4;
 /** The NFT frame's height under its handle's grip (m, fx.nft.frame). */
 const FRAME_HEIGHT = 0.62;
 const CHATTER_EVERY = 6;
+/** An invitation's bubble stays this long (s); a guard calls out every this many (plus up to 8). */
+const INVITE_TIME = 14;
+const GUARD_CALL_EVERY = 14;
+/** The gate guards' size (×). */
+const GUARD_SCALE = 1.3;
 /** A bubble's foot above a person's feet (m). */
 const BUBBLE_HEIGHT = 2.1;
+/** A gate guard's bubble sits this much higher (they are drawn bigger). */
+const GUARD_BUBBLE_LIFT = 0.5;
 /** While following, the player may pan the courier this share of the view's height away from the middle, no further. */
 const FOLLOW_SLACK = 0.3;
 /** The Chronicle tower turns this see-through while someone is behind it. */
@@ -429,6 +450,9 @@ export class CastleView {
   #bursts: { figure: Figure; until: number }[] = [];
   /** When someone in the street next says something unprompted. */
   #nextChatter = 4;
+  #nextGuardCall = 5;
+  /** The gate guards standing (their index in the options' guards). */
+  #guards: THREE.Object3D[] = [];
   readonly #controls = document.createElement('div');
 
   constructor(opts: CastleViewOptions) {
@@ -813,6 +837,7 @@ export class CastleView {
       'courier.base',
       ...[0, 1, 2, 3, 4, 5, 6].map((t) => `courier.cargo.t${t}`),
       'person.npc.base',
+      'person.guard',
       ...[...categories].map((c) => `person.npc.${c}`),
       ...CLOUD_MODELS,
       'scenery.cloud.rain',
@@ -1047,6 +1072,28 @@ export class CastleView {
       this.#layout.add(npc.object);
       this.#figures.push(npc);
       this.#npcs.set(b.protocol.id, npc);
+    }
+
+    // the guards at the gate, who invite you to the games (not while a game has the streets)
+    this.#guards = [];
+    if (!this.#extension?.quiet) {
+      (this.#opts.guards ?? []).slice(0, GATE_GUARDS.length).forEach((g, i) => {
+        const at = GATE_GUARDS[i]!;
+        const guard = new Figure(this.#make('person.guard'), this.#loaded.get('person.guard')?.clips ?? [], [TAP_CLIP]);
+        guard.object.position.set(at.x, 0, at.z);
+        guard.object.rotation.y = at.rot;
+        // a little bigger than the townsfolk: they are there to be found
+        guard.object.scale.setScalar(GUARD_SCALE);
+        if (guard.has('idle')) guard.play('idle');
+        if (g.tint) paint(guard.object, 'Tint', g.tint, this.#painted);
+        guard.object.userData.reacts = true;
+        guard.object.userData.person = true;
+        guard.object.userData.guard = i;
+        this.#reactions.set(guard.object, guard);
+        this.#layout.add(guard.object);
+        this.#figures.push(guard);
+        this.#guards.push(guard.object);
+      });
     }
     // the Glow parts of everything placed (shared materials: one entry each)
     this.#layout.traverse((o) => {
@@ -1549,12 +1596,39 @@ export class CastleView {
   #say(obj: THREE.Object3D, who: Person): string | null {
     const line = this.#opts.chatter?.(who);
     if (!line) return null;
-    this.#bubbles = this.#bubbles.filter((b) => (b.obj === obj ? (b.el.remove(), false) : true));
-    const bubble = el('div', 'speech-bubble');
-    bubble.textContent = line;
-    this.#bubbleLayer.append(bubble);
-    this.#bubbles.push({ el: bubble, obj, until: this.#time + BUBBLE_TIME });
+    this.#bubble(obj, said(line), BUBBLE_TIME);
     return line;
+  }
+
+  #bubble(obj: THREE.Object3D, bubble: HTMLElement, time: number): void {
+    this.#bubbles = this.#bubbles.filter((b) => (b.obj === obj ? (b.el.remove(), false) : true));
+    this.#bubbleLayer.append(bubble);
+    this.#bubbles.push({ el: bubble, obj, until: this.#time + time });
+  }
+
+  /** A gate guard's invitation: their words and a button to play. */
+  #invite(obj: THREE.Object3D, g: GateGuard): void {
+    const go = document.createElement('button');
+    go.className = 'btn guard-go';
+    go.type = 'button';
+    go.textContent = g.action;
+    go.addEventListener('click', () => g.go());
+    const words = document.createElement('p');
+    words.textContent = g.invite;
+    const bubble = el('div', 'speech-bubble guard-invite');
+    bubble.append(words, go);
+    bubble.dataset.guard = String(this.#guards.indexOf(obj));
+    // one invitation at a time: the other guard falls quiet
+    this.#bubbles = this.#bubbles.filter((b) => (b.obj !== obj && this.#guards.includes(b.obj) ? (b.el.remove(), false) : true));
+    this.#bubble(obj, bubble, INVITE_TIME);
+  }
+
+  /** Test hook: the page coordinates of a gate guard, chest high (null: none, or off the view). */
+  guardPoint(i: number): { x: number; y: number } | null {
+    const g = this.#guards[i];
+    if (!g) return null;
+    g.getWorldPosition(this.#scratch);
+    return this.pagePoint(this.#scratch.x, 1.2, this.#scratch.z);
   }
 
   /** Someone in the street speaks up now and then; the bubbles follow their heads and fade. */
@@ -1565,10 +1639,19 @@ export class CastleView {
       const one = this.#life?.someone(Math.random());
       if (one) this.#say(one.obj, one.who);
     }
+    // a gate guard calls out now and then (not over an invitation)
+    this.#nextGuardCall -= dt;
+    if (this.#nextGuardCall <= 0 && this.#guards.length) {
+      this.#nextGuardCall = GUARD_CALL_EVERY + Math.random() * 8;
+      const i = Math.floor(Math.random() * this.#guards.length);
+      const obj = this.#guards[i]!;
+      const teasers = this.#opts.guards?.[i]?.teasers ?? [];
+      if (teasers.length && !this.#bubbles.some((b) => b.obj === obj)) this.#bubble(obj, said(teasers[Math.floor(Math.random() * teasers.length)]!), BUBBLE_TIME);
+    }
     this.#bubbles = this.#bubbles.filter((b) => {
       if (this.#time > b.until || !b.obj.parent) return b.el.remove(), false;
       const head = b.obj.getWorldPosition(this.#bubbleScratch);
-      head.y += BUBBLE_HEIGHT;
+      head.y += BUBBLE_HEIGHT + (b.obj.userData.guard !== undefined ? GUARD_BUBBLE_LIFT : 0);
       const p = this.#toScreen(head);
       b.el.hidden = !p || !b.obj.visible;
       if (p) {
@@ -2018,6 +2101,13 @@ export class CastleView {
     }
     const o = this.#pick();
     if (!o) return;
+    if (o.userData.guard !== undefined) {
+      const g = this.#opts.guards?.[o.userData.guard as number];
+      this.#reactions.get(o)?.react(TAP_CLIP, false);
+      this.#opts.onTapped?.('person');
+      if (g) this.#invite(o, g);
+      return;
+    }
     if (!o.userData.building) {
       // a person's tap takes over its whole body (and back); a castle piece's plays over its idle
       if (this.#reactions.get(o)?.react(TAP_CLIP, !o.userData.person) && !o.userData.person) this.#shadowsMoveUntil = this.#time + 2;
@@ -2492,6 +2582,13 @@ function round2(v: number): number {
 }
 
 /** A div with a class (the weather's layers). */
+/** A speech bubble with a line in it. */
+function said(line: string): HTMLDivElement {
+  const d = el('div', 'speech-bubble');
+  d.textContent = line;
+  return d;
+}
+
 function el(tag: 'div', className: string): HTMLDivElement {
   const d = document.createElement(tag);
   d.className = className;

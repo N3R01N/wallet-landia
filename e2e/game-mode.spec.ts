@@ -1,30 +1,25 @@
 import { expect, test } from '@playwright/test';
-import { showTown } from './castleHelpers.js';
+import { showTown, tapGuard } from './castleHelpers.js';
 
-/** Siege of the Ledger's switch in the topbar: the game over the castle view, and back to the town. */
+/** Siege of the Ledger: a guard at the gate invites you, the game goes over the castle view, and back to the town. */
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('the siege switch turns the game on and off, with no horizontal scroll', async ({ page }) => {
+  test('the guard at the gate starts the game, the panel goes back to the town, with no horizontal scroll', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto('/');
-    await showTown(page);
-    const toggle = page.locator('.topbar .siege-toggle');
+    await page.goto('/?notour');
+    // no game buttons in the topbar: the guards at the gate invite you
+    await expect(page.locator('.topbar .siege-toggle, .topbar .rts-link')).toHaveCount(0);
     const panel = page.locator('.siege-panel');
     const chronicle = page.locator('.chronicle-btn');
-    await expect(toggle).toHaveAttribute('aria-label', 'Siege of the Ledger');
-    // every topbar button fits on the phone's screen
-    for (const b of await page.locator('.topbar button:visible').all()) {
-      const box = await b.boundingBox();
-      expect(box && box.x + box.width).toBeLessThanOrEqual(390);
-    }
     await expect(panel).toBeHidden();
+    await tapGuard(page, 0);
+    await expect(page.locator('.guard-invite[data-guard="0"]')).toContainText('Siege of the Ledger');
     await expect(chronicle).toBeVisible();
 
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('.guard-invite[data-guard="0"] .guard-go').click();
     await expect(panel).toBeVisible();
     await expect(panel).toContainText('Siege of the Ledger');
     // the town's own buttons step aside
@@ -32,22 +27,20 @@ test.describe('phone', () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
 
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await panel.locator('.siege-back').click();
     await expect(panel).toBeHidden();
     await expect(chronicle).toBeVisible();
     expect(errors).toEqual([]);
   });
 
-  test('?mode=siege starts in the game, from any tab', async ({ page }) => {
+  test('?mode=siege starts in the game, the guards stand aside', async ({ page }) => {
     await page.goto('/?mode=siege');
     await showTown(page);
     await expect(page.locator('.siege-panel')).toBeVisible();
-    await page.locator('.tab', { hasText: 'Guild' }).click();
-    await page.locator('.topbar .siege-toggle').click(); // off
-    await page.locator('.topbar .siege-toggle').click(); // on again: back to the castle tab
-    await expect(page.locator('.tab', { hasText: 'Castle' })).toHaveAttribute('aria-current', 'page');
-    await expect(page.locator('.siege-panel')).toBeVisible();
+    // the guards stand aside while the game has the streets
+    expect(await page.evaluate(() => (window as unknown as { castleView: { guardPoint(i: number): unknown } }).castleView.guardPoint(0))).toBeNull();
+    await page.locator('.siege-panel .siege-back').click();
+    await expect(page.locator('.siege-panel')).toBeHidden();
   });
 });
 

@@ -89,3 +89,22 @@ export async function showTown(page: Page): Promise<void> {
   await page.evaluate(() => (window as unknown as { castleView: { lookAt(w: 'town'): void } }).castleView.lookAt('town'));
   await page.waitForTimeout(1500);
 }
+
+/** Taps a guard at the gate (0: Siege, 1: Ledger Wars); their invitation shows. */
+export async function tapGuard(page: Page, i: number): Promise<void> {
+  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 120_000 });
+  type View = { castleView: { focusAt(x: number, z: number, zoom?: number): void; guardPoint(i: number): { x: number; y: number } | null } };
+  await page.evaluate(() => (window as unknown as View).castleView.focusAt(0, 1, 2));
+  // the camera eases there: wait until the guard stands still on the screen
+  let last: { x: number; y: number } | null = null;
+  for (let k = 0; k < 20; k++) {
+    await page.waitForTimeout(300);
+    const now = await page.evaluate((n) => (window as unknown as View).castleView.guardPoint(n), i);
+    if (now && last && Math.hypot(now.x - last.x, now.y - last.y) < 1) break;
+    last = now;
+  }
+  const pt = await page.evaluate((n) => (window as unknown as View).castleView.guardPoint(n), i);
+  expect(pt).not.toBeNull();
+  await page.mouse.click(pt!.x, pt!.y);
+  await expect(page.locator(`.guard-invite[data-guard="${i}"]`)).toBeVisible();
+}

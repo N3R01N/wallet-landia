@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { tapGuard } from './castleHelpers.js';
 
 /** Ledger Wars (rts.html): the start, the map, building from the hall and placing it, an upgrade. */
 
@@ -216,10 +217,15 @@ test('the help, the minimap and control groups', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test('the castle’s topbar opens Ledger Wars', async ({ page }) => {
-  await page.goto('/');
-  const link = page.locator('.topbar .rts-link');
-  await expect(link).toHaveAttribute('href', /rts\.html$/);
+test('a guard at the castle’s gate invites you to Ledger Wars', async ({ page }) => {
+  test.setTimeout(150_000);
+  await page.goto('/?notour');
+  await tapGuard(page, 1);
+  const invite = page.locator('.guard-invite[data-guard="1"]');
+  await expect(invite).toContainText('Ledger Wars');
+  await invite.locator('.guard-go').click();
+  await expect(page).toHaveURL(/rts\.html$/);
+  await expect(page.locator('.rts-missions')).toBeVisible();
 });
 
 test('the edge strips, shown with arrows, move the view while the pointer is on them', async ({ page }) => {
@@ -275,7 +281,16 @@ test('the campaign: the mission list, a briefing, and mission 1’s first object
   // back to the hall, and click it
   type R = { rts: { view: { focus(x: number, z: number): void; toScreen(x: number, y: number, z: number): { x: number; y: number } | null; buildingAt(x: number, y: number): number | null }; run: { index: number } } };
   await page.evaluate(() => (window as unknown as R).rts.view.focus(0, 52));
-  const hall = (await page.evaluate(() => (window as unknown as R).rts.view.toScreen(0, 3, 62)))!;
+  // the camera eases back (frames come slowly here): wait until the hall stands still on the screen
+  const hallAt = () => page.evaluate(() => (window as unknown as R).rts.view.toScreen(0, 3, 62));
+  await page.waitForTimeout(1500);
+  let hall = (await hallAt())!;
+  await expect.poll(async () => {
+    const now = (await hallAt())!;
+    const still = Math.hypot(now.x - hall.x, now.y - hall.y) < 0.5;
+    hall = now;
+    return still;
+  }, { intervals: [500] }).toBe(true);
   await expect.poll(() => page.evaluate(([x, y]) => (window as unknown as R).rts.view.buildingAt(x, y), [hall.x, hall.y] as const)).not.toBeNull();
   await page.mouse.click(hall.x, hall.y);
   await expect(panel.locator('.current')).toContainText('Train 3 Militia');

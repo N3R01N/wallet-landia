@@ -27,7 +27,7 @@ The repo audit the spec asks for (`docs/game/SPEC.md`, "Integration"): what exis
 | Data layer (session, Zerion, cache) | `src/data/*`, `src/domain/*` | Wrapped by `game/data/WalletImporter`, unchanged. Mainnet only (already forced, `main.ts:78`). |
 | Seeded PRNG (mulberry32, FNV-1a) | `src/util/rng.ts` | One stream per subsystem, derived from the match seed. |
 | Worker pattern | `src/castle/player.ts:150`, `player.worker.ts` | The match core runs in a worker the same way, with an inline fallback. |
-| Topbar actions | `shell.addTopbarAction` (`main.ts`) | The "⚔ Siege" toggle. |
+| Gate guards | `CastleViewOptions.guards` (`main.ts`) | The left guard outside the gate invites you to Siege; the panel's "Back to the town" ends it. |
 | Logos (`npm run logos`) | `src/castle/world/logos.ts` | Squad banners show the token's logo. |
 | REDESIGN §8's future `GameMode` hook | not built | The siege mode is the first one: the chain view never depends on it. |
 

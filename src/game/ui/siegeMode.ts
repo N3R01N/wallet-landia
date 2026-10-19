@@ -1,6 +1,7 @@
 /**
- * Siege of the Ledger's switch: a topbar button that turns the castle view into
- * the game and back (docs/game/MAPPING.md). The chain view never depends on it:
+ * Siege of the Ledger's switch: the castle view turned into the game (a guard
+ * at the gate invites you, castle/main.ts) and back (the panel's "Back to the
+ * town"); docs/game/MAPPING.md. The chain view never depends on it:
  * while the game is on, the view is built with the siege's extension (the
  * enemy castle past the town, a quiet town), and the game's panel holds the
  * match setup, then the match.
@@ -33,7 +34,6 @@ export interface SiegeModeOptions extends Omit<SetupOptions, 'onStart'> {
 }
 
 export class SiegeMode {
-  readonly button: HTMLButtonElement;
   #on: boolean;
   readonly #opts: SiegeModeOptions;
   #scene: MatchScene | null = null;
@@ -48,8 +48,6 @@ export class SiegeMode {
   constructor(opts: SiegeModeOptions) {
     this.#opts = opts;
     this.#on = opts.on ?? false;
-    this.button = el('button', { class: 'btn siege-toggle', type: 'button', 'aria-pressed': 'false' });
-    this.button.addEventListener('click', () => this.set(!this.#on));
     this.#setup = new SetupPanel({ wallets: opts.wallets, protocols: opts.protocols, onStart: (c) => this.start(c), onWatch: (r) => this.watch(r) });
     this.#body = el('div', { class: 'siege-body' }, this.#setup.element);
     const min = el('button', { class: 'btn siege-min', type: 'button', 'aria-label': 'Fold the panel', 'aria-expanded': 'true' }, '▾');
@@ -60,6 +58,8 @@ export class SiegeMode {
     });
     const help = el('button', { class: 'btn siege-guide-open', type: 'button', 'aria-label': 'Open the guide' }, '? Guide');
     help.addEventListener('click', () => this.#guide.show());
+    const back = el('button', { class: 'btn siege-back', type: 'button' }, '🏰 Back to the town');
+    back.addEventListener('click', () => this.set(false));
     const howTo = el('button', { class: 'siege-link', type: 'button' }, 'New here? How to play');
     howTo.addEventListener('click', () => this.#guide.show('play'));
     this.#panel = el(
@@ -70,6 +70,7 @@ export class SiegeMode {
       el('h2', {}, '⚔ Siege of the Ledger'),
       el('p', { class: 'siege-intro' }, 'Your portfolio is your army. Trade between battles and bring down the enemy keep. ', howTo),
       this.#body,
+      back,
     );
     // a unit's name anywhere in the panel opens the guide at that unit
     this.#panel.addEventListener('click', (e) => {
@@ -162,11 +163,6 @@ export class SiegeMode {
   }
 
   #show(): void {
-    // the word hides on phones (siege.css), the icon stays
-    this.button.replaceChildren(this.#on ? '🏰' : '⚔', el('span', { class: 'siege-word' }, this.#on ? ' Town' : ' Siege'));
-    this.button.setAttribute('aria-pressed', String(this.#on));
-    this.button.setAttribute('aria-label', this.#on ? 'Back to the town' : 'Siege of the Ledger');
-    this.button.title = this.#on ? 'Back to the town' : 'Siege of the Ledger: your portfolio goes to war';
     this.#panel.hidden = !this.#on;
     this.#scene?.element.toggleAttribute('data-siege', this.#on);
   }

@@ -67,7 +67,7 @@ Changes from the plan made along the way:
 - **The camera moves by the arrows**, the screen's edges or the middle button: A, S and H are orders (attack-move, stop, hold), as in most RTS games.
 - **Pacing** (from the headless runner, `npx vite-node scripts/rts-sim.ts [n] [A] [B] [kit]`): units cost $200 per point of their cost, yields are game-fast (staking 12% a minute, pools 16%, restaking 18%, paid each second), the wallet hall has 4,000 HP and shoots arrows, buildings take 0.8× a unit's attack plus 6 per point of Siege. Positions can be taken out in part.
 - **The computer** comes in Easy, Normal and Hard (start screen). Hard beats Normal 5 to 1, Normal beats Easy 6 to 0 in about 24 minutes; Normal beats a player who never fights back in about 6.5 minutes. A human who attacks should end matches sooner; the 15-minute target needs a playtest.
-- **No button on phones**: the castle's topbar has a "🗡 RTS" link on desktop only (the mode needs a mouse).
+- **The way in** (2026-10-19, the user's call): no topbar buttons for the game modes. Two guards stand outside the castle's gate; a tap on one shows an invitation in a speech bubble with a button to play: the left one Siege of the Ledger, the right one Ledger Wars (its invitation says a mouse works best).
 - `?ai=0` on rts.html starts without an opponent (a sandbox; the browser tests use it).
 
 **The campaign** (2026-10-19, `docs/rts/CAMPAIGN.md`): ten guided missions that open the game a piece at a time, on the start screen above the skirmish.

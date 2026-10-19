@@ -1827,6 +1827,34 @@ h1 {
   border-top-color: #fffaf0;
 }
 
+/* a gate guard's invitation to a game mode (castleView #invite): words and a button */
+.speech-bubble.guard-invite {
+  max-width: 230px;
+  padding: 8px 12px 10px;
+  font-weight: 600;
+  pointer-events: auto;
+}
+
+.guard-invite p {
+  margin: 0 0 8px;
+}
+
+.guard-invite .guard-go {
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid #c9a24a;
+  border-radius: 8px;
+  background: #c9a24a;
+  color: #2a2118;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.guard-invite .guard-go:hover {
+  background: #e7c46b;
+}
+
 .npc-tag {
   display: inline-block;
   padding: 1px 6px;

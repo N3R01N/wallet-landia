@@ -588,6 +588,17 @@ export function layPlots(sizes: readonly number[]): { list: { x: number; z: numb
   return { list, avenue: { plazaStart, plazaEnd, end: round(Math.max(plazaEnd + 2, ...cursor)) } };
 }
 
+/**
+ * The two guards outside the gate, on the moat's town bank just right of the
+ * drawbridge (they invite the player to the game modes). Left of the bridge
+ * the Chronicle tower would hide them from the camera, and the gatehouse
+ * overhangs the moat on the castle's side.
+ */
+export const GATE_GUARDS: readonly { x: number; z: number; rot: number }[] = [
+  { x: 4.3, z: 1, rot: 0.6 },
+  { x: 6, z: 1, rot: 0.6 },
+];
+
 /** The courier's start: inside the gate. */
 export const GATE_AT = { x: 0, z: ISLAND.z1 - 1 } as const;
 
