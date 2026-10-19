@@ -315,6 +315,21 @@ export class Soundscape {
     [523, 659, 784, 1047].forEach((f, i) => this.#tone(t + i * 0.12, f, 0.08, i === 3 ? 0.9 : 0.25, 'triangle'));
   }
 
+  /**
+   * A tone or a noise burst `delay` s from now, for pages that make their own
+   * sounds from these (Ledger Wars, src/rts/sounds.ts). Silent while sound
+   * is off.
+   */
+  toneIn(delay: number, freq: number, peak: number, decay: number, type: OscillatorType = 'sine'): void {
+    if (!this.#on || !this.#ctx || !this.#master) return;
+    this.#tone(this.#ctx.currentTime + delay, freq, peak, decay, type);
+  }
+
+  noiseIn(delay: number, type: BiquadFilterType, freq: number, peak: number, decay: number): void {
+    if (!this.#on || !this.#ctx || !this.#master) return;
+    this.#noiseBurst(this.#ctx.currentTime + delay, type, freq, peak, decay);
+  }
+
   #bird(t: number): void {
     // a few quick whistles sliding up or down
     const base = 2600 + Math.random() * 1600;

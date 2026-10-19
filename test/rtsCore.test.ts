@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUILDINGS, RULES } from '../src/rts/data/rules.js';
-import { cellOf, connected, generateMap, isOpen } from '../src/rts/core/map.js';
+import { cellOf, connected, generateMap, groundHeight, isOpen } from '../src/rts/core/map.js';
 import { World } from '../src/rts/core/world.js';
 
 const world = (kit: 'usdc' | 'eth' | 'mix' = 'usdc') => new World({ seed: 'test', kits: { A: kit, B: kit } });
@@ -25,6 +25,36 @@ describe('the map', () => {
   });
 });
 
+describe('the bridges', () => {
+  it('are walked between their parapets, over the arched deck', () => {
+    const map = generateMap('m1');
+    // the way across is the deck's width (4 m), not wider
+    expect(isOpen(map, 1.5, 0)).toBe(true);
+    expect(isOpen(map, -1.5, 0)).toBe(true);
+    expect(isOpen(map, 2.5, 0)).toBe(false);
+    expect(isOpen(map, -2.5, 0)).toBe(false);
+    // the deck rises to the middle
+    expect(groundHeight(map, 0, 0)).toBeCloseTo(1.94, 2);
+    expect(groundHeight(map, 48, 3.9)).toBeGreaterThan(0.4);
+    expect(groundHeight(map, 0, 5)).toBe(0);
+    expect(groundHeight(map, 10, 0)).toBe(0);
+  });
+
+  it('keep a crossing army on the deck', () => {
+    const w = new World({ seed: 'test', kits: { A: 'usdc', B: 'usdc' }, still: true });
+    for (let i = 0; i < 12; i++) w.addUnit('A', 'knight', -4 + (i % 4) * 2, 18 + Math.floor(i / 4) * 2);
+    w.command('A', { t: 'order', units: w.units.map((u) => u.id), kind: 'move', x: 0, z: -22 });
+    let widest = 0;
+    for (let i = 0; i < 30 * RULES.tickHz; i++) {
+      w.step();
+      for (const u of w.units) if (Math.abs(u.z) < 4) widest = Math.max(widest, Math.abs(u.x));
+    }
+    expect(widest).toBeGreaterThan(0);
+    expect(widest).toBeLessThanOrEqual(1.5);
+    expect(w.units.filter((u) => u.z < -15)).toHaveLength(12);
+  });
+});
+
 describe('the world', () => {
   it('starts each side with its hall and its kit', () => {
     const w = world('eth');
@@ -42,7 +72,7 @@ describe('the world', () => {
     run(w, BUILDINGS.exchange.time + 0.1);
     expect(w.players.A.ready).toBe('exchange');
     // too far, then on the hall, then beside it
-    expect(w.command('A', { t: 'place', x: 0, z: 0 }).reason).toBe('too far from your buildings');
+    expect(w.command('A', { t: 'place', x: 0, z: 12 }).reason).toBe('too far from your buildings');
     expect(w.command('A', { t: 'place', x: 0, z: 62 }).reason).toBe('the ground is taken');
     expect(w.command('A', { t: 'place', x: 9, z: 58 }).ok).toBe(true);
     expect(w.has('A', 'exchange')).toBe(true);

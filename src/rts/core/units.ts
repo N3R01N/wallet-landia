@@ -9,7 +9,7 @@
 import { UNIT_TYPES } from '../../game/core/catalog.js';
 import type { Role, UnitTypeId } from '../../game/core/types.js';
 import type { PlayerId } from '../data/rules.js';
-import { cellCentre, cellOf, type GameMap } from './map.js';
+import { cellCentre, cellOf, DECK_HALF, type GameMap } from './map.js';
 import type { Paths } from './path.js';
 
 export type Order =
@@ -237,6 +237,16 @@ export function separate(units: readonly Unit[], map: GameMap): void {
         }
       }
     }
+  }
+  // on a bridge: between its parapets
+  for (const u of units) {
+    if (Math.abs(u.z) >= DECK_HALF.length) continue;
+    const bx = map.river.bridges.find((b) => Math.abs(u.x - b) < map.river.bridgeHalf + 0.5);
+    if (bx === undefined) continue;
+    const room = Math.max(0.2, DECK_HALF.width - radiusOf(u.type) * 0.7);
+    // walkers drift to the middle (the paths run along cell centres, half a metre off it)
+    if (u.moving) u.x += (bx - u.x) * 0.08;
+    u.x = Math.max(bx - room, Math.min(bx + room, u.x));
   }
   // out of buildings, water and rocks: back to the nearest open cell's edge
   for (const u of units) {

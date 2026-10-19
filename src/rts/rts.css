@@ -726,3 +726,17 @@
     max-height: 30%;
   }
 }
+
+.rts-sound-btn {
+  position: absolute;
+  top: 74px;
+  right: 318px;
+  min-width: 44px;
+  min-height: 36px;
+}
+
+@media (max-width: 640px) {
+  .rts-sound-btn {
+    right: 254px;
+  }
+}

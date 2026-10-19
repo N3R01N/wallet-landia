@@ -25,8 +25,12 @@ import { World, type Command } from './core/world.js';
 import { newUnit, type OrderKind, type Unit } from './core/units.js';
 import type { UnitTypeId } from '../game/core/types.js';
 import { RtsView } from './render/view.js';
+import { groundHeight } from './core/map.js';
+import { RtsSounds } from './sounds.js';
+import { ECON_COMMANDS } from './core/economy.js';
+import { UNIT_TYPES } from '../game/core/catalog.js';
 import { UnitLayer } from './render/unitLayer.js';
-import { FightFx } from './render/fightFx.js';
+import { CASTERS, FightFx } from './render/fightFx.js';
 import { Hud } from './ui/hud.js';
 import { Help } from './ui/help.js';
 import { Minimap } from './render/minimap.js';
@@ -42,6 +46,8 @@ const ME: PlayerId = 'A';
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const theme = loadCastleTheme(import.meta.env.BASE_URL, themeFromUrl(location.search));
 const library = new ModelLibrary(theme);
+/** Made now: the click that starts a match lets the sound start. */
+const sounds = new RtsSounds();
 
 function startScreen(): void {
   const level = el(
@@ -89,14 +95,21 @@ async function play(match: World | Run): Promise<void> {
   const run = match instanceof Run ? match : null;
   const world = run ? run.world : (match as World);
   const view = new RtsView(library);
-  const layer = new UnitLayer(view);
+  const layer = new UnitLayer(view, (x, z) => groundHeight(world.map, x, z));
   const fx = new FightFx(view, world);
   layer.preload(TRAIN.filter((t) => t.level === 1 && t.at === 'hall').map((t) => t.unit));
   const selection = new Set<number>();
   let building: number | null = null;
   let placing: BuildingKind | null = null;
   let armed = false;
-  const send = (cmd: Command) => world.command(ME, cmd);
+  const send = (cmd: Command) => {
+    const r = world.command(ME, cmd);
+    // what the player did, heard: a refusal, coins for the money, a tick for an order
+    if (!r.ok) sounds.play('refused');
+    else if (ECON_COMMANDS.has(cmd.t)) sounds.play('coins');
+    else if (cmd.t === 'order' || cmd.t === 'train' || cmd.t === 'build' || cmd.t === 'rally' || cmd.t === 'upgrade') sounds.play('order');
+    return r;
+  };
   const selectedUnits = () => world.units.filter((u) => selection.has(u.id) && u.died < 0);
   const order = (kind: OrderKind | 'armAttack') => {
     const units = selectedUnits();
@@ -124,6 +137,18 @@ async function play(match: World | Run): Promise<void> {
   const help = new Help(world, ME);
   const helpBtn = el('button', { class: 'btn rts-help-btn', type: 'button', 'aria-label': 'Help', title: 'Help (F1)' }, '? Help');
   helpBtn.addEventListener('click', () => help.show());
+  const soundBtn = el('button', { class: 'btn rts-sound-btn', type: 'button', 'aria-label': 'Sound' });
+  const showSound = () => {
+    soundBtn.textContent = sounds.on ? '🔊' : '🔇';
+    soundBtn.setAttribute('aria-pressed', String(sounds.on));
+    soundBtn.title = sounds.on ? 'Sound on' : 'Sound off';
+  };
+  soundBtn.addEventListener('click', () => {
+    sounds.setOn(!sounds.on);
+    showSound();
+    view.canvas.focus();
+  });
+  showSound();
   const minimap = new Minimap(world, {
     onLook: (x, z) => view.lookAt(x, z),
     onSend: (x, z) => {
@@ -134,7 +159,7 @@ async function play(match: World | Run): Promise<void> {
   const missionUrl = (n: number) => `rts.html?mission=${n}&go=1`;
   const panel = run ? new ObjectivesPanel(run, () => location.assign(missionUrl(run.mission.n))) : null;
   if (panel) hud.element.append(panel.element);
-  app.replaceChildren(el('div', { class: 'rts', 'data-ready': 'false' }, view.canvas, box, view.edges, hud.element, minimap.element, helpBtn));
+  app.replaceChildren(el('div', { class: 'rts', 'data-ready': 'false' }, view.canvas, box, view.edges, hud.element, minimap.element, helpBtn, soundBtn));
   view.focus(RULES.start[ME].x, RULES.start[ME].z - 10);
   await view.build(world);
   app.querySelector('.rts')!.setAttribute('data-ready', 'true');
@@ -317,6 +342,53 @@ async function play(match: World | Run): Promise<void> {
   let lastGroup = { key: '', t: 0 };
   let warned = -99;
   let beaconClock = 0;
+  let ambienceClock = 0;
+  /** What the world did, heard (fights out of view quieter). */
+  const hear = (e: ReturnType<typeof world.takeEvents>[number]) => {
+    const loud = (x: number, z: number) => (view.inView(x, z) ? 1 : 0.2);
+    const mine = (id: number) => world.units.find((u) => u.id === id)?.owner === ME || world.buildings.find((b) => b.id === id)?.owner === ME;
+    switch (e.t) {
+      case 'strike': {
+        const from = world.units.find((u) => u.id === e.from);
+        const onBuilding = world.buildings.some((b) => b.id === e.target);
+        sounds.play(e.ranged ? (from && CASTERS.has(from.type) ? 'bolt' : 'arrow') : onBuilding || (from && UNIT_TYPES[from.type]!.role === 'siege') ? 'smash' : 'blade', loud(e.toX, e.toZ));
+        break;
+      }
+      case 'hallShot': {
+        const hall = world.buildings.find((b) => b.id === e.from);
+        if (hall) sounds.play('hallShot', loud(hall.x, hall.z));
+        break;
+      }
+      case 'death': {
+        const u = world.units.find((x) => x.id === e.id);
+        if (u) sounds.play('fall', loud(u.x, u.z));
+        break;
+      }
+      case 'ability': {
+        const u = world.units.find((x) => x.id === e.id);
+        if (u) sounds.play(e.ability === 'charge' ? 'charge' : e.ability === 'death-burst' ? 'smash' : 'magic', loud(u.x, u.z));
+        break;
+      }
+      case 'destroyed':
+        sounds.play('collapse', e.owner === ME ? 1 : 0.8);
+        break;
+      case 'trained':
+        if (mine(e.id)) sounds.play('trained');
+        break;
+      case 'placed':
+        if (mine(e.id) && world.time > 0) sounds.play('placed');
+        break;
+      case 'built':
+        if (e.owner === ME) sounds.play('ready');
+        break;
+      case 'upgraded':
+        if (mine(e.id)) sounds.play('upgraded');
+        break;
+      case 'won':
+        sounds.play(e.winner === ME ? 'victory' : 'defeat');
+        break;
+    }
+  };
   /** What the campaign's objectives read from the page. */
   const ui = () => {
     const b = world.buildings.find((x) => x.id === building);
@@ -335,7 +407,10 @@ async function play(match: World | Run): Promise<void> {
     }
     if (run) {
       run.tick(ui());
-      for (const text of run.takeSaid()) hud.say(text);
+      for (const text of run.takeSaid()) {
+        hud.say(text);
+        sounds.play('objective');
+      }
       // the objective's place on the map, a ring every so often
       beaconClock -= dt;
       const at = run.state === 'playing' && run.started ? run.step?.beacon?.(run) : null;
@@ -348,6 +423,7 @@ async function play(match: World | Run): Promise<void> {
     if (events.some((e) => e.t === 'placed' || e.t === 'upgraded' || e.t === 'destroyed')) void view.sync(world);
     fx.handle(events);
     for (const e of events) {
+      hear(e);
       // under attack: a flash on the minimap, and a word now and then
       if (e.t === 'strike') {
         const hit = world.units.find((u) => u.id === e.target) ?? world.buildings.find((b) => b.id === e.target);
@@ -356,13 +432,17 @@ async function play(match: World | Run): Promise<void> {
           if (world.time - warned > 12 && !view.inView(e.toX, e.toZ)) {
             warned = world.time;
             hud.say('⚔ You are under attack!');
+            sounds.play('alarm');
           }
         }
       }
       if (e.t === 'destroyed' && e.owner === ME) hud.say(`Your ${e.kind === 'hall' ? 'wallet hall' : 'building'} was destroyed!`);
       if (e.t === 'won') gameOver(e.winner === ME);
       if (e.t === 'built' && e.owner === ME) hud.say('A building is ready: place it.');
-      if (e.t === 'liquidated' && e.owner === ME) hud.say('⚠ A loan was liquidated!');
+      if (e.t === 'liquidated' && e.owner === ME) {
+        hud.say('⚠ A loan was liquidated!');
+        sounds.play('alarm');
+      }
     }
     if (placing) {
       const at = view.groundAt(last.x, last.y);
@@ -377,6 +457,11 @@ async function play(match: World | Run): Promise<void> {
     view.rally(selection.size === 0 && b?.owner === ME ? b.rally : null);
     layer.draw(world.units, acc / tick, dt, selection, ME, world.buildings);
     minimap.draw(ME, view.outline(), dt);
+    ambienceClock -= dt;
+    if (ambienceClock <= 0) {
+      ambienceClock = 1;
+      sounds.ambience();
+    }
     hudClock += dt;
     if (hudClock > 0.2) {
       hudClock = 0;
@@ -417,7 +502,7 @@ async function play(match: World | Run): Promise<void> {
   let spawned = 1_000_000;
   if (import.meta.env.DEV)
     Object.assign(window, {
-      rts: { world, run, view, send, selection, spawn: (owner: PlayerId, type: UnitTypeId, x: number, z: number) => world.units.push(newUnit(spawned++, type, owner, x, z)) },
+      rts: { world, run, view, send, selection, sounds, spawn: (owner: PlayerId, type: UnitTypeId, x: number, z: number) => world.units.push(newUnit(spawned++, type, owner, x, z)) },
     });
 }
 

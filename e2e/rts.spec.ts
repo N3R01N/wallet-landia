@@ -289,3 +289,27 @@ test('the campaign: the mission list, a briefing, and mission 1’s first object
   await expect(page.locator('dialog.rts-help')).toContainText('later missions');
   expect(errors).toEqual([]);
 });
+
+test('sound: on by default, heard as units fight, and switched off from the corner', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto('/rts.html?seed=e2e&ai=0');
+  await page.evaluate(() => localStorage.removeItem('wallet-landia.rts.sound'));
+  await page.reload();
+  await page.locator('.rts-kit[data-kit="usdc"]').click();
+  await expect(page.locator('.rts[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
+  const btn = page.locator('.rts-sound-btn');
+  await expect(btn).toHaveAttribute('aria-pressed', 'true');
+  type R = { rts: { world: { step(): void }; sounds: { played: Record<string, number> }; spawn(o: string, t: string, x: number, z: number): void; view: { focus(x: number, z: number): void } } };
+  // a click on the map lets the browser start audio; then a fight in view
+  await page.mouse.click(700, 400);
+  await page.evaluate(() => {
+    const r = (window as unknown as R).rts;
+    r.view.focus(0, 30);
+    for (let i = 0; i < 3; i++) r.spawn('A', 'knight', i, 30);
+    for (let i = 0; i < 3; i++) r.spawn('B', 'archer.scout', i, 26);
+  });
+  await expect.poll(() => page.evaluate(() => { const p = (window as unknown as R).rts.sounds.played; return (p.blade ?? 0) + (p.arrow ?? 0); }), { timeout: 20_000 }).toBeGreaterThan(0);
+  await btn.click();
+  await expect(btn).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate(() => localStorage.getItem('wallet-landia.rts.sound'))).toBe('off');
+});

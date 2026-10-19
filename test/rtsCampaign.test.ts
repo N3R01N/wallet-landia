@@ -50,8 +50,8 @@ function act(r: Run, ui: Ui): void {
   };
   // keep an army coming while there is a fight
   const reinforce = () => {
-    if (w.usd('A', 'usdc') < 800 && w.has('A', 'exchange') && w.spendable('A') > 1500) buy('usdc', 1000);
-    for (const unit of ['knight', 'archer.scout'] as const) if (w.usd('A', 'usdc') > 800) trainUnit(unit, 40);
+    if (w.usd('A', 'usdc') < 400 && w.has('A', 'exchange') && w.spendable('A') > 700) buy('usdc', w.spendable('A') - w.usd('A', 'usdc') - 100);
+    for (const unit of ['knight', 'archer.scout'] as const) if (w.usd('A', 'usdc') > 350) trainUnit(unit, 40);
   };
   switch (what) {
     case 'look':

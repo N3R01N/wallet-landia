@@ -30,6 +30,10 @@ export interface GameMap {
 }
 
 const BRIDGES = [-48, 0, 48];
+/** The stone bridge's deck (its model, scenery.bridge.stone): its height from the middle out to each end, every half metre. */
+const DECK = [1.94, 1.89, 1.74, 1.52, 1.25, 0.97, 0.71, 0.52, 0.41];
+/** Half the deck's length, and half its width between the parapets. */
+export const DECK_HALF = { length: 4, width: 1.5 };
 
 export function cellOf(map: GameMap, x: number, z: number): number {
   const h = map.size / 2;
@@ -73,7 +77,7 @@ export function markRect(map: GameMap, x0: number, z0: number, x1: number, z1: n
 
 export function generateMap(seed: string): GameMap {
   const size = RULES.mapSize;
-  const map: GameMap = { size, blocked: new Uint8Array(size * size), scenery: [], river: { half: 3, bridges: BRIDGES, bridgeHalf: 2.5 } };
+  const map: GameMap = { size, blocked: new Uint8Array(size * size), scenery: [], river: { half: 3, bridges: BRIDGES, bridgeHalf: 2 } };
   const rng = streamOf(seed, 'rts-map');
   const h = size / 2;
 
@@ -146,6 +150,15 @@ export function generateMap(seed: string): GameMap {
     map.scenery.push({ name: rng() < 0.6 ? 'scenery.hill' : `scenery.mountain.${1 + Math.floor(rng() * 3)}`, x: Math.cos(a) * d, z: Math.sin(a) * d, rot: rng() * Math.PI * 2, scale: 1 + rng() * 0.5 });
   }
   return map;
+}
+
+/** The height of what is walked on at (x, z): a bridge's arched deck, else the ground (0). */
+export function groundHeight(map: GameMap, x: number, z: number): number {
+  const az = Math.abs(z);
+  if (az >= DECK_HALF.length || !map.river.bridges.some((bx) => Math.abs(x - bx) < map.river.bridgeHalf)) return 0;
+  const f = az * 2;
+  const i = Math.floor(f);
+  return DECK[i]! + (DECK[i + 1]! - DECK[i]!) * (f - i);
 }
 
 /** Whether the two points are joined by open ground (4-way steps). */

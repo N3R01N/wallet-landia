@@ -26,6 +26,8 @@ interface Anim {
 
 export class UnitLayer {
   readonly #view: RtsView;
+  /** The height walked on (a bridge's deck). */
+  readonly #ground: (x: number, z: number) => number;
   readonly #meshes = new Map<UnitTypeId, UnitMesh | 'loading' | null>();
   readonly #anim = new Map<number, Anim>();
   readonly #team = { A: new THREE.Color(TEAM_COLORS.A), B: new THREE.Color(TEAM_COLORS.B) };
@@ -38,8 +40,9 @@ export class UnitLayer {
   readonly #s = new THREE.Vector3();
   readonly #c = new THREE.Color();
 
-  constructor(view: RtsView) {
+  constructor(view: RtsView, ground: (x: number, z: number) => number = () => 0) {
     this.#view = view;
+    this.#ground = ground;
     const ring = new THREE.RingGeometry(0.85, 1, 32).rotateX(-Math.PI / 2);
     this.#rings = new THREE.InstancedMesh(ring, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9, depthWrite: false }), CAPACITY);
     this.#rings.frustumCulled = false;
@@ -77,7 +80,7 @@ export class UnitLayer {
         const a = this.#animate(u, mesh, dt);
         const x = u.px + (u.x - u.px) * alpha;
         const z = u.pz + (u.z - u.pz) * alpha;
-        mesh.set(i++, x, z, u.face, a.clip, a.time, a.clip === 'walk' || a.clip === 'idle', this.#team[u.owner], 0, SCALE);
+        mesh.set(i++, x, z, u.face, a.clip, a.time, a.clip === 'walk' || a.clip === 'idle', this.#team[u.owner], this.#ground(x, z), SCALE);
       }
       mesh.commit(i);
     }
@@ -100,13 +103,13 @@ export class UnitLayer {
       const sel = selected.has(u.id);
       if (sel && r < CAPACITY) {
         const rad = radiusOf(u.type) * 1.5;
-        this.#m.compose(this.#v.set(x, 0.06, z), new THREE.Quaternion(), this.#s.set(rad, 1, rad));
+        this.#m.compose(this.#v.set(x, 0.06 + this.#ground(x, z), z), new THREE.Quaternion(), this.#s.set(rad, 1, rad));
         this.#rings.setMatrixAt(r, this.#m);
         this.#rings.setColorAt(r, this.#c.set(u.owner === me ? 0x7cf07c : 0xff6b5a));
         r++;
       }
       if ((sel || u.hp < u.maxHp) && b < CAPACITY) {
-        const h = (1.6 + radiusOf(u.type) * 1.6) * SCALE;
+        const h = (1.6 + radiusOf(u.type) * 1.6) * SCALE + this.#ground(x, z);
         const frac = Math.max(0, u.hp / u.maxHp);
         this.#m.compose(this.#v.set(x, h, z), this.#q, this.#s.set(BAR_W, 0.14, 1));
         this.#barBack.setMatrixAt(b, this.#m);
