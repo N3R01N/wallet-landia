@@ -41,6 +41,8 @@ export function actions(c: ActionContext, b: Building): HTMLElement[] {
   const w = c.world;
   const me = w.players[c.me];
   const held = TOKEN_IDS.filter((t) => me.tokens[t] * w.market.prices[t] >= 1);
+  // the tokens worth offering (a campaign mission: those it uses)
+  const inPlay = w.tokensInPlay(c.me);
   const select = (label: string, options: readonly TokenId[], value: TokenId, set: (t: TokenId) => void) => {
     const s = el('select', { class: 'rts-select', 'aria-label': label }, ...options.map((t) => Object.assign(el('option', { value: t }, TOKENS[t].symbol), { selected: t === value })));
     s.addEventListener('change', () => {
@@ -84,11 +86,11 @@ export function actions(c: ActionContext, b: Building): HTMLElement[] {
       const from = held.includes(c.choice.from) ? c.choice.from : (held[0] ?? 'usdc');
       out.push(
         el('h3', {}, 'Swap'),
-        el('div', { class: 'rts-row' }, select('From', held.length ? held : ['usdc'], from, (t) => (c.choice.from = t)), el('span', {}, '→'), select('To', TOKEN_IDS, c.choice.to, (t) => (c.choice.to = t))),
+        el('div', { class: 'rts-row' }, select('From', held.length ? held : ['usdc'], from, (t) => (c.choice.from = t)), el('span', {}, '→'), select('To', inPlay, c.choice.to, (t) => (c.choice.to = t))),
         el('p', { class: 'rts-why' }, liveText(() => `All your ${TOKENS[from].symbol} → about ${swapOut(w.econ, from, c.choice.to, me.tokens[from]).toPrecision(4)} ${TOKENS[c.choice.to].symbol}`)),
         taps('Swap', (s) => ({ t: 'swap', from, to: c.choice.to, qty: me.tokens[from] * s }), 'rts-swap'),
         el('h3', {}, 'Pool (earns fees)'),
-        el('div', { class: 'rts-row' }, select('Token', TOKEN_IDS, c.choice.pool, (t) => (c.choice.pool = t)), el('span', {}, '+'), select('Paired with', ['usdc', 'dai', 'eth'], c.choice.pair, (t) => (c.choice.pair = t))),
+        el('div', { class: 'rts-row' }, select('Token', inPlay, c.choice.pool, (t) => (c.choice.pool = t)), el('span', {}, '+'), select('Paired with', ['usdc', 'dai', 'eth'], c.choice.pair, (t) => (c.choice.pair = t))),
         taps(`Add (of your ${TOKENS[c.choice.pool].symbol})`, (s) => {
           // as much as the pair allows
           const a = c.choice.pool;
@@ -126,7 +128,7 @@ export function actions(c: ActionContext, b: Building): HTMLElement[] {
         })),
         el('div', { class: 'rts-row' }, el('span', {}, 'Supply'), select('Supply', supplyable.length ? supplyable : ['eth'], sup, (t) => (c.choice.supply = t))),
         taps('Supply', (s) => ({ t: 'supply', token: sup, qty: me.tokens[sup] * s }), 'rts-supply'),
-        el('div', { class: 'rts-row' }, el('span', {}, 'Borrow'), select('Borrow', TOKEN_IDS.filter((t) => t !== 'steth'), c.choice.borrow, (t) => (c.choice.borrow = t))),
+        el('div', { class: 'rts-row' }, el('span', {}, 'Borrow'), select('Borrow', inPlay.filter((t) => t !== 'steth'), c.choice.borrow, (t) => (c.choice.borrow = t))),
         taps('Borrow (of the room)', (s) => ({ t: 'borrow', token: c.choice.borrow, qty: (bankAccount(w.econ, c.me).room * s * 0.999) / w.market.prices[c.choice.borrow] }), 'rts-borrow'),
         ...mine('supplied').map((pos) => posRow(pos, `Supplied ${TOKENS[pos.token].symbol}`, [button('Withdraw', () => ({ t: 'withdraw', id: pos.id }))])),
         ...mine('borrowed').map((pos) => posRow(pos, `Owed ${TOKENS[pos.token].symbol}`, [button('Repay', () => ({ t: 'repay', id: pos.id, qty: pos.qty }))])),

@@ -246,3 +246,46 @@ test('the edge strips, shown with arrows, move the view while the pointer is on 
   await expect.poll(async () => (await cam()).x).toBeLessThan(left - 2);
 });
 
+
+test('the campaign: the mission list, a briefing, and mission 1’s first objectives played through the page', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/rts.html');
+  await page.evaluate(() => localStorage.removeItem('wallet-landia.rts.campaign'));
+  await page.reload();
+  // the first mission is open, the second not yet
+  await expect(page.locator('.rts-mission[data-mission="1"]')).toBeEnabled();
+  await expect(page.locator('.rts-mission[data-mission="2"]')).toBeDisabled();
+  await page.locator('.rts-mission[data-mission="1"]').click();
+  await expect(page.locator('.rts-briefing h1')).toHaveText('First Steps');
+  await expect(page.locator('.rts-card[data-unit="militia"]')).toContainText('USDC');
+  await page.locator('.rts-go').click();
+  await expect(page.locator('.rts[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
+  const panel = page.locator('.rts-objectives');
+  await expect(panel.locator('.current')).toContainText('Look around');
+  // nothing to build in mission 1
+  await expect(page.locator('.rts-build')).toContainText('Nothing to build yet');
+  await expect(page.locator('.rts-build-item')).toHaveCount(0);
+  // the view moves: done
+  await page.locator('.rts-canvas').focus();
+  await page.keyboard.down('ArrowUp');
+  await expect(panel.locator('.current')).toContainText('Select your Wallet Hall', { timeout: 10_000 });
+  await page.keyboard.up('ArrowUp');
+  // back to the hall, and click it
+  type R = { rts: { view: { focus(x: number, z: number): void; toScreen(x: number, y: number, z: number): { x: number; y: number } | null; buildingAt(x: number, y: number): number | null }; run: { index: number } } };
+  await page.evaluate(() => (window as unknown as R).rts.view.focus(0, 52));
+  const hall = (await page.evaluate(() => (window as unknown as R).rts.view.toScreen(0, 3, 62)))!;
+  await expect.poll(() => page.evaluate(([x, y]) => (window as unknown as R).rts.view.buildingAt(x, y), [hall.x, hall.y] as const)).not.toBeNull();
+  await page.mouse.click(hall.x, hall.y);
+  await expect(panel.locator('.current')).toContainText('Train 3 Militia');
+  // the button it means glows; only Militia is offered
+  await expect(page.locator('.rts-train[data-unit="militia"]')).toHaveClass(/rts-glow/);
+  await expect(page.locator('.rts-train')).toHaveCount(1);
+  // the help shows only what the mission has opened
+  await page.locator('.rts-help-btn').click();
+  await page.locator('.rts-help-tab[data-tab="units"]').click();
+  await expect(page.locator('.rts-help-units tbody tr')).toHaveCount(1);
+  await expect(page.locator('dialog.rts-help')).toContainText('later missions');
+  expect(errors).toEqual([]);
+});

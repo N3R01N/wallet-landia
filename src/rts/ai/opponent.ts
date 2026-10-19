@@ -77,6 +77,8 @@ function build(w: World, me: PlayerId, s: OpponentState, send: (c: Command) => b
     return;
   }
   if (p.build) return;
+  // a mission may keep some buildings from it
+  while (BUILD_ORDER[s.built] && w.locked(me, BUILD_ORDER[s.built]!)) s.built++;
   // a building lost is rebuilt first
   const have = (k: BuildingKind) => w.buildings.filter((b) => b.owner === me && b.kind === k).length;
   const wanted = BUILD_ORDER.slice(0, s.built);
@@ -91,7 +93,7 @@ function build(w: World, me: PlayerId, s: OpponentState, send: (c: Command) => b
 }
 
 /** A free spot for a building: rings round the hall, the side away from the enemy first. */
-function spotFor(w: World, me: PlayerId, kind: BuildingKind): { x: number; z: number } | null {
+export function spotFor(w: World, me: PlayerId, kind: BuildingKind): { x: number; z: number } | null {
   const hall = w.hallOf(me) ?? w.buildings.find((b) => b.owner === me);
   if (!hall) return null;
   const away = me === 'A' ? 1 : -1;
@@ -184,7 +186,7 @@ function train(w: World, me: PlayerId, s: OpponentState, send: (c: Command) => b
   const p = w.players[me];
   for (const b of w.buildings) {
     if (b.owner !== me || b.queue.length >= level.queue) continue;
-    const options = TRAIN.filter((t) => t.at === b.kind && b.level >= t.level);
+    const options = TRAIN.filter((t) => t.at === b.kind && b.level >= t.level && !w.unitLocked(me, t.unit));
     if (options.length === 0) continue;
     // the best of what this building trains: the counter first, then the strongest
     const ranked = [...options].sort((x, y) => score(y.unit, wanted) - score(x.unit, wanted));

@@ -11,8 +11,10 @@ import { el } from '../../util/dom.js';
 import { BUILDINGS, BUILDING_KINDS, RULES, TOKEN_IDS, TOKENS, TRAIN, type BuildingKind, type PlayerId } from '../data/rules.js';
 import { UNIT_TYPES } from '../../game/core/catalog.js';
 import type { OrderKind, Unit } from '../core/units.js';
-import type { Building, Command, Result, World } from '../core/world.js';
+import { NOT_YET, type Building, type Command, type Result, type World } from '../core/world.js';
 import { incomePerMinute, positionValue } from '../core/economy.js';
+import { ROLE_NOTES, unitNote } from '../data/notes.js';
+import type { UnitTypeId } from '../../game/core/types.js';
 import { actions, actionsKey, type ActionContext, type Live } from './actions.js';
 
 export interface HudOptions {
@@ -79,11 +81,13 @@ export class Hud {
     );
 
     // the hall's construction (rebuilt when what it offers changes; the timers tick in place)
-    const whys = BUILDING_KINDS.filter((k) => k !== 'hall').map((k) => w.cantBuild(this.#o.me, k));
+    // a campaign mission shows only what it has opened
+    const kinds = BUILDING_KINDS.filter((k) => k !== 'hall' && !w.locked(this.#o.me, k));
+    const whys = kinds.map((k) => w.cantBuild(this.#o.me, k));
     const sel = this.#o.selection();
     const s = sel.units.length > 0 ? null : sel.building;
     const upWhy = s && s.owner === this.#o.me ? w.cantUpgrade(this.#o.me, s) : null;
-    const buildKey = JSON.stringify([me.build?.kind, me.ready, whys]);
+    const buildKey = JSON.stringify([me.build?.kind, me.ready, kinds, whys]);
     const mine = s?.owner === this.#o.me;
     const infoKey = JSON.stringify(
       sel.units.length > 0
@@ -95,7 +99,7 @@ export class Hud {
     if (buildKey !== this.#keys.build || infoKey !== this.#keys.info) {
       this.#live = [];
       this.#liveText = [];
-      if (buildKey !== this.#keys.build) this.#renderBuild(whys);
+      if (buildKey !== this.#keys.build) this.#renderBuild(kinds, whys);
       if (sel.units.length > 0) this.#renderUnits(sel.units);
       else this.#renderInfo(s, upWhy);
       this.#keys = { build: buildKey, info: infoKey };
@@ -109,7 +113,7 @@ export class Hud {
     for (const l of this.#liveText) l.text.textContent = l.read();
   }
 
-  #renderBuild(whys: (string | null)[]): void {
+  #renderBuild(kinds: BuildingKind[], whys: (string | null)[]): void {
     const w = this.#o.world;
     const me = w.players[this.#o.me];
     const rows: HTMLElement[] = [el('h2', {}, '🏗 Build')];
@@ -128,8 +132,9 @@ export class Hud {
       cancel.addEventListener('click', () => this.#send({ t: 'cancelBuild' }));
       rows.push(el('div', { class: 'rts-progress-row' }, place, cancel));
     }
+    if (kinds.length === 0) rows.push(el('p', { class: 'rts-hint' }, 'Nothing to build yet: buildings come in the next missions.'));
     const grid = el('div', { class: 'rts-build-grid' });
-    BUILDING_KINDS.filter((k) => k !== 'hall').forEach((kind, i) => {
+    kinds.forEach((kind, i) => {
       const r = BUILDINGS[kind];
       const why = whys[i] ?? null;
       const b = el('button', { class: 'rts-build-item', type: 'button', 'data-kind': kind, title: `${r.blurb}${why ? `\n✗ ${why}` : ''}` }, el('strong', {}, r.name), el('span', {}, `${usd(r.cost)} · ${r.time} s`));
@@ -160,7 +165,8 @@ export class Hud {
         const bar = progress(0);
         this.#live.push({ text, bar, read: () => (s.upgrading ? [`Upgrading to ${s.upgrading.to}: ${Math.ceil(s.upgrading.left)} s`, 1 - s.upgrading.left / s.upgrading.total] : null) });
         parts.push(el('div', { class: 'rts-progress-row' }, text, bar));
-      } else if (s.level < r.maxLevel) {
+      } else if (why === NOT_YET) parts.push(el('p', { class: 'rts-why' }, 'Higher levels open in later missions.'));
+      else if (s.level < r.maxLevel) {
         const up = el('button', { class: 'btn rts-upgrade', type: 'button', title: why ?? '' }, `⬆ Level ${s.level + 1} · ${usd(r.upgrade[s.level - 1]!)} · ${r.upgradeTime} s`);
         up.toggleAttribute('disabled', why !== null);
         up.addEventListener('click', () => this.#send({ t: 'upgrade', id: s.id }));
@@ -186,7 +192,7 @@ export class Hud {
   /** What a building of yours trains: a button each (cost, time, or why not), the queue, and the rally point. */
   #training(b: Building): HTMLElement[] {
     const w = this.#o.world;
-    const rules = TRAIN.filter((t) => t.at === b.kind);
+    const rules = TRAIN.filter((t) => t.at === b.kind && !w.unitLocked(this.#o.me, t.unit));
     if (rules.length === 0) return [];
     const out: HTMLElement[] = [el('h3', {}, 'Train')];
     const grid = el('div', { class: 'rts-build-grid' });
@@ -194,7 +200,7 @@ export class Hud {
       const u = UNIT_TYPES[t.unit]!;
       const why = w.cantTrain(this.#o.me, b, t.unit);
       const cost = RULES.unitValue * u.costMult;
-      const btn = el('button', { class: 'rts-build-item rts-train', type: 'button', 'data-unit': t.unit, title: why ?? `${u.name}: ${u.role}, ${u.hp} HP, ${u.atk} attack` }, el('strong', {}, u.name), el('span', {}, `${usd(cost)} in ${TOKENS[t.token].symbol} · ${t.time} s`));
+      const btn = el('button', { class: 'rts-build-item rts-train', type: 'button', 'data-unit': t.unit, title: unitTitle(t.unit, why) }, el('strong', {}, u.name), el('span', {}, `${usd(cost)} in ${TOKENS[t.token].symbol} · ${t.time} s`));
       btn.toggleAttribute('disabled', why !== null);
       btn.addEventListener('click', () => this.#send({ t: 'train', id: b.id, unit: t.unit }));
       grid.append(btn);
@@ -234,6 +240,12 @@ export class Hud {
     if (!r.ok && r.reason) this.say(r.reason);
     this.render();
   }
+}
+
+/** A unit's tooltip: what it is for, and why it can't be trained now. */
+function unitTitle(unit: UnitTypeId, why: string | null): string {
+  const n = unitNote(unit);
+  return [`${n.name} · ${ROLE_NOTES[n.role].name}`, n.line, n.ability, ROLE_NOTES[n.role].note, n.stats, why ? `✗ ${why}` : null].filter(Boolean).join('\n');
 }
 
 function progress(fraction: number, cls = ''): HTMLElement {

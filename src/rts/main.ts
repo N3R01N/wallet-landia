@@ -1,5 +1,6 @@
 /**
- * Ledger Wars (rts.html): the start screen, then the match: the World ticked
+ * Ledger Wars (rts.html): the start screen (the campaign's missions, or a
+ * skirmish), then the match: the World ticked
  * at a fixed rate, the view drawn every frame (units between the ticks), the
  * HUD a few times a second, and the mouse and keys turned into commands
  * (docs/rts/PLAN.md).
@@ -12,6 +13,8 @@
  *   A then click      attack-move;  S stop;  H hold;  Esc clear
  *   Ctrl+1–9          make a group; 1–9 selects it, twice jumps to it
  *   minimap           click to look; right-click to send;  F1 help
+ *
+ * ?mission=N opens a campaign mission's briefing (&go=1: straight in).
  */
 
 import { ModelLibrary } from '../castle/assets/models.js';
@@ -28,6 +31,11 @@ import { Hud } from './ui/hud.js';
 import { Help } from './ui/help.js';
 import { Minimap } from './render/minimap.js';
 import type { Difficulty } from './ai/opponent.js';
+import { Run } from './campaign/run.js';
+import { MISSIONS } from './campaign/missions.js';
+import { markWon } from './campaign/progress.js';
+import { briefing, debrief, missionList, ObjectivesPanel } from './ui/campaign.js';
+import type { Mission } from './campaign/run.js';
 import './rts.css';
 
 const ME: PlayerId = 'A';
@@ -43,7 +51,7 @@ function startScreen(): void {
   );
   const kits = (Object.keys(START_KITS) as StartKit[]).map((k) => {
     const b = el('button', { class: 'btn rts-kit', type: 'button', 'data-kit': k }, START_KITS[k].name);
-    b.addEventListener('click', () => void play(k, level.value as Difficulty));
+    b.addEventListener('click', () => void skirmish(k, level.value as Difficulty));
     return b;
   });
   app.replaceChildren(
@@ -52,6 +60,10 @@ function startScreen(): void {
       { class: 'rts-start' },
       el('h1', {}, '⚔ Ledger Wars'),
       el('p', {}, 'You start with your wallet hall and a little money. Build an exchange to trade, stake and pool to earn, train units with the tokens they need, and bring down the enemy’s hall.'),
+      el('h2', {}, '📜 Campaign'),
+      el('p', {}, 'New to Ledger Wars? Ten short missions open the game a piece at a time: each brings a few new buildings and units, and shows you how they work.'),
+      missionList(showBriefing),
+      el('h2', {}, '⚔ Skirmish'),
       el('p', { class: 'rts-row' }, el('strong', {}, 'The computer plays:'), level),
       el('p', {}, el('strong', {}, 'Start with:')),
       el('div', { class: 'rts-kits' }, ...kits),
@@ -60,11 +72,22 @@ function startScreen(): void {
   );
 }
 
-async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
+function showBriefing(m: Mission): void {
+  app.replaceChildren(briefing(m, () => void play(new Run(m)), startScreen));
+  window.scrollTo(0, 0);
+}
+
+function skirmish(kit: StartKit, difficulty: Difficulty): Promise<void> {
   const params = new URLSearchParams(location.search);
   const seed = params.get('seed') ?? Math.random().toString(36).slice(2, 10);
   // ?ai=0: no opponent (a sandbox; the tests use it)
-  const world = new World({ seed, kits: { A: kit, B: kit }, ai: params.get('ai') === '0' ? [] : ['B'], difficulty });
+  return play(new World({ seed, kits: { A: kit, B: kit }, ai: params.get('ai') === '0' ? [] : ['B'], difficulty }));
+}
+
+/** A match: a skirmish's World, or a campaign mission's Run (its World and objectives). */
+async function play(match: World | Run): Promise<void> {
+  const run = match instanceof Run ? match : null;
+  const world = run ? run.world : (match as World);
   const view = new RtsView(library);
   const layer = new UnitLayer(view);
   const fx = new FightFx(view, world);
@@ -98,7 +121,7 @@ async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
   });
   const box = el('div', { class: 'rts-box' });
   box.hidden = true;
-  const help = new Help();
+  const help = new Help(world, ME);
   const helpBtn = el('button', { class: 'btn rts-help-btn', type: 'button', 'aria-label': 'Help', title: 'Help (F1)' }, '? Help');
   helpBtn.addEventListener('click', () => help.show());
   const minimap = new Minimap(world, {
@@ -108,6 +131,9 @@ async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
       if (units.length > 0) send({ t: 'order', units: units.map((u) => u.id), kind: 'move', x, z });
     },
   });
+  const missionUrl = (n: number) => `rts.html?mission=${n}&go=1`;
+  const panel = run ? new ObjectivesPanel(run, () => location.assign(missionUrl(run.mission.n))) : null;
+  if (panel) hud.element.append(panel.element);
   app.replaceChildren(el('div', { class: 'rts', 'data-ready': 'false' }, view.canvas, box, view.edges, hud.element, minimap.element, helpBtn));
   view.focus(RULES.start[ME].x, RULES.start[ME].z - 10);
   await view.build(world);
@@ -290,6 +316,12 @@ async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
   const groups = new Map<string, number[]>();
   let lastGroup = { key: '', t: 0 };
   let warned = -99;
+  let beaconClock = 0;
+  /** What the campaign's objectives read from the page. */
+  const ui = () => {
+    const b = world.buildings.find((x) => x.id === building);
+    return { selectedUnits: selectedUnits().length, building: selection.size === 0 && b?.owner === ME ? b.kind : null, camera: view.cameraState, groups: [...groups.values()].filter((g) => g.length > 0).length };
+  };
 
   // time: fixed ticks, the view every frame, the HUD five times a second
   let acc = 0;
@@ -300,6 +332,17 @@ async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
     while (acc >= tick) {
       world.step();
       acc -= tick;
+    }
+    if (run) {
+      run.tick(ui());
+      for (const text of run.takeSaid()) hud.say(text);
+      // the objective's place on the map, a ring every so often
+      beaconClock -= dt;
+      const at = run.state === 'playing' && run.started ? run.step?.beacon?.(run) : null;
+      if (at && beaconClock <= 0) {
+        beaconClock = 0.8;
+        view.marker(at.x, at.z, 0xffd34d, 3.5);
+      }
     }
     const events = world.takeEvents();
     if (events.some((e) => e.t === 'placed' || e.t === 'upgraded' || e.t === 'destroyed')) void view.sync(world);
@@ -338,11 +381,25 @@ async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
     if (hudClock > 0.2) {
       hudClock = 0;
       hud.render();
+      panel?.render();
     }
   });
   hud.render();
+  panel?.render();
 
   function gameOver(won: boolean): void {
+    if (run) {
+      const m = run.mission;
+      if (won) markWon(m.n);
+      const next = MISSIONS.find((x) => x.n === m.n + 1);
+      app.querySelector('.rts')!.append(
+        debrief(m, won, Math.floor(world.time / 60), {
+          next: next ? () => location.assign(`rts.html?mission=${next.n}`) : null,
+          retry: () => location.assign(missionUrl(m.n)),
+        }),
+      );
+      return;
+    }
     const again = el('button', { class: 'btn', type: 'button' }, 'Play again');
     again.addEventListener('click', () => location.reload());
     const minutes = Math.floor(world.time / 60);
@@ -360,8 +417,11 @@ async function play(kit: StartKit, difficulty: Difficulty): Promise<void> {
   let spawned = 1_000_000;
   if (import.meta.env.DEV)
     Object.assign(window, {
-      rts: { world, view, send, selection, spawn: (owner: PlayerId, type: UnitTypeId, x: number, z: number) => world.units.push(newUnit(spawned++, type, owner, x, z)) },
+      rts: { world, run, view, send, selection, spawn: (owner: PlayerId, type: UnitTypeId, x: number, z: number) => world.units.push(newUnit(spawned++, type, owner, x, z)) },
     });
 }
 
-startScreen();
+const asked = MISSIONS.find((m) => String(m.n) === new URLSearchParams(location.search).get('mission'));
+if (!asked) startScreen();
+else if (new URLSearchParams(location.search).get('go')) void play(new Run(asked));
+else showBriefing(asked);

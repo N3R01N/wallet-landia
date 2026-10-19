@@ -88,7 +88,20 @@ export interface WorldSetup {
   ai?: PlayerId[];
   /** How well the computer plays (default normal). */
   difficulty?: Difficulty;
+  /** Dollars per token each side starts with, in place of its kit (a campaign mission). */
+  dollars?: Partial<Record<PlayerId, Partial<Record<TokenId, number>>>>;
+  /** What each side may build and train (a campaign mission); a side not listed has everything. */
+  allowed?: Partial<Record<PlayerId, Allowed>>;
 }
+
+/** A side's buildings and units in a campaign mission, and the highest level each building may reach (default 1). */
+export interface Allowed {
+  buildings: readonly BuildingKind[];
+  units: readonly UnitTypeId[];
+  levels?: Partial<Record<BuildingKind, number>>;
+}
+
+export const NOT_YET = 'not in this mission';
 
 const DT = 1 / RULES.tickHz;
 
@@ -111,6 +124,8 @@ export class World {
   still: boolean;
   /** The computer's sides and their state. */
   readonly ai = new Map<PlayerId, OpponentState>();
+  /** What each side may build and train (null: everything). */
+  readonly allowed: Record<PlayerId, Allowed | null>;
 
   constructor(setup: WorldSetup) {
     this.seed = setup.seed;
@@ -120,9 +135,10 @@ export class World {
     this.#rng = streamOf(setup.seed, 'rts-world');
     this.still = setup.still ?? false;
     for (const id of setup.ai ?? []) this.ai.set(id, newOpponent(setup.difficulty));
+    this.allowed = { A: setup.allowed?.A ?? null, B: setup.allowed?.B ?? null };
     const player = (id: PlayerId): Player => {
       const tokens = Object.fromEntries(TOKEN_IDS.map((t) => [t, 0])) as Record<TokenId, number>;
-      for (const [t, usd] of Object.entries(START_KITS[setup.kits[id]].dollars) as [TokenId, number][]) tokens[t] = usd / TOKENS[t].price;
+      for (const [t, usd] of Object.entries(setup.dollars?.[id] ?? START_KITS[setup.kits[id]].dollars) as [TokenId, number][]) tokens[t] = usd / TOKENS[t].price;
       return { id, tokens, build: null, ready: null, positions: [] };
     };
     this.players = { A: player('A'), B: player('B') };
@@ -158,11 +174,41 @@ export class World {
     return this.buildings.some((b) => b.owner === p && b.kind === kind);
   }
 
+  /** Whether this mission keeps a kind of building from the player. */
+  locked(p: PlayerId, kind: BuildingKind): boolean {
+    const a = this.allowed[p];
+    return !!a && kind !== 'hall' && !a.buildings.includes(kind);
+  }
+
+  /** Whether this mission keeps a unit from the player. */
+  unitLocked(p: PlayerId, unit: UnitTypeId): boolean {
+    const a = this.allowed[p];
+    return !!a && !a.units.includes(unit);
+  }
+
+  /** The highest level this mission lets a kind of building reach. */
+  levelCap(p: PlayerId, kind: BuildingKind): number {
+    const a = this.allowed[p];
+    return a ? Math.min(BUILDINGS[kind].maxLevel, a.levels?.[kind] ?? 1) : BUILDINGS[kind].maxLevel;
+  }
+
+  /** The tokens a player has a use for: the ones it holds and the ones it can spend or earn here (all, outside a mission). */
+  tokensInPlay(p: PlayerId): TokenId[] {
+    const a = this.allowed[p];
+    if (!a) return TOKEN_IDS;
+    const use = new Set<TokenId>(['usdc', 'eth']);
+    for (const t of TRAIN) if (a.units.includes(t.unit)) use.add(t.token);
+    if (a.buildings.includes('staking') || a.buildings.includes('restaking')) use.add('steth');
+    if (a.buildings.includes('vault')) use.add('dai');
+    return TOKEN_IDS.filter((t) => use.has(t) || this.players[p].tokens[t] * this.market.prices[t] >= 1);
+  }
+
   /** Why a player can't build this now (null: it can). */
   cantBuild(p: PlayerId, kind: BuildingKind): string | null {
     const r = BUILDINGS[kind];
     const me = this.players[p];
     if (kind === 'hall') return 'one wallet hall each';
+    if (this.locked(p, kind)) return NOT_YET;
     const hall = this.hallOf(p);
     if (!hall) return 'no wallet hall';
     if (hall.level < r.hallLevel) return `needs the wallet hall at level ${r.hallLevel}`;
@@ -178,6 +224,7 @@ export class World {
     const r = BUILDINGS[b.kind];
     if (b.owner !== p) return 'not yours';
     if (b.level >= r.maxLevel) return 'at its highest level';
+    if (b.level >= this.levelCap(p, b.kind)) return NOT_YET;
     if (b.upgrading) return 'already upgrading';
     const hall = this.hallOf(p);
     if (b.kind !== 'hall' && (!hall || hall.level <= b.level)) return `needs the wallet hall at level ${b.level + 1}`;
@@ -192,8 +239,8 @@ export class World {
     return { x: Math.round(x - off) + off, z: Math.round(z - off) + off };
   }
 
-  /** Why a building can't go at (x, z) (already snapped); null: it can. */
-  cantPlace(p: PlayerId, kind: BuildingKind, x: number, z: number): string | null {
+  /** Why a building can't go at (x, z) (already snapped); null: it can. `anywhere`: not only near the player's buildings (a mission's setup). */
+  cantPlace(p: PlayerId, kind: BuildingKind, x: number, z: number, anywhere = false): string | null {
     const f = BUILDINGS[kind].footprint;
     const h = this.map.size / 2 - 1;
     if (Math.abs(x) + f / 2 > h || Math.abs(z) + f / 2 > h) return 'off the map';
@@ -203,7 +250,7 @@ export class World {
         if (c < 0 || this.map.blocked[c] !== 0) return 'the ground is taken';
       }
     }
-    const near = this.buildings.some((b) => b.owner === p && Math.hypot(b.x - x, b.z - z) <= RULES.buildRadius);
+    const near = anywhere || this.buildings.some((b) => b.owner === p && Math.hypot(b.x - x, b.z - z) <= RULES.buildRadius);
     if (!near) return 'too far from your buildings';
     return null;
   }
@@ -315,6 +362,7 @@ export class World {
     const rule = TRAIN.find((t) => t.unit === unit);
     if (!rule || rule.at !== b.kind) return `not trained at the ${BUILDINGS[b.kind].name}`;
     if (b.owner !== p) return 'not yours';
+    if (this.unitLocked(p, unit)) return NOT_YET;
     if (b.level < rule.level) return `needs the ${BUILDINGS[b.kind].name} at level ${rule.level}`;
     if (b.queue.length >= RULES.queueMax) return 'the queue is full';
     if (this.units.filter((u) => u.owner === p && u.died < 0).length + this.buildings.filter((x) => x.owner === p).reduce((s, x) => s + x.queue.length, 0) >= RULES.unitCap) return `at most ${RULES.unitCap} units`;
@@ -457,6 +505,29 @@ export class World {
     this.units.push(u);
     if (b.rally) this.#order([u], { t: 'order', units: [u.id], kind: 'move', x: b.rally.x, z: b.rally.z });
     this.#events.push({ t: 'trained', id: u.id });
+  }
+
+  /** A mission's setup: a building standing from the start, at this level (no checks but the ground). */
+  addBuilding(kind: BuildingKind, owner: PlayerId, x: number, z: number, level = 1): Building {
+    const b = this.#add(kind, owner, x, z);
+    const r = BUILDINGS[kind];
+    b.level = Math.min(level, r.maxLevel);
+    b.maxHp = b.hp = r.hp + r.hpPerLevel * (b.level - 1);
+    return b;
+  }
+
+  /** A mission's script: a unit put on the field (raiders, guards). */
+  addUnit(owner: PlayerId, type: UnitTypeId, x: number, z: number): Unit {
+    const u = newUnit(this.#nextId++, type, owner, x, z);
+    this.units.push(u);
+    return u;
+  }
+
+  /** Ends the match (a mission's objectives done). */
+  finish(winner: PlayerId): void {
+    if (this.winner) return;
+    this.winner = winner;
+    this.#events.push({ t: 'won', winner });
   }
 
   #add(kind: BuildingKind, owner: PlayerId, x: number, z: number): Building {

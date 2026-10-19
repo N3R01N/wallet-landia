@@ -70,4 +70,6 @@ Changes from the plan made along the way:
 - **No button on phones**: the castle's topbar has a "🗡 RTS" link on desktop only (the mode needs a mouse).
 - `?ai=0` on rts.html starts without an opponent (a sandbox; the browser tests use it).
 
+**The campaign** (2026-10-19, `docs/rts/CAMPAIGN.md`): ten guided missions that open the game a piece at a time, on the start screen above the skirmish.
+
 Not done yet: fog of war, a worker and PvP, sounds, saving a match.

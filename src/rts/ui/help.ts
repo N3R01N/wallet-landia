@@ -1,7 +1,8 @@
 /**
- * Ledger Wars' help: the controls, how the money works, and every building
- * with what it trains and for which token (from the rules, so it says what
- * the game does). Opens from "? Help" in the top bar, or with F1.
+ * Ledger Wars' help: the controls, how the money works, every building
+ * with what it trains and for which token, and every unit in plain words
+ * (from the rules, so it says what the game does). In a campaign mission it
+ * shows only what the mission has opened. Opens from "? Help", or with F1.
  */
 
 import { UNIT_TYPES } from '../../game/core/catalog.js';
@@ -9,16 +10,23 @@ import { el } from '../../util/dom.js';
 import { BUILDINGS, BUILDING_KINDS, RULES, TOKENS, TRAIN } from '../data/rules.js';
 import { COMBAT } from '../core/combat.js';
 import { ECON } from '../core/economy.js';
+import type { World } from '../core/world.js';
+import { ROLE_NOTES, unitNote } from '../data/notes.js';
+import type { PlayerId } from '../data/rules.js';
 
-type Tab = 'controls' | 'economy' | 'buildings';
+type Tab = 'controls' | 'economy' | 'buildings' | 'units';
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 export class Help {
   readonly element = el('dialog', { class: 'rts-help', 'aria-label': 'Help' });
   #tab: Tab = 'controls';
+  readonly #world: World | null;
+  readonly #me: PlayerId;
 
-  constructor() {
+  constructor(world: World | null = null, me: PlayerId = 'A') {
+    this.#world = world;
+    this.#me = me;
     this.element.addEventListener('click', (e) => {
       if (e.target === this.element) this.element.close();
     });
@@ -34,8 +42,8 @@ export class Help {
   #render(): void {
     const close = el('button', { class: 'btn', type: 'button', 'aria-label': 'Close the help' }, '✕');
     close.addEventListener('click', () => this.element.close());
-    const tabs = (['controls', 'economy', 'buildings'] as const).map((t) => {
-      const b = el('button', { class: 'rts-help-tab', type: 'button', role: 'tab', 'aria-selected': String(t === this.#tab), 'data-tab': t }, { controls: 'Controls', economy: 'Money', buildings: 'Buildings & units' }[t]);
+    const tabs = (['controls', 'economy', 'buildings', 'units'] as const).map((t) => {
+      const b = el('button', { class: 'rts-help-tab', type: 'button', role: 'tab', 'aria-selected': String(t === this.#tab), 'data-tab': t }, { controls: 'Controls', economy: 'Money', buildings: 'Buildings', units: 'Units' }[t]);
       b.addEventListener('click', () => this.show(t));
       return b;
     });
@@ -80,6 +88,34 @@ export class Help {
         el('p', {}, 'If the enemy destroys a building that holds positions, they freeze: no income, no withdrawing, until you build another of the same kind.'),
       ];
     }
+    const w = this.#world;
+    const later = el('p', { class: 'rts-why' }, w?.allowed[this.#me] ? 'More buildings and units open in later missions.' : '');
+    if (this.#tab === 'units') {
+      return [
+        el('p', {}, 'Ranged beats Melee, Melee beats Cavalry, Cavalry beats Ranged (+50% damage). Hover a Train button for the same notes.'),
+        el(
+          'table',
+          { class: 'rts-help-table rts-help-units' },
+          el('thead', {}, el('tr', {}, el('th', {}, 'Unit'), el('th', {}, 'Cost, where'), el('th', {}, 'What it does'))),
+          el(
+            'tbody',
+            {},
+            ...TRAIN.filter((t) => !w?.unitLocked(this.#me, t.unit)).map((t) => {
+              const n = unitNote(t.unit);
+              const role = ROLE_NOTES[n.role];
+              return el(
+                'tr',
+                { 'data-unit': t.unit },
+                el('th', {}, `${role.icon} ${n.name}`, el('br'), el('small', {}, role.name)),
+                el('td', {}, `$${n.usd} in ${n.token}`, el('br'), el('small', {}, n.where)),
+                el('td', {}, n.line, n.ability ? el('br') : '', n.ability ?? '', el('br'), el('small', {}, `${role.note} ${n.stats}.`)),
+              );
+            }),
+          ),
+        ),
+        later,
+      ];
+    }
     return [
       el(
         'table',
@@ -88,15 +124,16 @@ export class Help {
         el(
           'tbody',
           {},
-          ...BUILDING_KINDS.map((k) => {
+          ...BUILDING_KINDS.filter((k) => !w?.locked(this.#me, k)).map((k) => {
             const r = BUILDINGS[k];
             const needs = [r.hallLevel > 1 ? `hall ${r.hallLevel}` : '', ...r.needs.map((n) => BUILDINGS[n].name)].filter(Boolean).join(', ') || '—';
-            const trains = TRAIN.filter((t) => t.at === k).map((t) => `${t.level}: ${UNIT_TYPES[t.unit]!.name} (${TOKENS[t.token].symbol}, $${RULES.unitValue * UNIT_TYPES[t.unit]!.costMult})`);
+            const trains = TRAIN.filter((t) => t.at === k && !w?.unitLocked(this.#me, t.unit)).map((t) => `${t.level}: ${UNIT_TYPES[t.unit]!.name} (${TOKENS[t.token].symbol}, $${RULES.unitValue * UNIT_TYPES[t.unit]!.costMult})`);
             return el('tr', {}, el('th', {}, r.name), el('td', {}, k === 'hall' ? '—' : `$${r.cost}`), el('td', {}, needs), el('td', {}, trains.join('; ') || '—'));
           }),
         ),
       ),
       el('p', {}, 'Melee beats Cavalry, Cavalry beats Ranged, Ranged beats Melee (+50%). Area attacks hit Swarms harder. Siege units are slow and weak against units but smash buildings. Your wallet hall shoots arrows at anything close.'),
+      later,
     ];
   }
 }

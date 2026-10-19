@@ -58,7 +58,7 @@ export class RtsView {
   readonly #ray = new THREE.Raycaster();
   readonly #groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   readonly #sun: THREE.DirectionalLight;
-  readonly #markers: { obj: THREE.Mesh; age: number }[] = [];
+  readonly #markers: { obj: THREE.Mesh; age: number; size: number }[] = [];
   #flag: THREE.Object3D | null = null;
   /** The edge strips the pointer is over (they pan the view): −1, 0 or 1 across and up/down. */
   readonly #edge = { x: 0, z: 0 };
@@ -268,13 +268,14 @@ export class RtsView {
     };
   }
 
-  /** A ring that shrinks away where an order went. */
-  marker(x: number, z: number, color: number): void {
+  /** A ring that shrinks away where an order went (or a campaign objective points; `size` × its radius). */
+  marker(x: number, z: number, color: number, size = 1): void {
     const obj = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.9, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false }));
     obj.position.set(x, 0.08, z);
     obj.renderOrder = 3;
     this.scene.add(obj);
-    this.#markers.push({ obj, age: 0 });
+    obj.scale.setScalar(size);
+    this.#markers.push({ obj, age: 0, size });
   }
 
   /** The rally flag of the selected building (null: none). */
@@ -472,7 +473,7 @@ export class RtsView {
     for (const m of this.#mixers) m.update(dt);
     for (const m of [...this.#markers]) {
       m.age += dt;
-      m.obj.scale.setScalar(Math.max(0.05, 1 - m.age * 1.6));
+      m.obj.scale.setScalar(m.size * Math.max(0.05, 1 - m.age * 1.6));
       if (m.age > 0.6) {
         m.obj.removeFromParent();
         m.obj.geometry.dispose();
