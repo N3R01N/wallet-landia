@@ -12,7 +12,7 @@ import { inject } from '@vercel/analytics';
 import { el, shortAddr } from '../util/dom.js';
 import { Shell } from './shell.js';
 import { TAB_LABEL, type SheetState, type TabId } from './shellState.js';
-import { CastleView, proxied, type GateGuard } from './scene/castleView.js';
+import { CastleView, proxied, type KeepGuard } from './scene/castleView.js';
 import { assetPath } from './assets/manifest.js';
 import { artTheme, loadCastleTheme, themeChain, themeFileUrl, themeFromUrl } from './assets/theme.js';
 import { newErrands, previewWorld, worldFromGuild, type CastleWorld } from './world/world.js';
@@ -161,8 +161,8 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       onRefused: () => sound.refused(),
       // the siege's enemy castle and its battlefield, while the game is on (src/game)
       extend: (plan) => siege.extension(plan) ?? { placements: [] },
-      // the two guards outside the gate invite you to the game modes
-      guards: GATE_GUARDS,
+      // two soldiers either side of the keep invite you to the game modes
+      guards: KEEP_GUARDS,
     });
     // Test hook (dev server only): the browser tests find buildings on screen through it.
     if (import.meta.env.DEV) (window as unknown as { castleView?: CastleView }).castleView = view;
@@ -356,16 +356,18 @@ const siege = new SiegeMode({
   onChange: () => shell.go('castle'),
 });
 
-/** The game modes' guards at the gate (castleView GateGuard): Siege on the left, Ledger Wars on the right. */
-const GATE_GUARDS: readonly GateGuard[] = [
+/** The game modes' soldiers by the keep (castleView KeepGuard): a Knight for Siege on the left, a Vault Warden for Ledger Wars on the right. */
+const KEEP_GUARDS: readonly KeepGuard[] = [
   {
-    teasers: ['Fancy a siege, traveller?', 'Your tokens could be troops!', 'A rival keep awaits…', 'Psst! Over here!'],
-    invite: 'Halt, traveller! Your wallet could raise an army. In Siege of the Ledger your tokens are your troops: lay siege to a rival’s keep.',
+    model: 'unit.knight',
+    teasers: ['Fancy a siege, guildmaster?', 'Your tokens could be troops!', 'A rival keep awaits…', 'Psst! Over here!'],
+    invite: 'Hail, guildmaster! Your wallet could raise an army. In Siege of the Ledger your tokens are your troops: lay siege to a rival’s keep.',
     action: '⚔ Play Siege of the Ledger',
     go: () => siege.set(true),
     tint: '#a33a2a',
   },
   {
+    model: 'unit.warden.vault',
     teasers: ['War in real time, ser?', 'Ledger Wars await!', 'Care for a battle?', 'The army needs a captain!'],
     invite: 'Ledger Wars rage beyond the hills! Build, stake and command your army in real time; a campaign shows you how. (Best with a mouse.)',
     action: '🗡 Play Ledger Wars',

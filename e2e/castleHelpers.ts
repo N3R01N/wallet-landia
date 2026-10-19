@@ -90,11 +90,11 @@ export async function showTown(page: Page): Promise<void> {
   await page.waitForTimeout(1500);
 }
 
-/** Taps a guard at the gate (0: Siege, 1: Ledger Wars); their invitation shows. */
+/** Taps a soldier by the keep (0: the Knight, Siege; 1: the Vault Warden, Ledger Wars); their invitation shows. */
 export async function tapGuard(page: Page, i: number): Promise<void> {
   await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 120_000 });
-  type View = { castleView: { focusAt(x: number, z: number, zoom?: number): void; guardPoint(i: number): { x: number; y: number } | null } };
-  await page.evaluate(() => (window as unknown as View).castleView.focusAt(0, 1, 2));
+  type View = { castleView: { lookAt(w: 'castle'): void; guardPoint(i: number): { x: number; y: number } | null } };
+  await page.evaluate(() => (window as unknown as View).castleView.lookAt('castle'));
   // the camera eases there: wait until the guard stands still on the screen
   let last: { x: number; y: number } | null = null;
   for (let k = 0; k < 20; k++) {

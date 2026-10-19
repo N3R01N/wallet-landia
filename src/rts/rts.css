@@ -740,3 +740,47 @@
     right: 254px;
   }
 }
+
+/* units' banter (render/barks.ts) */
+
+.rts-barks {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.rts-bark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 170px;
+  padding: 4px 9px;
+  margin-top: -6px;
+  border: 2px solid #3f6fa8;
+  border-radius: 11px;
+  background: #fffaf0;
+  color: #2b2433;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  will-change: transform, opacity;
+}
+
+.rts-bark.foe {
+  border-color: #b84a32;
+}
+
+.rts-bark::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-bottom: 0;
+  border-top-color: #fffaf0;
+}

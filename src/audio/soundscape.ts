@@ -10,6 +10,27 @@
 
 type Ctx = AudioContext;
 
+/** One shaped voice (Soundscape.voice). */
+export interface Voice {
+  delay?: number;
+  /** An oscillator's wave, or noise. */
+  type?: OscillatorType | 'noise';
+  /** Its pitch (Hz; for noise, the filter's cutoff when `cutoff` is not given), and where it glides to. */
+  freq: number;
+  to?: number;
+  /** Noise only: how fast the noise plays (lower: darker, rougher). */
+  rate?: number;
+  filter?: BiquadFilterType;
+  cutoff?: number;
+  cutoffTo?: number;
+  q?: number;
+  peak: number;
+  attack?: number;
+  decay: number;
+  /** −1 left … 1 right. */
+  pan?: number;
+}
+
 /** The click sounds a player can pick (the Guild tab), in their order. */
 export const TAP_SOUNDS = ['Marimba', 'Chime', 'Wood block', 'Coins', 'Harp'] as const;
 
@@ -313,6 +334,58 @@ export class Soundscape {
     if (!ctx || !this.#on || ctx.state !== 'running') return;
     const t = ctx.currentTime;
     [523, 659, 784, 1047].forEach((f, i) => this.#tone(t + i * 0.12, f, 0.08, i === 3 ? 0.9 : 0.25, 'triangle'));
+  }
+
+  /**
+   * One shaped voice `delay` s from now, for pages that make their own sounds
+   * (Ledger Wars, src/rts/sounds.ts): an oscillator or noise, its pitch gliding
+   * from `freq` to `to`, through a filter whose cutoff glides too, a quick
+   * attack and a decay, panned left (−1) to right (1). Silent while sound is off.
+   */
+  voice(v: Voice): void {
+    if (!this.#on || !this.#ctx || !this.#master || !this.#noise) return;
+    const ctx = this.#ctx;
+    const t = ctx.currentTime + (v.delay ?? 0);
+    const attack = v.attack ?? 0.004;
+    const end = t + attack + v.decay;
+    let src: AudioScheduledSourceNode;
+    if (v.type === 'noise') {
+      const n = ctx.createBufferSource();
+      n.buffer = this.#noise;
+      n.loop = true;
+      // a different stretch of the noise each time
+      n.playbackRate.value = v.rate ?? 1;
+      src = n;
+      n.start(t, Math.random() * 1.5);
+    } else {
+      const o = ctx.createOscillator();
+      o.type = v.type ?? 'sine';
+      o.frequency.setValueAtTime(v.freq, t);
+      if (v.to) o.frequency.exponentialRampToValueAtTime(Math.max(1, v.to), end);
+      src = o;
+      o.start(t);
+    }
+    let node: AudioNode = src;
+    if (v.filter) {
+      const f = ctx.createBiquadFilter();
+      f.type = v.filter;
+      f.frequency.setValueAtTime(v.cutoff ?? v.freq, t);
+      if (v.cutoffTo) f.frequency.exponentialRampToValueAtTime(Math.max(1, v.cutoffTo), end);
+      f.Q.value = v.q ?? 1;
+      node = node.connect(f);
+    }
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, v.peak), t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, end);
+    node = node.connect(g);
+    if (v.pan && ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, v.pan));
+      node = node.connect(p);
+    }
+    node.connect(this.#master);
+    src.stop(end + 0.05);
   }
 
   /**

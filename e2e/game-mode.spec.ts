@@ -1,22 +1,35 @@
 import { expect, test } from '@playwright/test';
 import { showTown, tapGuard } from './castleHelpers.js';
 
-/** Siege of the Ledger: a guard at the gate invites you, the game goes over the castle view, and back to the town. */
+/** Siege of the Ledger: the Knight by the keep invites you, the game goes over the castle view, and back to the town. */
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('the guard at the gate starts the game, the panel goes back to the town, with no horizontal scroll', async ({ page }) => {
+  test('the Knight by the keep starts the game (or is declined), the panel goes back to the town, with no horizontal scroll', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto('/?notour');
-    // no game buttons in the topbar: the guards at the gate invite you
+    // no game buttons in the topbar: the soldiers by the keep invite you
     await expect(page.locator('.topbar .siege-toggle, .topbar .rts-link')).toHaveCount(0);
     const panel = page.locator('.siege-panel');
     const chronicle = page.locator('.chronicle-btn');
     await expect(panel).toBeHidden();
+    // declined: with its button, then with Esc
     await tapGuard(page, 0);
-    await expect(page.locator('.guard-invite[data-guard="0"]')).toContainText('Siege of the Ledger');
+    // the Knight cheers once, then stands at ease again
+    type Cheer = { castleView: { guardCheering(i: number): boolean } };
+    expect(await page.evaluate(() => (window as unknown as Cheer).castleView.guardCheering(0))).toBe(true);
+    await expect.poll(() => page.evaluate(() => (window as unknown as Cheer).castleView.guardCheering(0)), { timeout: 10_000 }).toBe(false);
+    const invite = page.locator('.guard-invite[data-guard="0"]');
+    await expect(invite).toContainText('Siege of the Ledger');
+    await invite.locator('.guard-no').click();
+    await expect(invite).toHaveCount(0);
+    await tapGuard(page, 0);
+    await page.keyboard.press('Escape');
+    await expect(invite).toHaveCount(0);
+    await expect(panel).toBeHidden();
+    await tapGuard(page, 0);
     await expect(chronicle).toBeVisible();
 
     await page.locator('.guard-invite[data-guard="0"] .guard-go').click();

@@ -26,11 +26,11 @@ import { newUnit, type OrderKind, type Unit } from './core/units.js';
 import type { UnitTypeId } from '../game/core/types.js';
 import { RtsView } from './render/view.js';
 import { groundHeight } from './core/map.js';
-import { RtsSounds } from './sounds.js';
+import { RtsSounds, strikeSound } from './sounds.js';
 import { ECON_COMMANDS } from './core/economy.js';
-import { UNIT_TYPES } from '../game/core/catalog.js';
 import { UnitLayer } from './render/unitLayer.js';
-import { CASTERS, FightFx } from './render/fightFx.js';
+import { FightFx } from './render/fightFx.js';
+import { Barks } from './render/barks.js';
 import { Hud } from './ui/hud.js';
 import { Help } from './ui/help.js';
 import { Minimap } from './render/minimap.js';
@@ -97,6 +97,7 @@ async function play(match: World | Run): Promise<void> {
   const view = new RtsView(library);
   const layer = new UnitLayer(view, (x, z) => groundHeight(world.map, x, z));
   const fx = new FightFx(view, world);
+  const barks = new Barks(world, view, ME);
   layer.preload(TRAIN.filter((t) => t.level === 1 && t.at === 'hall').map((t) => t.unit));
   const selection = new Set<number>();
   let building: number | null = null;
@@ -159,7 +160,7 @@ async function play(match: World | Run): Promise<void> {
   const missionUrl = (n: number) => `rts.html?mission=${n}&go=1`;
   const panel = run ? new ObjectivesPanel(run, () => location.assign(missionUrl(run.mission.n))) : null;
   if (panel) hud.element.append(panel.element);
-  app.replaceChildren(el('div', { class: 'rts', 'data-ready': 'false' }, view.canvas, box, view.edges, hud.element, minimap.element, helpBtn, soundBtn));
+  app.replaceChildren(el('div', { class: 'rts', 'data-ready': 'false' }, view.canvas, box, barks.element, view.edges, hud.element, minimap.element, helpBtn, soundBtn));
   view.focus(RULES.start[ME].x, RULES.start[ME].z - 10);
   await view.build(world);
   app.querySelector('.rts')!.setAttribute('data-ready', 'true');
@@ -345,32 +346,37 @@ async function play(match: World | Run): Promise<void> {
   let ambienceClock = 0;
   /** What the world did, heard (fights out of view quieter). */
   const hear = (e: ReturnType<typeof world.takeEvents>[number]) => {
-    const loud = (x: number, z: number) => (view.inView(x, z) ? 1 : 0.2);
+    // where on the screen: in view or not (quieter), and left or right
+    const at = (x: number, z: number) => {
+      const p = view.toScreen(x, 0, z);
+      const r = view.canvas.getBoundingClientRect();
+      return { loud: view.inView(x, z) ? 1 : 0.2, pan: p ? ((p.x - r.left) / r.width) * 2 - 1 : 0 };
+    };
     const mine = (id: number) => world.units.find((u) => u.id === id)?.owner === ME || world.buildings.find((b) => b.id === id)?.owner === ME;
     switch (e.t) {
       case 'strike': {
         const from = world.units.find((u) => u.id === e.from);
         const onBuilding = world.buildings.some((b) => b.id === e.target);
-        sounds.play(e.ranged ? (from && CASTERS.has(from.type) ? 'bolt' : 'arrow') : onBuilding || (from && UNIT_TYPES[from.type]!.role === 'siege') ? 'smash' : 'blade', loud(e.toX, e.toZ));
+        sounds.play(strikeSound(from?.type ?? null, e.ranged, onBuilding), { ...at(e.toX, e.toZ), crit: e.crit });
         break;
       }
       case 'hallShot': {
         const hall = world.buildings.find((b) => b.id === e.from);
-        if (hall) sounds.play('hallShot', loud(hall.x, hall.z));
+        if (hall) sounds.play('hallShot', at(hall.x, hall.z));
         break;
       }
       case 'death': {
         const u = world.units.find((x) => x.id === e.id);
-        if (u) sounds.play('fall', loud(u.x, u.z));
+        if (u) sounds.play('fall', { ...at(u.x, u.z), unit: u.type });
         break;
       }
       case 'ability': {
         const u = world.units.find((x) => x.id === e.id);
-        if (u) sounds.play(e.ability === 'charge' ? 'charge' : e.ability === 'death-burst' ? 'smash' : 'magic', loud(u.x, u.z));
+        if (u) sounds.play(e.ability === 'charge' ? 'charge' : e.ability === 'death-burst' ? 'burst' : 'magic', at(u.x, u.z));
         break;
       }
       case 'destroyed':
-        sounds.play('collapse', e.owner === ME ? 1 : 0.8);
+        sounds.play('collapse', { loud: e.owner === ME ? 1 : 0.8 });
         break;
       case 'trained':
         if (mine(e.id)) sounds.play('trained');
@@ -422,6 +428,7 @@ async function play(match: World | Run): Promise<void> {
     const events = world.takeEvents();
     if (events.some((e) => e.t === 'placed' || e.t === 'upgraded' || e.t === 'destroyed')) void view.sync(world);
     fx.handle(events);
+    barks.handle(events);
     for (const e of events) {
       hear(e);
       // under attack: a flash on the minimap, and a word now and then
@@ -457,6 +464,7 @@ async function play(match: World | Run): Promise<void> {
     view.rally(selection.size === 0 && b?.owner === ME ? b.rally : null);
     layer.draw(world.units, acc / tick, dt, selection, ME, world.buildings);
     minimap.draw(ME, view.outline(), dt);
+    barks.update(dt);
     ambienceClock -= dt;
     if (ambienceClock <= 0) {
       ambienceClock = 1;
@@ -502,7 +510,7 @@ async function play(match: World | Run): Promise<void> {
   let spawned = 1_000_000;
   if (import.meta.env.DEV)
     Object.assign(window, {
-      rts: { world, run, view, send, selection, sounds, spawn: (owner: PlayerId, type: UnitTypeId, x: number, z: number) => world.units.push(newUnit(spawned++, type, owner, x, z)) },
+      rts: { world, run, view, send, selection, sounds, barks, spawn: (owner: PlayerId, type: UnitTypeId, x: number, z: number) => world.units.push(newUnit(spawned++, type, owner, x, z)) },
     });
 }
 

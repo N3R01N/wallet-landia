@@ -14,7 +14,7 @@ import type { RtsView } from './view.js';
 import { groundHeight } from '../core/map.js';
 
 /** Unit types that cast rather than shoot. */
-export const CASTERS = new Set(['mage.swap', 'mage.battle', 'lender.ghost', 'construct']);
+const CASTERS = new Set(['mage.swap', 'mage.battle', 'lender.ghost', 'construct']);
 
 export class FightFx {
   readonly #fx: BattleFx;

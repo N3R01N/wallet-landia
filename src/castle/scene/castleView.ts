@@ -22,7 +22,7 @@ import { ModelLibrary, disposeTree, type Loaded } from '../assets/models.js';
 import { artTheme, loadThemeImage, themeFileUrl, type CastleTheme } from '../assets/theme.js';
 import { crestColors } from '../../util/rng.js';
 import { DEFAULT_TIMING, buildCourierScript, courierAt, type CourierScript, type CourierState, type NpcClip } from './courier.js';
-import { GATE_GUARDS, pathRow, pathShape, planCastle, routeBetweenWallets, routeFromHome, routeTo, type BuildingPlacement, type CastleLayout, type CastlePlan, type Placement, type WalletPlacement } from './plan.js';
+import { pathRow, pathShape, planCastle, routeBetweenWallets, routeFromHome, routeTo, type BuildingPlacement, type CastleLayout, type CastlePlan, type Placement, type WalletPlacement } from './plan.js';
 import type { CastleWorld, Errand } from '../world/world.js';
 import { lightAt, type Weather } from '../world/sky.js';
 import { logoPath } from '../world/logos.js';
@@ -44,8 +44,10 @@ import {
 
 export type CastleFocus = 'castle' | 'town';
 
-/** A guard outside the gate who invites the player to a game mode (CastleViewOptions.guards). */
-export interface GateGuard {
+/** A soldier beside the keep who invites the player to a game mode (CastleViewOptions.guards). */
+export interface KeepGuard {
+  /** Their model (a game's unit: `unit.knight`, `unit.warden.vault`). */
+  model: string;
   /** What they call out now and then. */
   teasers: readonly string[];
   /** Tapped: the invitation, and its button. */
@@ -130,8 +132,8 @@ export interface CastleViewOptions {
    * castle). The chain view itself never depends on it (REDESIGN §8).
    */
   extend?: (plan: CastlePlan) => SceneExtension;
-  /** The two guards outside the gate, by the bridge (left out while a game mode clears the town). */
-  guards?: readonly GateGuard[];
+  /** Two soldiers, left and right of the keep (left out while a game mode clears the town). */
+  guards?: readonly KeepGuard[];
   /** In build mode, a tap on a building (its protocol) or on an empty plot. */
   onArrangeTap?: (tap: { protocolId: string } | { slot: number }) => void;
 }
@@ -223,12 +225,13 @@ const CHATTER_EVERY = 6;
 /** An invitation's bubble stays this long (s); a guard calls out every this many (plus up to 8). */
 const INVITE_TIME = 14;
 const GUARD_CALL_EVERY = 14;
-/** The gate guards' size (×). */
-const GUARD_SCALE = 1.3;
+/** A guard's tap: they cheer. */
+const GUARD_CHEER = 'cheer';
+/** How far out from the keep's sides they stand, and how far back from its front (m). */
+const GUARD_OUT = 0.9;
+const GUARD_BACK = 0.7;
 /** A bubble's foot above a person's feet (m). */
 const BUBBLE_HEIGHT = 2.1;
-/** A gate guard's bubble sits this much higher (they are drawn bigger). */
-const GUARD_BUBBLE_LIFT = 0.5;
 /** While following, the player may pan the courier this share of the view's height away from the middle, no further. */
 const FOLLOW_SLACK = 0.3;
 /** The Chronicle tower turns this see-through while someone is behind it. */
@@ -451,8 +454,11 @@ export class CastleView {
   /** When someone in the street next says something unprompted. */
   #nextChatter = 4;
   #nextGuardCall = 5;
-  /** The gate guards standing (their index in the options' guards). */
+  /** The keep's guards standing (their index in the options' guards). */
   #guards: THREE.Object3D[] = [];
+  #guardFigures: Figure[] = [];
+  /** The keep as placed (the guards stand by it). */
+  #keepObj: THREE.Object3D | null = null;
   readonly #controls = document.createElement('div');
 
   constructor(opts: CastleViewOptions) {
@@ -837,7 +843,8 @@ export class CastleView {
       'courier.base',
       ...[0, 1, 2, 3, 4, 5, 6].map((t) => `courier.cargo.t${t}`),
       'person.npc.base',
-      'person.guard',
+      // the keep's guards: game units
+      ...(this.#opts.guards ?? []).map((g) => g.model),
       ...[...categories].map((c) => `person.npc.${c}`),
       ...CLOUD_MODELS,
       'scenery.cloud.rain',
@@ -1031,6 +1038,7 @@ export class CastleView {
           obj.userData.reacts = true;
         }
         if (p === plan.keep) {
+          this.#keepObj = obj;
           obj.userData.keep = true;
           obj.userData.reacts = true;
         }
@@ -1074,16 +1082,23 @@ export class CastleView {
       this.#npcs.set(b.protocol.id, npc);
     }
 
-    // the guards at the gate, who invite you to the games (not while a game has the streets)
+    // two soldiers either side of the keep, who invite you to the games (not while a game has the streets)
     this.#guards = [];
-    if (!this.#extension?.quiet) {
-      (this.#opts.guards ?? []).slice(0, GATE_GUARDS.length).forEach((g, i) => {
-        const at = GATE_GUARDS[i]!;
-        const guard = new Figure(this.#make('person.guard'), this.#loaded.get('person.guard')?.clips ?? [], [TAP_CLIP]);
+    this.#guardFigures = [];
+    const keep = this.#keepObj;
+    if (keep && !this.#extension?.quiet) {
+      keep.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(keep);
+      const spots = [
+        { x: box.min.x - GUARD_OUT, z: box.max.z - GUARD_BACK },
+        { x: box.max.x + GUARD_OUT, z: box.max.z - GUARD_BACK },
+      ];
+      (this.#opts.guards ?? []).slice(0, spots.length).forEach((g, i) => {
+        const at = spots[i]!;
+        const guard = new Figure(this.#make(g.model), this.#loaded.get(g.model)?.clips ?? [], [GUARD_CHEER]);
         guard.object.position.set(at.x, 0, at.z);
-        guard.object.rotation.y = at.rot;
-        // a little bigger than the townsfolk: they are there to be found
-        guard.object.scale.setScalar(GUARD_SCALE);
+        // facing out of the keep, towards the courtyard and the gate
+        guard.object.rotation.y = keep.rotation.y;
         if (guard.has('idle')) guard.play('idle');
         if (g.tint) paint(guard.object, 'Tint', g.tint, this.#painted);
         guard.object.userData.reacts = true;
@@ -1093,6 +1108,7 @@ export class CastleView {
         this.#layout.add(guard.object);
         this.#figures.push(guard);
         this.#guards.push(guard.object);
+        this.#guardFigures.push(guard);
       });
     }
     // the Glow parts of everything placed (shared materials: one entry each)
@@ -1128,6 +1144,7 @@ export class CastleView {
     this.#rippleSpeedNow = null;
     this.#buildingRoots.length = 0;
     this.#castleRoots.length = 0;
+    this.#keepObj = null;
     this.#hovered = null;
     this.#hoverRing.visible = false;
     this.#lods.length = 0;
@@ -1606,24 +1623,42 @@ export class CastleView {
     this.#bubbles.push({ el: bubble, obj, until: this.#time + time });
   }
 
-  /** A gate guard's invitation: their words and a button to play. */
-  #invite(obj: THREE.Object3D, g: GateGuard): void {
-    const go = document.createElement('button');
-    go.className = 'btn guard-go';
-    go.type = 'button';
-    go.textContent = g.action;
-    go.addEventListener('click', () => g.go());
+  /** A keep guard's invitation: their words, a button to play and one to decline (Esc declines too). */
+  #invite(obj: THREE.Object3D, g: KeepGuard): void {
+    const button = (cls: string, label: string, act: () => void) => {
+      const b = document.createElement('button');
+      b.className = `btn ${cls}`;
+      b.type = 'button';
+      b.textContent = label;
+      b.addEventListener('click', act);
+      return b;
+    };
     const words = document.createElement('p');
     words.textContent = g.invite;
+    const row = document.createElement('div');
+    row.className = 'guard-buttons';
+    row.append(button('guard-go', g.action, () => g.go()), button('guard-no', 'No, thank you', () => this.closeInvite()));
     const bubble = el('div', 'speech-bubble guard-invite');
-    bubble.append(words, go);
+    bubble.append(words, row);
     bubble.dataset.guard = String(this.#guards.indexOf(obj));
     // one invitation at a time: the other guard falls quiet
     this.#bubbles = this.#bubbles.filter((b) => (b.obj !== obj && this.#guards.includes(b.obj) ? (b.el.remove(), false) : true));
     this.#bubble(obj, bubble, INVITE_TIME);
   }
 
-  /** Test hook: the page coordinates of a gate guard, chest high (null: none, or off the view). */
+  /** Closes a guard's invitation, if one is open (its "No, thank you", or Esc). Returns whether one was. */
+  closeInvite(): boolean {
+    let closed = false;
+    this.#bubbles = this.#bubbles.filter((b) => (b.el.classList.contains('guard-invite') ? (b.el.remove(), (closed = true), false) : true));
+    return closed;
+  }
+
+  /** Test hook: whether a keep guard is cheering now (a tap's one cheer). */
+  guardCheering(i: number): boolean {
+    return this.#guardFigures[i]?.reacting ?? false;
+  }
+
+  /** Test hook: the page coordinates of a keep guard, chest high (null: none, or off the view). */
   guardPoint(i: number): { x: number; y: number } | null {
     const g = this.#guards[i];
     if (!g) return null;
@@ -1639,7 +1674,7 @@ export class CastleView {
       const one = this.#life?.someone(Math.random());
       if (one) this.#say(one.obj, one.who);
     }
-    // a gate guard calls out now and then (not over an invitation)
+    // a keep guard calls out now and then (not over an invitation)
     this.#nextGuardCall -= dt;
     if (this.#nextGuardCall <= 0 && this.#guards.length) {
       this.#nextGuardCall = GUARD_CALL_EVERY + Math.random() * 8;
@@ -1651,7 +1686,7 @@ export class CastleView {
     this.#bubbles = this.#bubbles.filter((b) => {
       if (this.#time > b.until || !b.obj.parent) return b.el.remove(), false;
       const head = b.obj.getWorldPosition(this.#bubbleScratch);
-      head.y += BUBBLE_HEIGHT + (b.obj.userData.guard !== undefined ? GUARD_BUBBLE_LIFT : 0);
+      head.y += BUBBLE_HEIGHT;
       const p = this.#toScreen(head);
       b.el.hidden = !p || !b.obj.visible;
       if (p) {
@@ -1980,6 +2015,10 @@ export class CastleView {
     const t = e.target as HTMLElement | null;
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
     switch (e.key.toLowerCase()) {
+      case 'escape':
+        // a guard's invitation, declined; otherwise Esc is left alone (a dialog closes on it)
+        if (this.closeInvite()) e.preventDefault();
+        return;
       case 'q':
         this.turn(-TURN_STEP);
         break;
@@ -2103,7 +2142,7 @@ export class CastleView {
     if (!o) return;
     if (o.userData.guard !== undefined) {
       const g = this.#opts.guards?.[o.userData.guard as number];
-      this.#reactions.get(o)?.react(TAP_CLIP, false);
+      this.#reactions.get(o)?.react(GUARD_CHEER, false);
       this.#opts.onTapped?.('person');
       if (g) this.#invite(o, g);
       return;
@@ -2345,6 +2384,8 @@ export class CastleView {
       if (run.building && s.npc !== 'hidden' && !npcState.has(run.building.protocol.id)) npcState.set(run.building.protocol.id, s.npc);
     }
     for (const f of this.#ambient) f.update(dt);
+    // the keep's guards: their idle, and a tap's one cheer
+    for (const g of this.#guardFigures) g.update(dt);
     for (const [id, npc] of this.#npcs) {
       const clip = npcState.get(id);
       if (clip) {

@@ -217,7 +217,7 @@ test('the help, the minimap and control groups', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test('a guard at the castle’s gate invites you to Ledger Wars', async ({ page }) => {
+test('the Vault Warden by the castle’s keep invites you to Ledger Wars', async ({ page }) => {
   test.setTimeout(150_000);
   await page.goto('/?notour');
   await tapGuard(page, 1);
@@ -305,7 +305,7 @@ test('the campaign: the mission list, a briefing, and mission 1’s first object
   expect(errors).toEqual([]);
 });
 
-test('sound: on by default, heard as units fight, and switched off from the corner', async ({ page }) => {
+test('sound and banter: on by default, heard as units fight, the winners talk, switched off from the corner', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('/rts.html?seed=e2e&ai=0');
   await page.evaluate(() => localStorage.removeItem('wallet-landia.rts.sound'));
@@ -324,6 +324,8 @@ test('sound: on by default, heard as units fight, and switched off from the corn
     for (let i = 0; i < 3; i++) r.spawn('B', 'archer.scout', i, 26);
   });
   await expect.poll(() => page.evaluate(() => { const p = (window as unknown as R).rts.sounds.played; return (p.blade ?? 0) + (p.arrow ?? 0); }), { timeout: 20_000 }).toBeGreaterThan(0);
+  // the fight won: the winners say so, over their heads
+  await expect(page.locator('.rts-bark').first()).toBeVisible({ timeout: 30_000 });
   await btn.click();
   await expect(btn).toHaveAttribute('aria-pressed', 'false');
   expect(await page.evaluate(() => localStorage.getItem('wallet-landia.rts.sound'))).toBe('off');
