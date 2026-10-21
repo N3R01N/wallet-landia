@@ -18,7 +18,7 @@ import { ASSETS, SIZE_CLASSES, assetPath, brandColor, sizeClassOf, tierColor, ty
 import { ModelLibrary, disposeTree, type Loaded } from './assets/models.js';
 import { artTheme, loadCastleTheme, loadThemeImage, themeChain, themeFileUrl, themeFromUrl } from './assets/theme.js';
 import { logoPath } from './world/logos.js';
-import { sizeFor, tvlOf } from './world/size.js';
+import { sizeFor, standingOf } from './world/size.js';
 
 const params = new URLSearchParams(location.search);
 const theme = await loadCastleTheme(import.meta.env.BASE_URL, themeFromUrl(location.search));
@@ -139,7 +139,7 @@ function rowsOf(names: Set<string>): Row[] {
   ];
   // landmarks by size class, biggest first
   const landmarks = take((n) => n.startsWith('building.protocol.'));
-  const classOf = (n: string) => sizeClassOf(2 * sizeFor(tvlOf(n.replace('building.protocol.', '')) ?? 1e6));
+  const classOf = (n: string) => sizeClassOf(2 * sizeFor(standingOf(n.replace('building.protocol.', '')) ?? 1e6));
   for (const c of [...SIZE_CLASSES].reverse()) {
     const list = landmarks.filter((n) => classOf(n) === c.id);
     if (list.length) rows.push({ title: `Landmarks ${c.id.toUpperCase()}`, names: list });

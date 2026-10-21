@@ -22,10 +22,25 @@ export function sizeFor(usd: number): number {
 }
 
 const TVL: Readonly<Record<string, number>> = (snapshot as { tvl: Record<string, number> }).tvl;
+const STANDING: Readonly<Record<string, number>> = (snapshot as { standing?: Record<string, number> }).standing ?? {};
 
 /** A protocol's value locked on Ethereum (by its Zerion id), or null when the snapshot does not know it. */
 export function tvlOf(protocolId: string): number | null {
   return TVL[protocolFamily(protocolId)] ?? null;
+}
+
+/**
+ * What a protocol's building is sized by: its value locked, or for the few
+ * that value locked cannot measure (a marketplace, a name registry) its
+ * standing from a year's fees (scripts/fetch-tvl.ts), whichever is larger;
+ * null when the snapshot knows neither.
+ */
+export function standingOf(protocolId: string): number | null {
+  const family = protocolFamily(protocolId);
+  const tvl = TVL[family];
+  const standing = STANDING[family];
+  if (tvl === undefined && standing === undefined) return null;
+  return Math.max(tvl ?? 0, standing ?? 0);
 }
 
 /** When the snapshot was taken (YYYY-MM-DD). */

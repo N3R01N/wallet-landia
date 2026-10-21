@@ -34,6 +34,9 @@ Rules: `docs/STYLEGUIDE_V2.md`, especially §10 (lessons).
 | 20 | Siege dressing: keep and wall damage states, capture ring, owner banner | [20](20-siege-dressing.md) | blender-de | ✅ checked in the game (2026-10-17), committed |
 | 22 | Siege units, creatures and mounts: Titan, Golem, Lido Lancer, Name Rider, Shiba Pack, Frog Swarm | [22](22-siege-creatures.md) | blender-de | ✅ all six approved, committed |
 | 23 | Siege effects: hit spark, arrow, bolt, puff (blender-a4); detonation, siege impact, lightning (blender-de) | [23](23-siege-vfx.md) | blender-a4, blender-de | ✅ all seven approved, committed |
+| 24 | The Wayfarers' Gate at the avenue's far end (things from outside), the road beyond, the stranger | [24](24-wayfarers-gate.md) | blender-74 | briefed (2026-10-21) |
+| 25 | The Ember Furnace (burns), its stoker, the burn effect | [25](25-ember-furnace.md) | blender-e0 | briefed (2026-10-21) |
+| 26 | OpenSea, ENS and Gondi rebuilt at class M (sized by standing, 10 × a year's fees, not value locked) | [26](26-landmarks-standing.md) | design agent "landmarks-m" | briefed (2026-10-21) |
 
 The landmark classes come from each protocol's value on Ethereum (`src/castle/world/tvl.json`), so a protocol may change class when the snapshot is renewed. Batch 3 (castle wings) was dropped: castle layout 2 has none.
 

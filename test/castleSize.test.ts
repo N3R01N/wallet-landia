@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { SIZE_MAX, SIZE_MIN, sizeFor, tvlOf, TVL_UPDATED } from '../src/castle/world/size.js';
+import { SIZE_MAX, SIZE_MIN, sizeFor, standingOf, tvlOf, TVL_UPDATED } from '../src/castle/world/size.js';
+import { sizeClassOf } from '../src/castle/assets/manifest.js';
 
 describe('sizes by value', () => {
   it('$1M is a 2 × 2 m house; ten times the value about 1.6 times the size; a thousand times about 4', () => {
@@ -21,6 +22,22 @@ describe('sizes by value', () => {
     expect(tvlOf('aave-v2')).toBe(tvlOf('aave-v3'));
     expect(tvlOf('lido')).toBeGreaterThan(1e9);
     expect(tvlOf('no-such-protocol-xyz')).toBeNull();
+  });
+});
+
+describe('standing: protocols value locked cannot measure', () => {
+  it('OpenSea, ENS and Gondi are sized by a year of fees and stand as class M; value locked stays what it is', () => {
+    for (const id of ['opensea', 'ens', 'gondi']) {
+      expect(standingOf(id)).toBeGreaterThan(1e7);
+      expect(sizeClassOf(2 * sizeFor(standingOf(id)!))).toBe('m');
+    }
+    expect(tvlOf('opensea')).toBeNull();
+    expect(standingOf('gondi')).toBeGreaterThan(tvlOf('gondi')!);
+  });
+
+  it('is the value locked for everyone else', () => {
+    expect(standingOf('aave-v3')).toBe(tvlOf('aave-v3'));
+    expect(standingOf('no-such-protocol-xyz')).toBeNull();
   });
 });
 

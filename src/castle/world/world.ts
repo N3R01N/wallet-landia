@@ -10,7 +10,7 @@ import type { Goods, Guild, Journey, PositionKind, Verb } from '../../domain/mod
 import { tierOf } from '../../domain/tiers.js';
 import { walletFocus, type WalletFocus } from './halls.js';
 import { ethPriceFrom } from '../../domain/risk.js';
-import { SIZE_REFERENCE_USD, sizeFor, tvlOf } from './size.js';
+import { SIZE_REFERENCE_USD, sizeFor, standingOf, tvlOf } from './size.js';
 import { SIGNATURE_PROTOCOLS, protocolFamily } from '../assets/manifest.js';
 
 /** The castle's building categories (docs/ASSET_SPEC.md §3.5). */
@@ -217,7 +217,7 @@ export function worldFromGuild(guild: Guild): CastleWorld {
         visits: [...group].reduce((t, m) => t + (known.get(m)?.visits ?? 0), 0),
         tvlUsd,
         // unknown to the snapshot: as big as what the guild keeps there, at least a house
-        size: sizeFor(tvlUsd ?? Math.max(sumHeld(p.id), SIZE_REFERENCE_USD)),
+        size: sizeFor(standingOf(p.id) ?? Math.max(sumHeld(p.id), SIZE_REFERENCE_USD)),
         iconUrl: [...group].map((m) => known.get(m)?.iconUrl ?? null).find((u) => u) ?? null,
       };
     });
@@ -347,8 +347,9 @@ export function previewWorld(world: CastleWorld, spec: string): CastleWorld {
       const family = protocolFamily(head);
       const category = SIGNATURE_PROTOCOLS[family];
       if (!category) return null;
-      const tvlUsd = Number.isFinite(usd) && usd > 0 ? usd : tvlOf(head);
-      return { id: head, name: head, category: category as BuildingCategory, tier: 0, signature: family, holdings: [], visits: 0, tvlUsd, size: sizeFor(tvlUsd ?? SIZE_REFERENCE_USD), iconUrl: null };
+      const given = Number.isFinite(usd) && usd > 0 ? usd : null;
+      const tvlUsd = given ?? tvlOf(head);
+      return { id: head, name: head, category: category as BuildingCategory, tier: 0, signature: family, holdings: [], visits: 0, tvlUsd, size: sizeFor(given ?? standingOf(head) ?? SIZE_REFERENCE_USD), iconUrl: null };
     })
     .filter((p): p is WorldProtocol => p !== null);
   return protocols.length ? { ...world, protocols, errands: [] } : world;
