@@ -22,6 +22,8 @@
   Cache-Control: no-cache
 /assets.html
   Cache-Control: no-cache
+/legal.html
+  Cache-Control: no-cache
 /app.webmanifest
   Cache-Control: no-cache
 /sw.js

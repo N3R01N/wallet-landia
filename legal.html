@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- A plain page: no scripts, nothing fetched from elsewhere. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; object-src 'none'; base-uri 'none'" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <meta name="theme-color" content="#2b2a33" />
+    <title>Legal and privacy</title>
+    <link rel="stylesheet" href="/src/castle/legal.css" />
+  </head>
+  <body>
+    <main class="legal">
+      <p><a href="/">← Back to the castle</a></p>
+      <h1>Legal notice, privacy and terms</h1>
+      <p class="muted">Last updated: 21 October 2026</p>
+
+      <nav aria-label="On this page">
+        <a href="#owner">Site owner</a> · <a href="#disclaimer">Disclaimer</a> · <a href="#privacy">Privacy</a> · <a href="#terms">Terms of use</a>
+      </nav>
+
+      <section id="owner">
+        <h2>Offenlegung gemäß § 25 Mediengesetz (site owner)</h2>
+        <dl>
+          <dt>Media owner and operator</dt>
+          <dd data-operator="name">[YOUR FULL NAME]</dd>
+          <dt>Place of residence</dt>
+          <dd data-operator="place">[YOUR TOWN], Austria</dd>
+          <dt>Contact</dt>
+          <dd data-operator="email">[YOUR CONTACT EMAIL]</dd>
+          <dt>Purpose</dt>
+          <dd>Wallet-landia is a free, non-commercial hobby project: it shows public Ethereum wallet data as a castle and a town, and has games built on it. It has no advertising and sells nothing.</dd>
+        </dl>
+      </section>
+
+      <section id="disclaimer">
+        <h2>Disclaimer</h2>
+        <ul>
+          <li><strong>Not financial advice.</strong> Nothing on this site is investment, tax or legal advice, or a recommendation to buy, sell or hold anything.</li>
+          <li><strong>The numbers can be wrong or late.</strong> Values, positions and transactions come from Zerion and from public Ethereum nodes. They can be incomplete, delayed or wrong, and the castle simplifies them on purpose. Check anything that matters at the source.</li>
+          <li><strong>It never touches your funds.</strong> Wallet-landia only reads public data. It never asks you to sign anything and cannot move anything.</li>
+          <li><strong>Not affiliated.</strong> Wallet-landia is not an official application of Zerion and is not affiliated with, endorsed or sponsored by Zerion or by any protocol, token or project it shows. Their names and logos belong to their owners and are used only to say what is what.</li>
+        </ul>
+      </section>
+
+      <section id="privacy">
+        <h2>Privacy</h2>
+        <p>The person named above is responsible for this site under the GDPR. There are no accounts and no cookies, and nothing you enter is kept on a server of ours.</p>
+
+        <h3>What stays in your browser</h3>
+        <p>Your Zerion key, your wallets and their names, your settings, the history of your wallets gathered so far, game progress and copies of the site's files are kept in your browser's storage (local storage, IndexedDB and the service worker's cache). This is needed for the parts of the site you use (§ 165 (3) TKG 2021), so no consent banner is shown. You can delete all of it at any time by clearing this site's data in your browser; the Guild tab also has "Forget" for the key.</p>
+
+        <h3>What leaves your browser, and to whom</h3>
+        <ul>
+          <li><strong>Hosting (Vercel Inc., USA).</strong> The site is served by Vercel. Like any web host it sees your IP address, browser and the pages you load; its request logs on our plan are kept for about an hour. Vercel takes part in the EU-US Data Privacy Framework and processes this for us under its data processing agreement.</li>
+          <li><strong>Wallet data (Zerion).</strong> To draw your castle, the wallet addresses you add (and wallets you visit or follow) are sent to Zerion's API with your own Zerion key. These requests pass through this site's server so that Zerion accepts them; there your key and the addresses are only forwarded, never stored or logged, and your IP address, cookies and browser details are not passed on. Zerion (Zerion Inc., USA) handles them under <a href="https://zerion.io/privacy-policy" rel="noopener noreferrer">its privacy policy</a>.</li>
+          <li><strong>Ethereum node.</strong> For the live block bell and to watch your wallets, your browser talks directly to a public Ethereum node (by default PublicNode, publicnode.com; you can choose another in the Guild tab). The node sees your IP address and the addresses it is asked about.</li>
+          <li><strong>Pictures.</strong> Protocol logos and NFT pictures come from the hosts that publish them (for example Zerion's image servers, Alchemy, OpenSea, IPFS and Arweave gateways). Some are fetched through this site's server, so the host does not see you; others are loaded by your browser directly, and then the host sees your IP address.</li>
+          <li><strong>Visitor statistics (Vercel Web Analytics).</strong> We count page views to see how the site is used: page address (without anything after ? or #), referrer, country, browser, operating system and device type. It sets no cookies and stores nothing on your device; visitors are told apart by a hash that is discarded after 24 hours, and we only see totals.</li>
+          <li><strong>Connect wallet.</strong> If you use it, your browser wallet tells this page your address, and that address is treated like one you typed in. No signature is ever requested.</li>
+          <li><strong>Shared castles.</strong> A link you share carries the wallets you marked public in the part of the address after #, which browsers never send to a server.</li>
+        </ul>
+        <p>Public wallet addresses can be personal data when they can be linked to a person. We do not try to find out who is behind an address.</p>
+
+        <h3>Why (legal bases)</h3>
+        <p>Showing the castle you asked for: Art. 6 (1) (b) GDPR. Hosting, keeping the site secure and counting visitors without identifying them: our legitimate interest in running a working, reliable site, Art. 6 (1) (f) GDPR.</p>
+
+        <h3>Your rights</h3>
+        <p>You have the right to access, correction, deletion, restriction of processing, data portability and to object (Art. 15–21 GDPR). Since we keep nothing about you on a server, most of this is in your own hands in your browser; for anything else write to the contact above. You can also complain to the Austrian Data Protection Authority (Datenschutzbehörde, Barichgasse 40–42, 1030 Vienna, <a href="https://www.dsb.gv.at" rel="noopener noreferrer">dsb.gv.at</a>).</p>
+      </section>
+
+      <section id="terms">
+        <h2>Terms of use</h2>
+        <ul>
+          <li>Wallet-landia is free and provided as it is, without any warranty that it works, is available or is accurate.</li>
+          <li>The operator is liable only for intent and gross negligence, and for harm to life, body or health; any liability that cannot be excluded by law is unaffected.</li>
+          <li>Your Zerion key is yours: you are bound by Zerion's terms for it, and the requests it makes count against your own Zerion quota.</li>
+          <li>Do not use this site's servers for anything other than the site itself (for example as a general proxy), and do not try to overload them.</li>
+          <li>These terms are governed by Austrian law; mandatory consumer protection in your country is unaffected.</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

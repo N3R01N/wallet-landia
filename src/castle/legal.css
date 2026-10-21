@@ -1,0 +1,93 @@
+/*
+ * The legal page (legal.html): plain reading text in the castle's colours.
+ * Colours are tokens on :root, redefined for dark mode, as in shell.css.
+ */
+
+:root {
+  --parchment: #f3ead6;
+  --parchment-2: #e7dbc0;
+  --ink: #2a2118;
+  --ink-soft: #6b5d4a;
+  --gold: #c9a24a;
+  --link: #7a5512;
+  --gutter: 16px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --parchment: #1f1d24;
+    --parchment-2: #2a2730;
+    --ink: #ece4d2;
+    --ink-soft: #a89c86;
+    --gold: #d7b461;
+    --link: #f0d68a;
+  }
+}
+
+:root[data-theme='dark'] {
+  --parchment: #1f1d24;
+  --parchment-2: #2a2730;
+  --ink: #ece4d2;
+  --ink-soft: #a89c86;
+  --gold: #d7b461;
+  --link: #f0d68a;
+}
+
+body {
+  margin: 0;
+  background: var(--parchment);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.55;
+}
+
+.legal {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px var(--gutter) 64px;
+  overflow-wrap: anywhere;
+}
+
+.legal a {
+  color: var(--link);
+}
+
+.legal h1 {
+  font-size: 1.6rem;
+  line-height: 1.25;
+}
+
+.legal section {
+  margin: 28px 0;
+  padding: 4px var(--gutter) 12px;
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  background: var(--parchment-2);
+}
+
+.legal h2 {
+  font-size: 1.15rem;
+}
+
+.legal h3 {
+  font-size: 1rem;
+  margin-top: 20px;
+}
+
+.legal dt {
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.legal dd {
+  margin: 0;
+}
+
+.legal li {
+  margin: 6px 0;
+}
+
+.muted {
+  color: var(--ink-soft);
+}

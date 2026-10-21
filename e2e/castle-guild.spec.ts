@@ -122,3 +122,19 @@ test('a wallet’s crest: pick a tincture (kept, shared with the town), or go ba
   await yours.locator('.btn', { hasText: 'Born' }).click();
   expect((await crests())[address]).toBeUndefined();
 });
+
+test('the Guild tab says what the castle is not, and its link opens the legal page', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await page.goto('/');
+  await page.locator('.tab', { hasText: 'Guild' }).click();
+  const about = page.locator('.guild-tab [data-section="about"]');
+  await expect(about).toContainText('Not financial advice');
+  await expect(about).toContainText('not affiliated with Zerion');
+  await about.getByRole('link', { name: 'Legal notice, privacy and terms' }).click();
+  await expect(page).toHaveURL(/\/legal\.html$/);
+  for (const id of ['owner', 'disclaimer', 'privacy', 'terms']) await expect(page.locator(`section#${id} h2`)).toBeVisible();
+  await expect(page.locator('#owner')).toContainText('§ 25 Mediengesetz');
+  expect(errors).toEqual([]);
+});

@@ -41,7 +41,7 @@
       ]
     },
     {
-      "source": "/(|index.html|assets.html|app.webmanifest)",
+      "source": "/(|index.html|assets.html|legal.html|app.webmanifest)",
       "headers": [
         {
           "key": "Cache-Control",

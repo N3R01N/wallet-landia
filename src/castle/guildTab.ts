@@ -128,6 +128,18 @@ export function guildTab(ctx: GuildTabContext): HTMLElement {
     historySection(ctx),
     nodeSection(ctx, p),
     ctx.budget ? el('p', { class: 'muted budget' }, `Zerion requests left today: ${ctx.budget.remaining}`) : null,
+    aboutSection(),
+  );
+}
+
+/** What the castle is not (advice, exact, official), and the way to the legal notice and privacy page. */
+function aboutSection(): HTMLElement {
+  return el(
+    'div',
+    { class: 'guild-section', 'data-section': 'about' },
+    el('h2', {}, 'About'),
+    el('p', { class: 'muted' }, 'Not financial advice. The values come from Zerion and the chain and can be wrong or late. Wallet-landia is a free hobby project, not affiliated with Zerion or any protocol it shows.'),
+    el('p', {}, el('a', { href: '/legal.html' }, 'Legal notice, privacy and terms')),
   );
 }
 
@@ -164,7 +176,7 @@ function keySection(ctx: GuildTabContext): HTMLElement {
     'div',
     { class: 'guild-section', 'data-section': 'key' },
     el('h2', {}, 'Zerion key'),
-    el('p', { class: 'muted' }, 'Your own free key, kept only in this browser. It reads your wallets; it can never move anything. ', link, '.'),
+    el('p', { class: 'muted' }, 'Your own free key, kept only in this browser. It reads your wallets; it can never move anything. It goes only to Zerion, through this site’s server, which passes it on and never stores it. ', link, '.'),
     el('div', { class: 'form-row' }, input, save, forget),
     msg,
   );
