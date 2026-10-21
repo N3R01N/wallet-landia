@@ -55,6 +55,8 @@ export interface RateLimitSnapshot {
   secondLimit: number | null;
   secondRemaining: number | null;
   secondReset: number | null;
+  /** Requests allowed per day on this plan. */
+  dayLimit: number | null;
   dayRemaining: number | null;
   monthRemaining: number | null;
   tier: string | null;
@@ -250,6 +252,7 @@ export class ZerionClient {
       const limits = readRateLimit(response.headers);
       this.#lastRateLimit = limits;
       this.#pacer.observeLimit(limits.secondLimit);
+      this.#budget?.observeLimit(limits.dayLimit);
       this.#budget?.observeRemaining(limits.dayRemaining);
       this.#onRateLimit?.(limits);
 
@@ -324,6 +327,7 @@ export function readRateLimit(headers: Headers): RateLimitSnapshot {
     secondLimit: num('RateLimit-Org-Second-Limit'),
     secondRemaining: num('RateLimit-Org-Second-Remaining'),
     secondReset: num('RateLimit-Org-Second-Reset'),
+    dayLimit: num('RateLimit-Org-Day-Limit'),
     dayRemaining: num('RateLimit-Org-Day-Remaining'),
     monthRemaining: num('RateLimit-Org-Month-Remaining'),
     tier: headers.get('RateLimit-Org-Tier'),

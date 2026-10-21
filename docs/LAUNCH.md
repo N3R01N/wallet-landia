@@ -28,9 +28,9 @@ launch, more later. Research and interview on 2026-10-21.
 | Step | State |
 |---|---|
 | Legal page (`legal.html`) and the Guild tab's About box | **Shelved, not live-ready**: see below |
-| Something to see without a key: famous wallets as built snapshots | Next |
-| "Get your key in 60 seconds" guide in the app | Next |
-| Zerion free-plan numbers in `src/data/zerion/budget.ts` (code says 300/day; Zerion's page now says 2K/day at 3 RPS) | To check |
+| Famous castles: snapshots of public wallets, no key needed (`npm run famous`, list in `scripts/famous.json`, files in `public/famous/`, links `#famous=<slug>`). Snapshots keep positions worth $1 or more (vitalik.eth: 5.4 MB → 1 MB). Zerion refuses some old wallets as "untrackable" (the Ethereum Foundation's) | Done: vitalik, ens-dao, xcopy (2026-10-21). Refresh with `npm run famous` |
+| "Get a free key in about a minute" guide in the Guild tab, with why your own key is private | Done |
+| Zerion's day limit: was fixed at 300 (cut players off with 1,700 of 2,000 left); now read from `RateLimit-Org-Day-Limit` | Done |
 | Share cards (Open Graph tags, a picture of the castle) | Later |
 | Smaller first load (the default theme is ~22 MB built) | Later |
 | Rate limits and CDN caching on `/api/*` | Later |

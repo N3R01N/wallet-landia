@@ -11,6 +11,7 @@ import { TAP_SOUNDS } from '../audio/soundscape.js';
 import { toAddress } from '../data/ens.js';
 import { loadApiKey, saveApiKey, savePrefs, type Prefs } from '../settings.js';
 import type { Mode } from '../data/session.js';
+import { loadFamousIndex, type FamousCastle } from '../data/famous.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { encodeShare } from './share.js';
 import { bornCrest, crestColors, setCrests, TINCTURES } from '../util/rng.js';
@@ -37,6 +38,8 @@ export interface GuildTabContext {
   visiting: string | null;
   /** Show a followed wallet's castle. */
   onVisit(address: string): void;
+  /** Show a famous castle's snapshot (no key needed). */
+  onVisitFamous(castle: FamousCastle): void;
   /** Pick the click sound (TAP_SOUNDS) and hear it. */
   onTapSound(index: number): void;
   /** How far back each wallet's history is gathered, and whether the walk back rests now (null: not running). */
@@ -104,6 +107,7 @@ const MODE_TEXT: Record<Mode, string> = {
   demo: 'A demo guild: add your wallets and a key to see your own castle.',
   captured: 'Wallets captured for development (no key needed).',
   live: 'Live from Zerion with your key.',
+  snapshot: 'A famous castle: a snapshot of a public wallet, no key needed.',
 };
 
 /** Where the data comes from, in plain words (also updated in place when the guild reloads). */
@@ -121,6 +125,7 @@ export function guildTab(ctx: GuildTabContext): HTMLElement {
     el('h1', {}, 'Guild'),
     el('p', { class: 'muted source' }, modeText(ctx.mode)),
     keySection(ctx),
+    famousSection(ctx),
     walletsSection(ctx, p),
     soundSection(ctx, p),
     shareSection(p),
@@ -171,15 +176,39 @@ function keySection(ctx: GuildTabContext): HTMLElement {
     ctx.onKeyChanged();
     ctx.refresh();
   });
-  const link = el('a', { href: ZERION_DASHBOARD, target: '_blank', rel: 'noopener noreferrer' }, 'Get a free key from Zerion');
   return el(
     'div',
     { class: 'guild-section', 'data-section': 'key' },
     el('h2', {}, 'Zerion key'),
-    el('p', { class: 'muted' }, 'Your own free key, kept only in this browser. It reads your wallets; it can never move anything. It goes only to Zerion, through this site’s server, which passes it on and never stores it. ', link, '.'),
+    el('p', { class: 'muted' }, 'Your own free key, kept only in this browser. It reads your wallets; it can never move anything. It goes only to Zerion, through this site’s server, which passes it on and never stores it.'),
+    keyGuide(hasKey),
     el('div', { class: 'form-row' }, input, save, forget),
     msg,
   );
+}
+
+/**
+ * How to get a key, in the minute it takes, and why it is your own: open
+ * until there is a key, a line to reopen after.
+ */
+function keyGuide(hasKey: boolean): HTMLElement {
+  const link = el('a', { href: ZERION_DASHBOARD, target: '_blank', rel: 'noopener noreferrer' }, 'dashboard.zerion.io');
+  const guide = el(
+    'details',
+    { class: 'key-guide' },
+    el('summary', {}, 'Get a free key in about a minute'),
+    el(
+      'ol',
+      {},
+      el('li', {}, 'Open ', link, ' (a new tab) and sign up. It is free.'),
+      el('li', {}, 'Create an API key there.'),
+      el('li', {}, 'Copy it: it starts with ', el('code', {}, 'zk_'), '.'),
+      el('li', {}, 'Paste it below and press Save. Your castle loads at once.'),
+    ),
+    el('p', { class: 'muted small' }, 'Why your own key? Which wallets you look at stay between you and Zerion. This site holds no key, so it keeps no list of who looked up what. The free plan’s daily requests are yours alone.'),
+  );
+  if (!hasKey) guide.setAttribute('open', '');
+  return guide;
 }
 
 /** A wallet's name: the one the player gave it, else its ENS name, else "Wallet 2" by its place. */
@@ -388,6 +417,38 @@ function nodeSection(ctx: GuildTabContext, p: Prefs): HTMLElement {
     el('p', { class: 'muted' }, 'The bell rings for every block this node reports, and your wallets are watched through it. The free public node needs no setup.'),
     el('div', { class: 'form-row' }, input, use, reset),
     msg,
+  );
+}
+
+/**
+ * Famous castles to look at without a key: filled in when the list arrives,
+ * and not shown at all when there is none.
+ */
+function famousSection(ctx: GuildTabContext): HTMLElement {
+  const list = el('ul', { class: 'wallet-list' });
+  const section = el(
+    'div',
+    { class: 'guild-section', 'data-section': 'famous', hidden: '' },
+    el('h2', {}, 'Famous castles'),
+    el('p', { class: 'muted' }, 'Well-known public wallets, as snapshots: no key needed.'),
+    list,
+  );
+  void loadFamousIndex().then((castles) => {
+    list.replaceChildren(...castles.map((c) => famousRow(c, ctx)));
+    section.hidden = castles.length === 0;
+  });
+  return section;
+}
+
+function famousRow(castle: FamousCastle, ctx: GuildTabContext): HTMLElement {
+  const here = ctx.mode === 'snapshot' && ctx.visiting === castle.address;
+  const visit = el('button', { class: `btn small${here ? ' on' : ''}`, type: 'button', 'aria-label': `Visit ${castle.name}'s castle` }, here ? 'Here' : 'Visit');
+  visit.addEventListener('click', () => ctx.onVisitFamous(castle));
+  return el(
+    'li',
+    { class: 'wallet-row' },
+    el('div', {}, el('strong', {}, castle.name), castle.about ? el('div', { class: 'muted' }, castle.about) : null, el('div', { class: 'muted mono' }, shortAddr(castle.address))),
+    el('div', { class: 'row-actions' }, visit),
   );
 }
 

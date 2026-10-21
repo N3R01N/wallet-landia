@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 
 /** The Guild tab: the player's key and wallets, shared with the town. */
 
@@ -22,7 +23,7 @@ test('wallets are added and removed, nonsense is refused with a reason, and a ba
   const address = '0x1234567890abcdef1234567890abcdef12345678';
   await input.fill(address);
   await tab.locator('[data-section="wallets"] .btn', { hasText: 'Add' }).click();
-  await expect(page.locator('.guild-tab .wallet-row')).toContainText('0x1234…5678');
+  await expect(page.locator('.guild-tab [data-section="wallets"] .wallet-row')).toContainText('0x1234…5678');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('wallet-landia-v4/prefs/v1') ?? '{}') as { owned?: string[] });
   expect(saved.owned).toContain(address);
   await page.locator('.guild-tab [data-section="wallets"]').getByRole('button', { name: /^Remove / }).click();
@@ -137,4 +138,53 @@ test('the Guild tab says what the castle is not, and its link opens the legal pa
   for (const id of ['owner', 'disclaimer', 'privacy', 'terms']) await expect(page.locator(`section#${id} h2`)).toBeVisible();
   await expect(page.locator('#owner')).toContainText('§ 25 Mediengesetz');
   expect(errors).toEqual([]);
+});
+
+test('without a key, the Guild tab shows how to get one, and why it is your own', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.tab', { hasText: 'Guild' }).click();
+  const guide = page.locator('.guild-tab [data-section="key"] .key-guide');
+  await expect(guide).toHaveAttribute('open', '');
+  await expect(guide).toContainText('zk_');
+  await expect(guide).toContainText('Why your own key?');
+  await expect(guide.getByRole('link', { name: 'dashboard.zerion.io' })).toHaveAttribute('href', 'https://dashboard.zerion.io/');
+});
+
+/** A famous castle served by the test: the synthetic demo peer under a famous name. */
+async function serveFamous(page: Page): Promise<void> {
+  const raw = JSON.parse(readFileSync('fixtures/demo/synthetic-peer-1.json', 'utf8')) as { address: string };
+  const entry = { slug: 'test-famous', address: raw.address, name: 'Famous Tester', about: 'A castle for the tests', capturedAt: Date.parse('2026-10-01T00:00:00Z') };
+  await page.route('**/famous/index.json', (r) => r.fulfill({ json: [entry] }));
+  await page.route(`**/famous/${raw.address}.json?v=*`, (r) => r.fulfill({ json: raw }));
+}
+
+test('a famous castle is visited without a key, and its link opens it again', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await serveFamous(page);
+  await page.goto('/');
+  await page.locator('.tab', { hasText: 'Guild' }).click();
+  const famous = page.locator('.guild-tab [data-section="famous"]');
+  await expect(famous).toBeVisible();
+  await expect(famous).toContainText('Famous Tester');
+  await famous.getByRole('button', { name: "Visit Famous Tester's castle" }).click();
+  await expect(page).toHaveURL(/#famous=test-famous$/);
+
+  await page.locator('.tab', { hasText: 'Guild' }).click();
+  await expect(page.locator('.guild-tab .source')).toHaveText(/famous castle/);
+  await expect(page.locator('.guild-tab [data-section="famous"] .btn', { hasText: 'Here' })).toBeVisible();
+
+  // the address bar can be shared: opened fresh, it is the same castle
+  await page.reload();
+  await page.locator('.tab', { hasText: 'Guild' }).click();
+  await expect(page.locator('.guild-tab .source')).toHaveText(/famous castle/);
+  expect(errors).toEqual([]);
+});
+
+test('with no famous castles to show, the section stays hidden', async ({ page }) => {
+  await page.route('**/famous/index.json', (r) => r.fulfill({ status: 404, body: '' }));
+  await page.goto('/');
+  await page.locator('.tab', { hasText: 'Guild' }).click();
+  await expect(page.locator('.guild-tab .source')).not.toHaveText('Loading…');
+  await expect(page.locator('.guild-tab [data-section="famous"]')).toBeHidden();
 });

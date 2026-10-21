@@ -14,6 +14,13 @@
 /themes/:id/theme.json
   Cache-Control: no-cache
 
+# Famous castles (public/famous/, `npm run famous`): snapshots are requested
+# with ?v=<when captured>; the list names those, so it is re-checked every time.
+/famous/*
+  Cache-Control: public, max-age=3600
+/famous/index.json
+  Cache-Control: no-cache
+
 # The page and the service worker are always re-checked (cheap 304s), so a
 # deploy shows up on the next visit.
 /

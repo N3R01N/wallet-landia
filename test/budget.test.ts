@@ -62,12 +62,12 @@ describe('DailyBudget', () => {
   const at = (now: number, storage?: BudgetStorage): DailyBudget =>
     new DailyBudget({ storage: storage ?? memoryStorage(), now: () => now });
 
-  it('starts the day with the free plan’s 300', () => {
+  it('starts the day with the free plan’s 2,000', () => {
     const budget = at(NOON);
     expect(budget.limit).toBe(FREE_DAILY_REQUESTS);
-    expect(budget.limit).toBe(300);
+    expect(budget.limit).toBe(2000);
     expect(budget.used).toBe(0);
-    expect(budget.remaining).toBe(300);
+    expect(budget.remaining).toBe(2000);
     expect(budget.exhausted).toBe(false);
   });
 
@@ -101,13 +101,13 @@ describe('DailyBudget', () => {
     const storage = memoryStorage();
     let now = NOON;
     const budget = new DailyBudget({ storage, now: () => now });
-    budget.spend(299);
+    budget.spend(1999);
     expect(budget.remaining).toBe(1);
 
     // The tab was left open past midnight.
     now = Date.parse('2026-08-10T00:00:01Z');
     expect(budget.used).toBe(0);
-    expect(budget.remaining).toBe(300);
+    expect(budget.remaining).toBe(2000);
   });
 
   it('ignores a count written on a different day', () => {
@@ -141,6 +141,9 @@ describe('DailyBudget', () => {
   });
 
   describe('reconciling with what Zerion reports', () => {
+    // a key on a 300-a-day plan
+    const at = (now: number): DailyBudget => new DailyBudget({ storage: memoryStorage(), now: () => now, limit: 300 });
+
     it('believes the API when it says fewer are left than we counted', () => {
       // The same key spent from another tab, or yesterday's session.
       const budget = at(NOON);
@@ -170,8 +173,39 @@ describe('DailyBudget', () => {
       budget.spend(5);
       budget.observeRemaining(null);
       budget.observeRemaining(Number.NaN);
+      budget.observeLimit(null);
+      budget.observeLimit(0);
+      budget.observeLimit(Number.NaN);
       expect(budget.used).toBe(5);
+      expect(budget.limit).toBe(300);
     });
+
+    it('takes the plan’s day limit from Zerion, bigger or smaller, and keeps what was spent', () => {
+      // the guess said 300; the key is on a plan with 2,000 (once, 300 cut players off with 1,700 left)
+      const budget = at(NOON);
+      budget.spend(300);
+      expect(budget.exhausted).toBe(true);
+      budget.observeLimit(2000);
+      expect(budget.limit).toBe(2000);
+      expect(budget.used).toBe(300);
+      expect(budget.remaining).toBe(1700);
+      budget.observeLimit(250);
+      expect(budget.exhausted).toBe(true);
+    });
+  });
+
+  it('remembers the learned limit across reloads and days, and forgets it on reset (a new key)', () => {
+    const storage = memoryStorage();
+    let now = NOON;
+    const first = new DailyBudget({ storage, now: () => now });
+    first.observeLimit(5000);
+    now = Date.parse('2026-08-11T09:00:00Z');
+    const later = new DailyBudget({ storage, now: () => now });
+    expect(later.limit).toBe(5000);
+    expect(later.used).toBe(0);
+    later.reset();
+    expect(later.limit).toBe(FREE_DAILY_REQUESTS);
+    expect(new DailyBudget({ storage, now: () => now }).limit).toBe(FREE_DAILY_REQUESTS);
   });
 
   it('reports every move to whoever is drawing it', () => {

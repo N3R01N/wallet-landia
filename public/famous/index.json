@@ -1,0 +1,23 @@
+[
+  {
+    "slug": "vitalik",
+    "address": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+    "name": "vitalik.eth",
+    "about": "Vitalik Buterin, co-founder of Ethereum",
+    "capturedAt": 1792605921042
+  },
+  {
+    "slug": "ens-dao",
+    "address": "0xfe89cc7abb2c4183683ab71653c4cdc9b02d44b7",
+    "name": "ENS DAO",
+    "about": "The treasury of the DAO that runs ENS names",
+    "capturedAt": 1792605926418
+  },
+  {
+    "slug": "xcopy",
+    "address": "0x39cc9c86e67baf2129b80fe3414c397492ea8026",
+    "name": "Xcopy",
+    "about": "The famous NFT artist XCOPY",
+    "capturedAt": 1792605932896
+  }
+]

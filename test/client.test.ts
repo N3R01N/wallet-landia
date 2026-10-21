@@ -319,12 +319,13 @@ describe('rate limiting', () => {
 
   it('exposes the last rate-limit snapshot for the HUD', async () => {
     const { fetch } = scriptedFetch([
-      json({ data: {} }, { headers: { 'RateLimit-Org-Day-Remaining': '842', 'RateLimit-Org-Tier': 'free' } }),
+      json({ data: {} }, { headers: { 'RateLimit-Org-Day-Limit': '2000', 'RateLimit-Org-Day-Remaining': '842', 'RateLimit-Org-Tier': 'free' } }),
     ]);
     const client = testClient(fakeClock(), { fetch });
 
     await client.getOne('/x');
 
+    expect(client.rateLimit?.dayLimit).toBe(2000);
     expect(client.rateLimit?.dayRemaining).toBe(842);
     expect(client.rateLimit?.tier).toBe('free');
   });
@@ -336,6 +337,7 @@ describe('rate limiting', () => {
           secondLimit: 1,
           secondRemaining: 0,
           secondReset: 600,
+          dayLimit: 2000,
           dayRemaining: 1,
           monthRemaining: 1,
           tier: null,
@@ -770,6 +772,21 @@ describe('spending the daily budget', () => {
 
     await client.getOne('/things/1');
     expect(budget.remaining).toBe(12);
+  });
+
+  it('takes the plan’s day limit from the API, so a 300 guess cannot cut off a 2,000 key', async () => {
+    const clock = fakeClock();
+    const budget = budgetAt(300);
+    const client = testClient(clock, {
+      budget,
+      fetch: scriptedFetch([
+        json({ data: { id: 'a' } }, { headers: { 'RateLimit-Org-Day-Limit': '2000', 'RateLimit-Org-Day-Remaining': '1500' } }),
+      ]).fetch,
+    });
+
+    await client.getOne('/things/1');
+    expect(budget.limit).toBe(2000);
+    expect(budget.remaining).toBe(1500);
   });
 
   it('stops retrying a 429 the moment the reconciled budget is empty', async () => {

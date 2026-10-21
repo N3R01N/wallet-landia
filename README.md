@@ -27,7 +27,7 @@ This opens the castle with whatever is in `fixtures/`. If there are no real capt
 Put your free Zerion key in `.env.local` (gitignored) as `ZERION_API_KEY=zk_...`, then:
 
 ```sh
-npm run capture -- 0xabc... 0xdef...   # ~5 requests per wallet, of 300/day on the free plan
+npm run capture -- 0xabc... 0xdef...   # ~5 requests per wallet, of 2,000/day on the free plan
 npm run inspect                        # text check: wallets, protocols, verb coverage
 ```
 

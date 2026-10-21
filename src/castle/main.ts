@@ -34,6 +34,7 @@ import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { guildTab, historyRows, modeText, walletDisplayName } from './guildTab.js';
 import type { LedgerStatus } from '../data/ledger.js';
 import { decodeShare } from './share.js';
+import { famousLink, famousSlugOf, loadFamousIndex } from '../data/famous.js';
 import { attachTimeline, type Timeline } from './timeline.js';
 import { attachArrange, type Arrange, type ArrangeTap } from './arrange.js';
 import { Tour } from './tour.js';
@@ -242,6 +243,12 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       visiting: shown?.visiting ?? null,
       onVisit: (a) => {
         void session.visit(a);
+        shell.go('castle');
+      },
+      onVisitFamous: (c) => {
+        // the link names it, so the address bar can be shared as it is
+        history.replaceState(null, '', famousLink(c.slug));
+        void session.visitFamous(c);
         shell.go('castle');
       },
     });
@@ -680,10 +687,19 @@ if (import.meta.env.PROD) {
   });
 }
 
-/** A shared castle's link opens it (read-only); otherwise your own. A link followed later does too. */
+/** A shared castle's or a famous castle's link opens it (read-only); otherwise your own. A link followed later does too. */
 function openFromLink(): void {
   const shared = decodeShare(location.hash);
+  const famous = famousSlugOf(location.hash);
   if (shared) void session.visit(shared.wallets, shared.name || undefined);
+  else if (famous !== null) void openFamous(famous);
+  else void session.home();
+}
+
+/** A famous castle by its link's name; an unknown one opens your own. */
+async function openFamous(slug: string): Promise<void> {
+  const castle = (await loadFamousIndex()).find((c) => c.slug === slug);
+  if (castle) void session.visitFamous(castle);
   else void session.home();
 }
 window.addEventListener('hashchange', openFromLink);

@@ -9,6 +9,7 @@
  *   the tab is visible) picks up incoming tokens, which move neither.
  */
 
+import { loadFamousWallet, type FamousCastle } from './famous.js';
 import { loadFixtures } from './fixtures.js';
 import { reverseName } from './ens.js';
 import { openCache, type KV } from './cache.js';
@@ -23,7 +24,8 @@ import { ZerionError } from './zerion/client.js';
 import type { RawWallet } from './zerion/endpoints.js';
 import { loadApiKey, savePrefs, type Prefs } from '../settings.js';
 
-export type Mode = 'demo' | 'captured' | 'live';
+/** Where the town on show comes from: the synthetic demo, development captures, Zerion live, or a famous castle's snapshot. */
+export type Mode = 'demo' | 'captured' | 'live' | 'snapshot';
 
 export interface Shown {
   mode: Mode;
@@ -290,6 +292,21 @@ export class Session {
     const first = addrs[0] ?? 'shared';
     const who = label ?? names.get(first) ?? `${first.slice(0, 6)}…${first.slice(-4)}`;
     this.#show({ mode: loader ? 'live' : 'captured', raws, visiting: first, names, label: `Visiting ${who}'s castle` }, 'town');
+  }
+
+  /** Visit a famous castle: its snapshot, read-only, with no key and no requests. */
+  async visitFamous(castle: FamousCastle): Promise<void> {
+    const gen = ++this.#generation;
+    this.#walkBack(null, null);
+    const raw = await loadFamousWallet(castle);
+    if (gen !== this.#generation) return;
+    if (raw === null) {
+      this.#events.onStatus(`${castle.name}'s castle could not be loaded. Try again in a moment.`, 'error');
+      return;
+    }
+    const day = new Date(castle.capturedAt).toISOString().slice(0, 10);
+    const names = new Map([[castle.address, castle.name]]);
+    this.#show({ mode: 'snapshot', raws: [raw], visiting: castle.address, names, label: `Visiting ${castle.name}'s castle · snapshot of ${day}` }, 'town');
   }
 
   /** Bring the town on show up to date now, at the player's request (~5 requests a wallet). */

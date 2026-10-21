@@ -4,7 +4,7 @@
  *   ZERION_API_KEY=zk_... npm run capture -- 0xabc... 0xdef...
  *
  * The key comes from the environment (or .env.local via Vite's loadEnv) and is
- * never written to disk. Each wallet costs ~5 requests of the 300/day budget.
+ * never written to disk. Each wallet costs ~5 requests of the 2,000/day budget.
  */
 
 import { mkdir, writeFile } from 'node:fs/promises';

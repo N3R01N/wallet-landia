@@ -1,7 +1,7 @@
 /**
  * Live wallets from Zerion, straight from the browser with the player's key.
  *
- * The free plan is 300 requests a day, so the cache shapes everything:
+ * The free plan is 2,000 requests a day, so the cache shapes everything:
  * - history is events: kept forever, only the newer tail is fetched (1 request);
  * - valuations (balances, positions, NFTs) are a measurement of now: refetched
  *   whole (4 requests) once they are older than VALUATION_TTL;

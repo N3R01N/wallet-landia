@@ -414,6 +414,29 @@ h1 {
   color: var(--ink-soft);
 }
 
+/* how to get a Zerion key: open until there is one */
+.key-guide {
+  margin: 10px 0 12px;
+}
+
+.key-guide summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.key-guide ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.key-guide li {
+  margin: 4px 0;
+}
+
+.key-guide .small {
+  font-size: 0.85rem;
+}
+
 .mono {
   font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
   font-size: 0.8rem;

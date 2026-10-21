@@ -1,0 +1,20 @@
+[
+  {
+    "slug": "vitalik",
+    "who": "vitalik.eth",
+    "name": "vitalik.eth",
+    "about": "Vitalik Buterin, co-founder of Ethereum"
+  },
+  {
+    "slug": "ens-dao",
+    "who": "0xFe89cc7aBB2C4183683ab71653C4cdc9B02D44b7",
+    "name": "ENS DAO",
+    "about": "The treasury of the DAO that runs ENS names"
+  },
+  {
+    "slug": "xcopy",
+    "who": "xcopy.eth",
+    "name": "Xcopy",
+    "about": "The famous NFT artist XCOPY"
+  }
+]

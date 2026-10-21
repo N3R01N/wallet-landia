@@ -2,7 +2,7 @@
 /**
  * The daily request budget, counted here rather than discovered at the wall.
  *
- * Zerion's free plan allows 300 requests a day. Nothing on screen used to say
+ * Zerion's free plan allows 2,000 requests a day. Nothing on screen used to say
  * how many of those were left until one of them came back 429 — and by then the
  * city had already stopped loading. So every request that reaches the API is
  * counted as it happens, the count is on screen the whole time, and the last one
@@ -21,14 +21,22 @@
  * The local count is what makes the number live: it moves the moment a request
  * goes out, without waiting for anything. But it is only ever *this* browser's
  * view — the same key used from a phone, another tab, or yesterday's session
- * spends from the same 300. So when a response carries
+ * spends from the same day's quota. So when a response carries
  * `RateLimit-Org-Day-Remaining`, that is the API's own count and it wins.
  * `observeRemaining` takes the pessimistic side of the two: if Zerion says 40
  * are left and we counted 200 spent, 40 is the truth and the count catches up.
+ *
+ * ## Whose limit
+ *
+ * The plan's size is Zerion's to say, not ours: it was 300 a day, then 2,000,
+ * and a paid key has more. A limit written down here once cut players off at
+ * 300 with 1,700 still left. So `RateLimit-Org-Day-Limit` on any answer sets
+ * the limit (`observeLimit`), it is kept across days, and the free plan's
+ * number is only the guess before Zerion has answered once.
  */
 
-/** Requests a day on the free plan. */
-export const FREE_DAILY_REQUESTS = 300;
+/** Requests a day on Zerion's free (Developer) plan, as of 2026-10 (zerion.io/api): the guess until Zerion says. */
+export const FREE_DAILY_REQUESTS = 2000;
 
 const STORAGE_KEY = 'wallet-landia/budget/v1';
 const DAY_MS = 86_400_000;
@@ -51,9 +59,11 @@ export interface BudgetSnapshot {
 }
 
 interface Stored {
-  /** UTC date, `YYYY-MM-DD`. A different one means a fresh 300. */
+  /** UTC date, `YYYY-MM-DD`. A different one means a fresh count. */
   day: string;
   used: number;
+  /** The day limit Zerion last reported for this key (kept across days). */
+  limit?: number;
 }
 
 /** The UTC date a moment falls on, as `YYYY-MM-DD`. */
@@ -84,30 +94,32 @@ export function untilReset(ms: number, now: number): string {
 export interface DailyBudgetOptions {
   storage?: BudgetStorage | null;
   now?: () => number;
+  /** The limit until Zerion reports one (default: the free plan's). */
   limit?: number;
   /** Called whenever the count moves, so the HUD can follow without polling. */
   onChange?: (snapshot: BudgetSnapshot) => void;
 }
 
 export class DailyBudget {
-  readonly limit: number;
-
   readonly #storage: BudgetStorage | null;
   readonly #now: () => number;
   readonly #onChange: ((snapshot: BudgetSnapshot) => void) | undefined;
 
+  readonly #guess: number;
+  #limit: number;
   #day: string;
   #used = 0;
 
   constructor(options: DailyBudgetOptions = {}) {
     this.#storage = options.storage === undefined ? defaultStorage() : options.storage;
     this.#now = options.now ?? Date.now;
-    this.limit = Math.max(1, Math.floor(options.limit ?? FREE_DAILY_REQUESTS));
+    this.#guess = Math.max(1, Math.floor(options.limit ?? FREE_DAILY_REQUESTS));
+    this.#limit = this.#guess;
     this.#onChange = options.onChange;
 
     this.#day = utcDay(this.#now());
     this.#load();
-    // other tabs on the same key spend from the same 300: follow their count as it moves
+    // other tabs on the same key spend from the same quota: follow their count as it moves
     if (this.#storage !== null && typeof window !== 'undefined') {
       window.addEventListener('storage', (e) => {
         if (e.key !== STORAGE_KEY) return;
@@ -117,6 +129,11 @@ export class DailyBudget {
         if (this.#used !== before) this.#onChange?.(this.snapshot());
       });
     }
+  }
+
+  /** Requests allowed today: what Zerion last said, else the guess. */
+  get limit(): number {
+    return this.#limit;
   }
 
   get used(): number {
@@ -171,10 +188,24 @@ export class DailyBudget {
     this.#commit();
   }
 
-  /** Start the day over. For tests, and for a user who has changed keys. */
+  /**
+   * Take the plan's day limit from Zerion (`RateLimit-Org-Day-Limit`). Unlike
+   * the remaining count this is believed both ways: a bigger plan really does
+   * have more, and the count already spent stays spent.
+   */
+  observeLimit(reported: number | null): void {
+    if (reported === null || !Number.isFinite(reported) || reported < 1) return;
+    const limit = Math.floor(reported);
+    if (limit === this.#limit) return;
+    this.#limit = limit;
+    this.#commit();
+  }
+
+  /** Start the day over, and forget the learned limit. For tests, and for a user who has changed keys. */
   reset(): void {
     this.#day = utcDay(this.#now());
     this.#used = 0;
+    this.#limit = this.#guess;
     this.#commit();
   }
 
@@ -206,6 +237,8 @@ export class DailyBudget {
       const parsed: unknown = JSON.parse(raw);
       if (typeof parsed !== 'object' || parsed === null) return;
       const stored = parsed as Partial<Stored>;
+      // the plan's limit outlives the day it was reported on
+      if (typeof stored.limit === 'number' && Number.isFinite(stored.limit) && stored.limit >= 1) this.#limit = Math.floor(stored.limit);
       // Yesterday's count is not this day's business, and a corrupt one is
       // worth less than starting from zero.
       if (stored.day !== this.#day) return;
@@ -218,7 +251,7 @@ export class DailyBudget {
   }
 
   #commit(): void {
-    const stored: Stored = { day: this.#day, used: this.#used };
+    const stored: Stored = { day: this.#day, used: this.#used, ...(this.#limit !== this.#guess ? { limit: this.#limit } : {}) };
     try {
       this.#storage?.setItem(STORAGE_KEY, JSON.stringify(stored));
     } catch {

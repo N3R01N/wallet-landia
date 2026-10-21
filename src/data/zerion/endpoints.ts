@@ -4,7 +4,7 @@
  * exactly the same path.
  *
  * Cold load per wallet: portfolio + simple + complex + 1 tx page + NFTs = 5
- * requests, against a free budget of 300 a day.
+ * requests, against a free budget of 2,000 a day.
  */
 
 import type { ZerionClient } from './client.js';
