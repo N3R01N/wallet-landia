@@ -140,6 +140,8 @@ export interface Goods {
   name?: string;
   /** An NFT's picture (a preview URL), when known. */
   image?: string;
+  /** Its full-size picture, tried when the preview cannot be had (a host may fail to make a preview of SVG art). */
+  imageFull?: string;
   /** Collateral for a loan the guild lent (a Gondi loan's NFT): held while the loan runs, a padlock on its frame. */
   collateral?: boolean;
 }

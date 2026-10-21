@@ -27,3 +27,23 @@ describe('pictures served without an image type (S3 gives application/octet-stre
     expect(sniffImage(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg">'))).toBeNull();
   });
 });
+
+describe('an SVG picture (much NFT art is SVG)', () => {
+  it('is passed on, sandboxed so that opened as a page it runs no script', async () => {
+    const { default: handler, SANDBOX } = await import('../api/image.js');
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>';
+    const real = globalThis.fetch;
+    globalThis.fetch = (() => Promise.resolve(new Response(svg, { headers: { 'content-type': 'image/svg+xml' } }))) as typeof fetch;
+    try {
+      const res = await handler(new Request(`http://localhost/api/image?u=${encodeURIComponent('https://nft2-cdn.alchemy.com/eth-mainnet/abc')}`));
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('image/svg+xml');
+      expect(res.headers.get('content-security-policy')).toBe(SANDBOX);
+      expect(SANDBOX).toContain('sandbox');
+      expect(SANDBOX).toContain("default-src 'none'");
+      expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    } finally {
+      globalThis.fetch = real;
+    }
+  });
+});

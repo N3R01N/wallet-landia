@@ -437,8 +437,11 @@ function goods(t: TransferResource): Goods {
   if (nft !== undefined) {
     const name = nft.name ?? (nft.token_id !== undefined ? `${g.symbol} #${nft.token_id}` : undefined);
     if (name !== undefined) g.name = name;
-    const image = imageUrl(nft.content?.preview?.url);
+    const preview = imageUrl(nft.content?.preview?.url);
+    const full = imageUrl(nft.content?.detail?.url);
+    const image = preview ?? full;
     if (image !== undefined) g.image = image;
+    if (full !== undefined && full !== image) g.imageFull = full;
   }
   return g;
 }

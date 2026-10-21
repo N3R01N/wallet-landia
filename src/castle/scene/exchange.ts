@@ -27,6 +27,8 @@ export interface ExchangeHost {
   onNft(landed: boolean): void;
   /** A sparkle burst where goods land (`fx.sparkle.burst`; nothing without it). */
   burst?(at: THREE.Vector3): void;
+  /** The turn (about y) that faces a model's front (+Z) to the camera. */
+  facing?(): number;
 }
 
 interface Flying {
@@ -40,7 +42,7 @@ interface Flying {
   age: number;
   spin: number;
   done: () => void;
-  /** An NFT frame: it turns once round on the way. */
+  /** An NFT frame: its picture turned to the camera on the way, with a wobble. */
   frame?: boolean;
   /** Bigger than usual (a coin seen from far off). */
   size?: number;
@@ -51,6 +53,8 @@ const COIN_SCALE = 2.4;
 /** An NFT's picture is drawn down to this many pixels across at most. */
 const PICTURE_PX = 512;
 const FRAME_SCALE = 2.2;
+/** How much an NFT's picture lights itself (0: only by the scene's light). */
+const PICTURE_GLOW = 0.55;
 /** Stablecoins travel as silver. */
 const STABLES = new Set(['USDC', 'USDT', 'DAI', 'USDS', 'FRAX', 'LUSD', 'PYUSD', 'GHO', 'USDE', 'CRVUSD', 'TUSD', 'USDP', 'BUSD', 'SUSD']);
 const GOLD = new THREE.MeshStandardMaterial({ color: 0xf2c14e, metalness: 0.75, roughness: 0.32, emissive: 0x6b4a10, emissiveIntensity: 0.35 });
@@ -226,6 +230,10 @@ export class Exchange {
           const mine = m.clone();
           mine.map = this.#gltfWay(tex);
           mine.color.set(0xffffff);
+          // lit like a gallery painting: dark art (and any art at night) still reads in the courier's hands
+          mine.emissiveMap = mine.map;
+          mine.emissive.set(0xffffff);
+          mine.emissiveIntensity = PICTURE_GLOW;
           this.#mine.push(mine);
           mesh.material = mine;
         }
@@ -347,10 +355,13 @@ export class Exchange {
     return t;
   }
 
-  /** The NFT's own picture (through our picture proxy), once per picture; null when it cannot be read. */
-  #picture(g: Goods): Promise<THREE.Texture | null> {
-    const url = g.image;
-    if (!url) return Promise.resolve(null);
+  /** The NFT's own picture: its preview, else its full-size picture; null when neither can be read. */
+  async #picture(g: Goods): Promise<THREE.Texture | null> {
+    return (g.image ? await this.#pictureAt(g.image) : null) ?? (g.imageFull ? await this.#pictureAt(g.imageFull) : null);
+  }
+
+  /** A picture (through our picture proxy), once per address; null when it cannot be read. */
+  #pictureAt(url: string): Promise<THREE.Texture | null> {
     let p = this.#pictures.get(url);
     if (!p) {
       // a picture kept in the metadata itself (data:) loads as it is; the rest through our proxy. Drawn down to
@@ -399,7 +410,8 @@ export class Exchange {
       f.obj.position.lerpVectors(f.from, f.to, e);
       f.obj.position.y += 1.0 + Math.sin(Math.PI * t) * f.apex;
       if (f.frame) {
-        f.obj.rotation.y = t * Math.PI * 2;
+        // the picture to the camera (its back is a plain board), swaying as it flies
+        f.obj.rotation.y = (this.#host.facing?.() ?? 0) + Math.sin(Math.PI * 2 * t) * 0.35;
         f.obj.scale.setScalar(FRAME_SCALE * (0.8 + Math.sin(Math.PI * t) * 0.5));
       } else {
         f.obj.rotation.y += f.spin * dt;

@@ -5,6 +5,13 @@
  * known image hosts (token logos, NFT pictures, protocol icons) and passes the
  * bytes back on our own origin. Nothing else is fetched: no other host, no
  * other scheme, no redirects to elsewhere, and only images of a sane size.
+ *
+ * SVG: much NFT art is SVG, so a host that says `image/svg+xml` is believed.
+ * An SVG can carry script, and served from our origin, opened as a page, that
+ * script would reach the player's stored key. So every answer is sandboxed
+ * (SANDBOX: no script, no fetching, no forms): in an <img> or a texture an SVG
+ * never runs script anyway, and opened directly it now can't either. A body
+ * without an image type is judged by its first bytes, raster only.
  */
 
 export const config = { runtime: 'edge' };
@@ -29,6 +36,9 @@ export const IMAGE_HOSTS = [
 /** A picture no bigger than this (a 3D texture's worth; NFT art can be a few MB). */
 const MAX_BYTES = 8_000_000;
 const TIMEOUT_MS = 10_000;
+
+/** On every answer: a picture opened as a page (an SVG above all) runs no script and loads nothing. */
+export const SANDBOX = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox";
 
 /** The address to fetch, if it is a https picture on one of the hosts; else null. Pure. */
 export function allowedImageUrl(raw: string | null): string | null {
@@ -76,6 +86,6 @@ export default async function handler(req: Request): Promise<Response> {
   const type = /^image\//.test(said) ? said : sniffImage(new Uint8Array(body, 0, Math.min(16, body.byteLength)));
   if (type === null) return new Response('Not a picture', { status: 404, headers: { 'cache-control': 'no-store' } });
   return new Response(body, {
-    headers: { 'content-type': type, 'cache-control': 'public, max-age=604800', 'x-content-type-options': 'nosniff' },
+    headers: { 'content-type': type, 'cache-control': 'public, max-age=604800', 'x-content-type-options': 'nosniff', 'content-security-policy': SANDBOX },
   });
 }

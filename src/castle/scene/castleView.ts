@@ -218,7 +218,7 @@ const VILLAGER_TINT = '#5a7d9a';
 /** A sparkle burst, bigger than life like the coins (×). */
 const BURST_SCALE = 3;
 /** A carried NFT frame, bigger than life so the picture reads (×, against the courier). */
-const CARRY_FRAME_SCALE = 1.4;
+const CARRY_FRAME_SCALE = 1.7;
 /** The NFT frame's height under its handle's grip (m, fx.nft.frame). */
 const FRAME_HEIGHT = 0.62;
 const CHATTER_EVERY = 6;
@@ -868,6 +868,10 @@ export class CastleView {
       onCoin: (i, n, incoming) => this.#opts.onCoin?.(i, n, incoming),
       burst: (at) => this.#burst(at),
       onNft: (landed) => this.#opts.onNft?.(landed),
+      facing: () => {
+        const d = this.#camera.getWorldDirection(this.#facingScratch);
+        return Math.atan2(-d.x, -d.z);
+      },
     });
     this.element.append(this.#exchangeLabels, this.#arrangeLabelLayer, this.#bubbleLayer, this.#followChip);
     this.#followChip.textContent = '👁 Following the courier ✕';
@@ -1506,6 +1510,11 @@ export class CastleView {
     this.#runs.push({ errand, building, script, start: this.#time, figure, cargo, standin: !this.#loaded.get('courier.base') });
     // a loan ended: the courier takes its collateral from the hall back to the building, held up before it
     if (errand.collateralBack) this.#carryFrame(this.#runs[this.#runs.length - 1]!, errand.collateralBack);
+    // an NFT going out (sent, sold, or to another of your wallets) is carried there held up, not as a pouch for its (often unknown) value
+    else if (errand.direction === 'out' || errand.direction === 'inside') {
+      const nft = errand.steps.flatMap((st) => st.give).find((g) => g.isNft);
+      if (nft) this.#carryFrame(this.#runs[this.#runs.length - 1]!, nft);
+    }
     this.#lastSpawn = this.#time;
   }
 
@@ -1590,6 +1599,7 @@ export class CastleView {
   }
 
   readonly #holdScratch = new THREE.Vector3();
+  readonly #facingScratch = new THREE.Vector3();
 
   #dropFrame(run: Run): void {
     run.frame?.removeFromParent();
@@ -2376,7 +2386,7 @@ export class CastleView {
       run.figure.object.rotation.y = s.heading;
       // a courier with a picture walks holding it up (`carry`)
       run.figure.play(run.frame && s.clip === 'walk' && run.figure.has('carry') ? 'carry' : s.clip);
-      run.cargo.visible = s.carrying;
+      run.cargo.visible = s.carrying && !run.frame;
       run.figure.update(dt);
       this.#holdFrame(run);
       bridgeDown ||= s.bridgeDown;
