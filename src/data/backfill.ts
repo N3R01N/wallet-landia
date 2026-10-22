@@ -4,7 +4,10 @@
  * live town:
  * - only while the tab is visible;
  * - only while more than `reserve` of the day's Zerion requests are left
- *   (the rest is for the town's own loads and live updates);
+ *   (the rest is for the town's own loads and live updates), and only until
+ *   BACKFILL_DAY_MAX of the day's requests are spent: on a big plan a share
+ *   alone would let it spend over a thousand a day (on the free plan's 2,000,
+ *   one a second, on every start, until the history is whole);
  * - wallets take turns, a page each, so every one makes progress;
  * - errors back off (quota: until there is budget again; a bad key: stop).
  *
@@ -29,9 +32,12 @@ export interface BackfillOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
-/** May a backfill page be spent now? Only while more than `reserve` of the day's limit is left. */
+/** The walk back rests once this many of the day's requests are spent (by anything), whatever the plan's size. */
+export const BACKFILL_DAY_MAX = 300;
+
+/** May a backfill page be spent now? Only while more than `reserve` of the day's limit is left, and fewer than BACKFILL_DAY_MAX are spent. */
 export function mayBackfill(b: BudgetSnapshot, reserve: number): boolean {
-  return !b.exhausted && b.remaining > Math.ceil(b.limit * reserve);
+  return !b.exhausted && b.remaining > Math.ceil(b.limit * reserve) && b.used < BACKFILL_DAY_MAX;
 }
 
 export class Backfill {

@@ -40,7 +40,14 @@ describe('reaching back through a wallet’s whole history', () => {
     expect(mayBackfill(budget(121), 0.4)).toBe(true);
     expect(mayBackfill(budget(120), 0.4)).toBe(false);
     expect(mayBackfill(budget(0), 0.4)).toBe(false);
-    expect(mayBackfill(budget(1200, 2000), 0.4)).toBe(true);
+    expect(mayBackfill(budget(1900, 2000), 0.4)).toBe(true);
+  });
+
+  it('rests once 300 of the day’s requests are spent, however big the plan (not 1,200 a day on the free plan)', () => {
+    expect(mayBackfill(budget(1701, 2000), 0.4)).toBe(true); // 299 spent
+    expect(mayBackfill(budget(1700, 2000), 0.4)).toBe(false); // 300 spent
+    expect(mayBackfill(budget(900, 2000), 0.4)).toBe(false);
+    expect(mayBackfill(budget(99_000, 100_000), 0.4)).toBe(false);
   });
 
   it('walks every wallet back, taking turns, until each reaches its first transaction', async () => {
