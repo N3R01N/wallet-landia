@@ -26,11 +26,11 @@ export const SECRETS: readonly Secret[] = [
   { id: 'merge', name: 'The Merge', hint: 'A transaction in the Merge’s block (15537394) or on its day, 15 September 2022, raised a monument in town.' },
 ];
 
-/** The monuments' words, tapped, and their banners' colours. */
-export const MONUMENTS: Record<MomentId, { says: string; tint: string }> = {
-  'dao-year': { says: 'Your guild was here in 2016, the year of The DAO', tint: '#8a5a2b' },
-  'ens-airdrop': { says: 'Your guild claimed the ENS airdrop', tint: '#5298ff' },
-  merge: { says: 'Your guild was there when Ethereum merged to proof of stake', tint: '#c9a227' },
+/** The monuments' words, tapped, their banners' colours, and what their plaques say (an emblem over a line or two). */
+export const MONUMENTS: Record<MomentId, { says: string; tint: string; plaque: { mark: string; lines: string[] } }> = {
+  'dao-year': { says: 'Your guild was here in 2016, the year of The DAO', tint: '#8a5a2b', plaque: { mark: 'Ξ', lines: ['THE DAO', '2016'] } },
+  'ens-airdrop': { says: 'Your guild claimed the ENS airdrop', tint: '#5298ff', plaque: { mark: '.eth', lines: ['ENS AIRDROP', 'NOV 2021'] } },
+  merge: { says: 'Your guild was there when Ethereum merged to proof of stake', tint: '#c9a227', plaque: { mark: 'Ξ', lines: ['THE MERGE', '15 SEP 2022'] } },
 };
 
 /** What the old wanderer says. */
@@ -138,7 +138,7 @@ export function secretPlacements(plan: Pick<CastlePlan, 'tower' | 'scenery'>, o:
     if (!o.moments.includes(id)) return;
     const spot = MONUMENT_SPOTS[i]!;
     // facing the avenue
-    out.push({ name: 'prop.monument', x: plan.tower.x + spot.dx, z: plan.tower.z + spot.dz, rot: -Math.PI / 2, optional: true, key: `monument:${id}`, tint: MONUMENTS[id].tint });
+    out.push({ name: 'prop.monument', x: plan.tower.x + spot.dx, z: plan.tower.z + spot.dz, rot: -Math.PI / 2, optional: true, key: `monument:${id}`, tint: MONUMENTS[id].tint, plaque: MONUMENTS[id].plaque });
   });
   const ruin = plan.scenery.find((p) => p.name === 'scenery.ruin');
   if (o.wanderer && ruin) out.push({ name: 'person.npc.wanderer', x: ruin.x - 3, z: ruin.z + 3, rot: -0.6, optional: true, key: 'wanderer' });

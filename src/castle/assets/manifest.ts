@@ -679,8 +679,15 @@ export function tierFallbacks(name: string): string[] {
 }
 
 export function findAsset(name: string): AssetSpec | undefined {
-  return ASSETS.find((a) => a.name === name);
+  const own = ASSETS.find((a) => a.name === name);
+  if (own || !name.endsWith(SNOW)) return own;
+  // a piece's winter snow (docs/batches/29-winter.md): `<asset>.snow`, its own file beside the asset's, laid on it in December
+  const base = ASSETS.find((a) => a.name === name.slice(0, -SNOW.length));
+  return base?.kind === 'model' ? { name, kind: 'model', required: false, size: base.size, standin: base.standin, note: `The snow on ${base.name}'s roofs in winter.` } : undefined;
 }
+
+/** The suffix of a piece's winter snow file. */
+export const SNOW = '.snow';
 
 /** The theme's folder under public/, where the design agent's files go (docs/ASSET_SPEC.md §1.9). */
 export const THEME_DIR = 'themes/medieval-castle-v2';

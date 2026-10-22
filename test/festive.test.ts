@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buntingHeight, buntingRows, planFestive, snowCap } from '../src/castle/scene/festive.js';
+import { buntingHeight, buntingRows, planFestive } from '../src/castle/scene/festive.js';
 import { planCastle } from '../src/castle/scene/plan.js';
 import { NO_OCCASIONS } from '../src/castle/world/events.js';
 import type { WorldProtocol } from '../src/castle/world/world.js';
@@ -44,17 +44,8 @@ describe('the town dressed for its occasions', () => {
     expect(buntingHeight(1.5)).toBeLessThan(3.2);
   });
 
-  it('December lays a snow cap on every roof, sized to it, and patches on the ground', () => {
-    const plan = plans[1]!;
-    const snow = planFestive(plan, { ...NO_OCCASIONS, snow: true }, false);
-    const roofs = snow.filter((s) => s.roof);
-    expect(roofs.map((r) => r.roof).sort()).toEqual(plan.buildings.map((b) => b.protocol.id).sort());
-    for (const r of roofs) expect(['snow.s', 'snow.m', 'snow.l']).toContain(r.part);
-    expect(snow.filter((s) => !s.roof).length).toBeGreaterThan(2);
-    expect(snowCap(2.5)).toEqual({ part: 'snow.s', scale: 0.83 });
-    expect(snowCap(5)).toEqual({ part: 'snow.m', scale: 1 });
-    expect(snowCap(12).part).toBe('snow.l');
-    expect(snowCap(12).scale).toBeGreaterThan(1);
+  it('December plans no caps: the snow lies on the roofs from each piece\u2019s own snow file', () => {
+    expect(planFestive(plans[1]!, { ...NO_OCCASIONS, snow: true }, false)).toEqual([]);
   });
 
   it('late October puts a pumpkin by each door, off the avenue', () => {

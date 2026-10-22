@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { Figure } from './figure.js';
 import { Life, ROLE, type Person } from './life.js';
 import { burnedLabel, Exchange } from './exchange.js';
+import { RiverView } from './river.js';
 import type { Goods } from '../../domain/model.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { SIZE_CLASSES, assetPath, brandColor, findAsset, sizeClassOf, tierColor } from '../assets/manifest.js';
@@ -287,6 +288,8 @@ const LOOPING_CLIPS = ['idle', 'wave', 'swim'];
 const TAP_CLIP = 'tap';
 /** The furnace's roar as goods go into its fire, and its stoker's throw (docs/batches/25-ember-furnace.md). */
 const ROAR_CLIP = 'roar';
+/** The pieces that may have a winter snow file (docs/batches/29-winter.md): buildings, the castle's and the town's own, the stalls. */
+const SNOWY = /^(building\.|castle\.(?!tollbooth\.barrier)|town\.(gate|furnace|tower\.chronicle)$|prop\.market\.stall$)/;
 /** The Wayfarers' Gate's doors (docs/batches/24-wayfarers-gate.md). */
 const OPEN_CLIP = 'open';
 const CLOSE_CLIP = 'close';
@@ -423,6 +426,8 @@ export class CastleView {
   readonly #npcs = new Map<string, Figure>();
   /** Buildings with clips, by protocol id (the furnace roars). */
   readonly #buildingFigures = new Map<string, Figure>();
+  /** The river and its pond (river.ts). */
+  #river: RiverView | null = null;
   /** Places whose person is casting the goods in (the furnace's stoker), by protocol id. */
   readonly #casting = new Set<string>();
   /** The Wayfarers' Gate: its doors (open while the stranger is out; `closing` until the close ends). */
@@ -900,6 +905,10 @@ export class CastleView {
     for (const c of this.#clouds) c.obj.removeFromParent(); // their lobes are shared: kept
     for (const m of this.#cloudMaterials) m.dispose();
     this.#hoverRing.material.dispose();
+    for (const m of this.#plaques.values()) {
+      (m as THREE.MeshStandardMaterial).map?.dispose();
+      m.dispose();
+    }
     disposeTree(this.#scene);
     this.#environment?.dispose();
     this.#sun.shadow.map?.dispose();
@@ -1043,6 +1052,9 @@ export class CastleView {
   #placeLayout(): void {
     const plan = this.#plan;
     const placements = this.#placements();
+    // the river and its pond, made in code (river.ts)
+    this.#river = new RiverView(plan.river);
+    this.#layout.add(this.#river.object);
     // the many plain tiles (cobbles, water, the avenue): one instanced draw per mesh of each, not one per tile
     const tiles = placements.filter((p) => INSTANCED.has(p.name) && p.key !== 'lit' && p.key !== 'road' && !this.#loaded.get(p.name)?.clips.length);
     this.#placeInstanced(tiles);
@@ -1168,8 +1180,37 @@ export class CastleView {
         this.#towerMaterials = ownMaterials(obj);
       }
       if (p.tint) paint(obj, 'Tint', p.tint, this.#painted);
+      if (p.plaque) this.#castPlaque(obj, p.plaque);
     }
   }
+
+  /** A plaque cast in bronze on the piece's `Logo` plates: an emblem over its lines (a monument's), one picture per wording. */
+  #castPlaque(root: THREE.Object3D, plaque: { mark: string; lines: readonly string[] }): void {
+    const key = `plaque|${plaque.mark}|${plaque.lines.join('|')}`;
+    let material = this.#plaques.get(key);
+    root.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const swap = (m: THREE.Material): THREE.Material => {
+        if (m.name !== 'Logo') return m;
+        if (!material) {
+          const mine = m.clone() as THREE.MeshStandardMaterial;
+          mine.map = plaqueTexture(plaque);
+          mine.color.set(0xffffff);
+          // matte: metal goes dark without the environment light (low quality draws none); the bronze is in the picture
+          mine.metalness = 0;
+          mine.roughness = 0.6;
+          mine.emissive.set(0x2a1a08);
+          this.#plaques.set(key, mine);
+          material = mine;
+        }
+        return material;
+      };
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map(swap) : swap(mesh.material);
+    });
+  }
+
+  readonly #plaques = new Map<string, THREE.Material>();
 
   /** The paths, each building's person, the stranger at the gate, the keep's guards, and the glow of all that is placed. */
   #placeRest(pathCells: { x: number; z: number }[]): void {
@@ -1275,6 +1316,9 @@ export class CastleView {
     this.#stranger = null;
     this.#strangerFor = null;
     for (const m of this.#towerMaterials) m.dispose();
+    // the river's are its own
+    this.#river?.dispose();
+    this.#river = null;
     // the models' geometry and materials belong to the library and stay
     this.#layout.clear();
     this.#litTiles = [];
@@ -1588,6 +1632,7 @@ export class CastleView {
         building: (id) => this.#buildingRoots.find((r) => (r.userData.building as BuildingPlacement).protocol.id === id) ?? null,
         keep: () => this.#keepObj,
         stalls: () => (this.#placedByKey.get('decor') ?? []).filter((o) => o.name === 'prop.market.stall'),
+        placed: () => this.#layout.children.filter((o) => SNOWY.test(o.name)),
         night: () => Number(this.element.dataset.night ?? 0),
         focus: () => this.#focus,
         say: (o, line) => this.#bubble(o, said(line), BUBBLE_TIME * 2),
@@ -1637,7 +1682,7 @@ export class CastleView {
       grumbles: this.#grumbles,
       crateAt: at ? { x: at.x, z: at.z } : null,
       cratePoint: at ? this.pagePoint(at.x, at.y, at.z) : null,
-      ...(this.#festive?.state() ?? { occasions: NO_OCCASIONS, planned: {}, shown: {}, snowfall: 0, fireworks: 0, crate: null, shut: 0, toast: null }),
+      ...(this.#festive?.state() ?? { occasions: NO_OCCASIONS, planned: {}, shown: {}, snowfall: 0, snowFiles: 0, fireworks: 0, crate: null, shut: 0, toast: null }),
     };
   }
 
@@ -2517,19 +2562,13 @@ export class CastleView {
       this.#hoverRing.visible = false;
       return;
     }
-    // sized to its footprint once (people and buildings alike), round its middle
-    let r = o.userData.hoverRadius as number | undefined;
-    let cx = o.userData.hoverX as number | undefined;
-    let cz = o.userData.hoverZ as number | undefined;
-    if (r === undefined || cx === undefined || cz === undefined) {
-      const box = new THREE.Box3().setFromObject(o);
-      r = Math.max(0.5, Math.hypot(box.max.x - box.min.x, box.max.z - box.min.z) / 2) * 0.82;
-      cx = (box.min.x + box.max.x) / 2;
-      cz = (box.min.z + box.max.z) / 2;
-      Object.assign(o.userData, { hoverRadius: r, hoverX: cx, hoverZ: cz });
-    }
+    // round the piece's own origin (the middle of its footprint, docs/STYLEGUIDE_V2.md §8), sized to what shows of it:
+    // a box over everything would count its hidden far copy, tier and damage parts, and lean towards the props in front
+    const at = o.getWorldPosition(this.#hoverScratch);
+    const box = visibleBox(o);
+    const r = box.isEmpty() ? 1 : Math.max(0.5, Math.max(box.max.x - at.x, at.x - box.min.x, box.max.z - at.z, at.z - box.min.z) * 0.9);
     this.#hoverRing.scale.setScalar(moving ? HOVER_WALKER : r);
-    this.#hoverRing.position.set(cx, 0.06, cz);
+    this.#hoverRing.position.set(at.x, 0.06, at.z);
     this.#hoverRing.visible = true;
     this.#followHover();
   }
@@ -2633,6 +2672,7 @@ export class CastleView {
 
   #animate(dt: number): void {
     const now = this.#time;
+    this.#river?.update(dt);
     this.#life?.update(dt);
     this.#festive?.update(dt);
     this.#exchange?.update(dt);
@@ -2972,4 +3012,50 @@ function el(tag: 'div', className: string): HTMLDivElement {
 
 function npcClipFor(clip: NpcClip): string {
   return clip === 'hidden' ? 'idle' : clip;
+}
+
+/** The world box of what shows of an object: its visible meshes only (no hidden far copy, tier or damage parts). */
+function visibleBox(root: THREE.Object3D): THREE.Box3 {
+  const box = new THREE.Box3();
+  const part = new THREE.Box3();
+  root.updateMatrixWorld(true);
+  root.traverseVisible((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+    box.union(part.copy(mesh.geometry.boundingBox!).applyMatrix4(mesh.matrixWorld));
+  });
+  return box;
+}
+
+/** A plaque's picture: an emblem over a line or two, cast in bronze (raised letters catching the light). */
+function plaqueTexture(plaque: { mark: string; lines: readonly string[] }): THREE.Texture {
+  const size = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d')!;
+  const bronze = g.createLinearGradient(0, 0, size, size);
+  bronze.addColorStop(0, '#b0864a');
+  bronze.addColorStop(1, '#7a5528');
+  g.fillStyle = bronze;
+  g.fillRect(0, 0, size, size);
+  g.strokeStyle = '#5a3c18';
+  g.lineWidth = 10;
+  g.strokeRect(14, 14, size - 28, size - 28);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  // raised letters: a dark edge below, the light face above
+  const cast = (text: string, y: number, px: number) => {
+    g.font = `bold ${px}px Georgia, 'Times New Roman', serif`;
+    g.fillStyle = '#4a3010';
+    g.fillText(text, size / 2 + 2, y + 3);
+    g.fillStyle = '#f2d79a';
+    g.fillText(text, size / 2, y);
+  };
+  cast(plaque.mark, 92, plaque.mark.length > 2 ? 64 : 96);
+  plaque.lines.forEach((line, i) => cast(line, 168 + i * 40, line.length > 9 ? 26 : 32));
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.flipY = false; // on the model's glTF UVs
+  return t;
 }

@@ -21,6 +21,7 @@
 import type { CastleWorld, WorldProtocol } from '../world/world.js';
 import { sizeClassOf } from '../assets/manifest.js';
 import type { WalletFocus } from '../world/halls.js';
+import { planRiver, pondShore, type RiverPlan } from './river.js';
 
 export interface Placement {
   /** The asset name (manifest.ts). */
@@ -41,6 +42,8 @@ export interface Placement {
   optional?: boolean;
   /** A colour for its `Tint` parts (a monument's banner). */
   tint?: string;
+  /** Words on its `Logo` plaque (a monument's): an emblem over a line or two, cast in bronze. */
+  plaque?: { mark: string; lines: readonly string[] };
 }
 
 export interface BuildingPlacement extends Placement {
@@ -101,6 +104,8 @@ export interface CastlePlan {
   courierRoute: Waypoint[];
   /** Woods, rocks and hills round the island and the town. */
   scenery: Placement[];
+  /** The river and its pond, made in code (river.ts). */
+  river: RiverPlan;
   /**
    * The Wayfarers' Gate across the avenue's far end, and the road on beyond it into the haze
    * (docs/batches/24-wayfarers-gate.md; layout 2): where things from outside the town come in.
@@ -402,6 +407,7 @@ export function planCastle(
     avenue,
     courierRoute,
     scenery: planScenery(town, moat),
+    river: riverOf(town, moat),
     gate,
     beyond,
     roadOut: gate ? { x: 0, z: gate.z + GATE_BACK + 0.5 } : null,
@@ -757,6 +763,19 @@ function planScenery(town: { x0: number; x1: number; z1: number }, MOAT: Rect): 
  * east a river running down to a lake, a stone bridge where the road leaves
  * town; forest patches and meadows between; a ruin on the castle's flank.
  */
+/** The river east of the town and its pond (river.ts): from beyond the castle's hills down past the town. Pure. */
+export function riverOf(town: { x0: number; x1: number; z1: number }, MOAT: Rect): RiverPlan {
+  const east = Math.max(MOAT.x1, town.x1) + 9;
+  const north = MOAT.z0 - 8;
+  const south = town.z1;
+  // it springs from under the skirt of its own mountain (springOf)
+  return planRiver(east + 14, north + SPRING_Z, south + 16, Math.round((south * 0.5) / 6) * 6 + 3);
+}
+
+/** The river's spring: its mountain stands this far north of the castle's hills (its middle), the stream starts this far, under its skirt. */
+const SPRING_MOUNTAIN_Z = -48;
+const SPRING_Z = -26;
+
 function planWorld(town: { x0: number; x1: number; z1: number }, MOAT: Rect, jitter: (i: number) => number): Placement[] {
   const o = (name: string, x: number, z: number, rot = 0): Placement => ({ name, x: round(x), z: round(z), rot: round(rot), optional: true });
   const out: Placement[] = [];
@@ -778,12 +797,33 @@ function planWorld(town: { x0: number; x1: number; z1: number }, MOAT: Rect, jit
   out.push(o('scenery.farmhouse', west - 21, 12, Math.PI / 2), o('scenery.windmill', west - 22, 28, 0.4));
   out.push(o('scenery.camp', west - 8, south + 6, 0.8));
   out.push(o('scenery.forest.patch', west - 34, 0, 0.9), o('scenery.forest.patch', west - 34, south * 0.5, 2.1), o('scenery.forest.patch', west - 30, south - 2, 1.4));
-  // east: the river from the hills down past the town into a lake, a bridge where the road leaves town
+  // east: the river from the hills down past the town into a pond (made in code, river.ts), a bridge across it,
+  // reeds round the pond and lilies on it
+  const stream = riverOf(town, MOAT);
   const river = east + 14;
-  for (let z = north - 12; z < south + 6; z += 6) out.push(o('scenery.river.straight', river, z + 3, 0));
-  out.push(o('scenery.lake', river + 2, south + 16, 0));
-  out.push(o('scenery.bridge.stone', river, Math.round((south * 0.5) / 6) * 6 + 3, Math.PI / 2));
-  out.push(o('scenery.forest.patch', river + 16, 6, 0.4), o('scenery.forest.patch', river + 18, south * 0.6, 2.6), o('scenery.meadow', river + 9, south - 8, 1.1));
+  // the mountain it springs from, and rocks along the first stretch of its rapids (in the water and on both banks)
+  const source = stream.path[0]!;
+  out.push(o('scenery.mountain.1', source.x + 2, north + SPRING_MOUNTAIN_Z, 0.9));
+  for (let i = 2; i < Math.min(stream.path.length - 1, 30); i += 3) {
+    const p = stream.path[i]!;
+    const q = stream.path[i + 1]!;
+    const len = Math.hypot(q.x - p.x, q.z - p.z) || 1;
+    const nx = -(q.z - p.z) / len;
+    const nz = (q.x - p.x) / len;
+    const side = i % 2 ? 1 : -1;
+    const k = (i * 7) % 3;
+    // a boulder on the bank, and now and then one in the stream for the water to break round
+    out.push({ ...o(`scenery.rock.${k + 1}`, p.x + nx * side * (p.width / 2 + 0.7), p.z + nz * side * (p.width / 2 + 0.7), i), scale: round(1.1 + (k % 2) * 0.6) });
+    if (i % 9 === 2) out.push({ ...o(`scenery.rock.${((k + 1) % 3) + 1}`, p.x + nx * side * p.width * 0.15, p.z + nz * side * p.width * 0.15, i * 2), scale: 0.6 });
+  }
+  out.push(o('scenery.bridge.stone', stream.bridge.x, stream.bridge.z, stream.bridge.rot));
+  for (let k = 0; k < 14; k++) {
+    const a = (k / 14) * Math.PI * 2 + 0.2;
+    const edge = pondShore(stream.pond, a);
+    if (k % 3 !== 1) out.push(o('moat.reeds', edge.x + (edge.x - stream.pond.x) * 0.06, edge.z + (edge.z - stream.pond.z) * 0.06, a * 3));
+  }
+  for (const [fx, fz] of [[-0.35, 0.2], [0.25, 0.3], [0.4, -0.15], [-0.1, -0.4], [0.05, 0.05]] as const) out.push(o('moat.lily', stream.pond.x + fx * stream.pond.rx, stream.pond.z + fz * stream.pond.rz, fx * 9));
+  out.push(o('scenery.forest.patch', river + 22, 6, 0.4), o('scenery.forest.patch', river + 24, south * 0.6, 2.6), o('scenery.meadow', river + 20, south - 8, 1.1));
   // beyond the town's far end
   out.push(o('scenery.forest.patch', -14, south + 18, 1.0), o('scenery.forest.patch', 14, south + 20, 2.2), o('scenery.meadow', 0, south + 12, 0));
   return out;

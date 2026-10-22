@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { Figure } from './figure.js';
 import { AVENUE_HALF, type CastlePlan } from './plan.js';
+import { SNOW } from '../assets/manifest.js';
 import { NO_OCCASIONS, dropLine, type Occasions } from '../world/events.js';
 import type { Errand } from '../world/world.js';
 
@@ -31,8 +32,6 @@ export interface Dressing {
   z: number;
   rot: number;
   scale: number;
-  /** Lies on this building's roof (its protocol id). */
-  roof?: string;
   occasion: 'festival' | 'snow' | 'pumpkins' | 'crate';
 }
 
@@ -44,33 +43,22 @@ const BUNTING_SAG = 2.6;
 const BUNTING_EVERY = 7;
 /** A festival lantern hangs from the string this far either side of the middle. */
 const LANTERN_AT = 1.5;
-/** The snow caps (prop.snow's nodes) and how wide each is (m). */
-const SNOW_CAPS = [
-  { part: 'snow.s', size: 3 },
-  { part: 'snow.m', size: 5 },
-  { part: 'snow.l', size: 8 },
-] as const;
+/** Whether a piece shows its tier part N (its own `tier.N` node visible), for that part's snow. */
+function tierShown(piece: THREE.Object3D, n: number): boolean {
+  let shown = false;
+  piece.traverse((o) => {
+    if (new RegExp(`^tier\\.?${n}$`).test((o.userData.name as string | undefined) ?? o.name)) shown ||= o.visible;
+  });
+  return shown;
+}
+
 /** Bunting and lanterns, by turns along the avenue. */
 const FESTIVE_COLORS = ['#c8302a', '#e0a83a', '#2f6fbf', '#3d9a4f', '#8e4bd1'];
-
-/** The roof materials snow turns white, and how far (0..1). */
-const ROOFS = new Set(['Roof', 'Thatch']);
-const SNOW_WHITE = new THREE.Color(0xf4f7fb);
-const SNOW_ON_ROOF = 0.72;
-
-/** A roof's cap covers this share of its building's footprint. */
-const ROOF_COVER = 0.9;
 
 /** The bunting string's height `x` metres from the avenue's middle (a sag between the poles). */
 export function buntingHeight(x: number): number {
   const f = Math.min(1, Math.abs(x) / BUNTING_HALF);
   return BUNTING_SAG + (BUNTING_TOP - BUNTING_SAG) * f * f;
-}
-
-/** The cap for a width (m): the smallest that covers it (the largest, scaled up, beyond), and its scale. */
-export function snowCap(width: number): { part: string; scale: number } {
-  const cap = SNOW_CAPS.find((c) => c.size >= width) ?? SNOW_CAPS[SNOW_CAPS.length - 1]!;
-  return { part: cap.part, scale: Math.round((width / cap.size) * 100) / 100 };
 }
 
 /**
@@ -100,14 +88,8 @@ export function planFestive(plan: FestivePlan, o: Occasions, drop: boolean): Dre
       for (const x of [-LANTERN_AT, LANTERN_AT]) out.push(piece('festival', 'prop.lantern.festival', x, z, { y: buntingHeight(x) }));
     }
   }
-  if (o.snow) {
-    // a cap on each building's roof, sized to its footprint
-    for (const b of plan.buildings) out.push(piece('snow', 'prop.snow', b.x, b.z, { ...snowCap(2 * b.half * ROOF_COVER), roof: b.protocol.id, rot: b.rot ?? 0 }));
-    // patches on the ground: the empty plots, and the grass down both sides of the town
-    for (const f of plan.freeSlots) out.push(piece('snow', 'prop.snow', f.x, f.z, snowCap(2 * f.half)));
-    const sides = [plan.town.x0 + 2.5, plan.town.x1 - 2.5];
-    for (let z = 4; z < plan.avenue.end; z += 9) for (const x of sides) out.push(piece('snow', 'prop.snow', x, z, { ...snowCap(4), rot: z * 0.7 }));
-  }
+  // (December's snow lies on the roofs from each piece's own snow file, laid by Festive, and falls over the view)
+
   if (o.pumpkins) {
     // one by each door, beside its step on the avenue's edge, facing the avenue
     plan.buildings.forEach((b, i) => {
@@ -145,6 +127,8 @@ export interface FestiveHost {
   keep(): THREE.Object3D | null;
   /** The town's market stalls. */
   stalls(): THREE.Object3D[];
+  /** The town's and the castle's pieces that may have a snow file: buildings, castle pieces, the town's own, stalls (each named after its asset). */
+  placed(): THREE.Object3D[];
   /** 0 by day … 1 at night. */
   night(): number;
   /** Where the camera looks (the falling snow stays over it). */
@@ -245,10 +229,6 @@ export class Festive {
       obj.scale.setScalar(d.scale);
       obj.rotation.y = d.rot;
       obj.position.set(d.x, d.y, d.z);
-      if (d.roof) {
-        const roof = this.#host.building(d.roof);
-        if (!roof || !this.#onRoof(obj, roof)) continue;
-      }
       obj.traverse((m) => {
         if ((m as THREE.Mesh).isMesh) m.receiveShadow = true;
       });
@@ -267,6 +247,7 @@ export class Festive {
         this.#crate = piece;
       }
     }
+    if (o.snow) void this.#laySnow(generation);
     // falling snow over the view
     if (o.snow && this.#has.get('fx.snowfall')) {
       const clip = this.#host.clips('fx.snowfall');
@@ -283,44 +264,32 @@ export class Festive {
   }
 
   /**
-   * Snow on a building: a cap at the model's own `snow` points when it has
-   * them; else its roof (`Roof`, `Thatch`) turns snowy white, since a cap
-   * laid on its top floats over a pitched roof like a cloud. False when no
-   * cap is laid (the roof was whitened instead).
+   * December's snow on the town: each piece that has a snow file
+   * (`<asset>.snow`, docs/batches/29-winter.md) gets it laid on, as a child so
+   * it sits exactly on its roofs; its tier parts' snow shows with the piece's.
    */
-  #onRoof(obj: THREE.Object3D, building: THREE.Object3D): boolean {
-    building.updateMatrixWorld(true);
-    const points: THREE.Object3D[] = [];
-    building.traverse((o) => {
-      if (/^snow(\.\d+)?$/.test((o.userData.name as string | undefined) ?? o.name)) points.push(o);
-    });
-    if (points.length) {
-      points[0]!.getWorldPosition(obj.position);
-      return true;
+  async #laySnow(generation: number): Promise<void> {
+    const pieces = this.#host.placed();
+    const names = [...new Set(pieces.map((p) => p.name + SNOW))];
+    await Promise.all(names.filter((n) => !this.#has.has(n)).map(async (n) => this.#has.set(n, await this.#host.load(n))));
+    if (this.#disposed || generation !== this.#generation) return;
+    for (const piece of pieces) {
+      const name = piece.name + SNOW;
+      if (!this.#has.get(name)) continue;
+      const snow = this.#host.make(name);
+      snow.traverse((o) => {
+        const tier = /^tier\.?(\d)$/.exec((o.userData.name as string | undefined) ?? o.name);
+        if (tier) o.visible = tierShown(piece, Number(tier[1]));
+        if ((o as THREE.Mesh).isMesh) o.receiveShadow = true;
+      });
+      // under its `body`, so it bounces with the piece's tap
+      (piece.getObjectByName('body') ?? piece).add(snow);
+      this.#snowFiles.push(snow);
     }
-    this.#whiten(building);
-    return false;
   }
 
-  /** A building's roofs, snowy: their own copies of the roof materials, most of the way to white (undone with the snow). */
-  #whiten(building: THREE.Object3D): void {
-    building.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      const snowy = (m: THREE.Material): THREE.Material => {
-        if (!ROOFS.has(m.name)) return m;
-        const mine = m.clone() as THREE.MeshStandardMaterial;
-        mine.color?.lerp(SNOW_WHITE, SNOW_ON_ROOF);
-        this.#snowed.push({ mesh, was: mesh.material });
-        return mine;
-      };
-      const next = Array.isArray(mesh.material) ? mesh.material.map(snowy) : snowy(mesh.material);
-      if (next !== mesh.material && !(Array.isArray(next) && next.every((m, i) => m === (mesh.material as THREE.Material[])[i]))) mesh.material = next;
-    });
-  }
-
-  /** Roofs whitened by the snow, and their own materials to put back. */
-  #snowed: { mesh: THREE.Mesh; was: THREE.Material | THREE.Material[] }[] = [];
+  /** The snow files laid on the town's pieces (taken off again with the season). */
+  #snowFiles: THREE.Object3D[] = [];
 
   /** The stalls shut (their awnings and wares hidden) in a crash, open again after. */
   #shutStalls(shut: boolean): void {
@@ -472,13 +441,14 @@ export class Festive {
   }
 
   /** Test hook: what is dressed now. */
-  state(): { occasions: Occasions; planned: Record<string, number>; shown: Record<string, number>; snowfall: number; fireworks: number; crate: string | null; shut: number; toast: string | null } {
+  state(): { occasions: Occasions; planned: Record<string, number>; shown: Record<string, number>; snowfall: number; snowFiles: number; fireworks: number; crate: string | null; shut: number; toast: string | null } {
     const count = (list: Dressing[]) => list.reduce<Record<string, number>>((t, d) => ((t[d.name] = (t[d.name] ?? 0) + 1), t), {});
     return {
       occasions: this.#occasions,
       planned: count(planFestive(this.#plan, this.#occasions, this.#drop !== null)),
       shown: this.#pieces.reduce<Record<string, number>>((t, p) => ((t[p.obj.name] = (t[p.obj.name] ?? 0) + 1), t), {}),
       snowfall: this.#snowfall.length,
+      snowFiles: this.#snowFiles.length,
       fireworks: this.#popped,
       crate: this.#crate ? (this.#drop?.key ?? null) : null,
       shut: this.#shut.length,
@@ -493,12 +463,8 @@ export class Festive {
 
   #clear(): void {
     for (const p of [...this.#pieces, ...this.#snowfall]) this.#remove(p);
-    // the roofs' own materials back (the snowy copies are dropped)
-    for (const { mesh, was } of this.#snowed.reverse()) {
-      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) if (ROOFS.has(m.name) && !(Array.isArray(was) ? was : [was]).includes(m)) m.dispose();
-      mesh.material = was;
-    }
-    this.#snowed = [];
+    for (const snow of this.#snowFiles) snow.removeFromParent();
+    this.#snowFiles = [];
     this.#pieces = [];
     this.#snowfall = [];
     this.#crate = null;

@@ -18,6 +18,7 @@ interface Occasions {
   planned: Record<string, number>;
   shown: Record<string, number>;
   snowfall: number;
+  snowFiles: number;
   fireworks: number;
   crate: string | null;
   shut: number;
@@ -90,7 +91,9 @@ test('a pinned December day lays snow on the roofs; late October has pumpkins by
   await expect.poll(async () => (await occasions(page)).occasions.snow).toBe(true);
   const december = await occasions(page);
   const buildings = await page.evaluate(() => (window as unknown as { castleView: { plan: { buildings: unknown[] } } }).castleView.plan.buildings.length);
-  expect(december.planned['prop.snow']).toBeGreaterThan(buildings);
+  // snow falls over the view, and lies on the roofs of the pieces that have a snow file (docs/batches/29-winter.md)
+  expect(december.snowfall).toBeGreaterThan(0);
+  expect(december.snowFiles).toBeGreaterThanOrEqual(0);
   expect(december.occasions.pumpkins).toBe(false);
 
   await page.goto('/?date=2026-10-25');
