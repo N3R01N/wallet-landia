@@ -142,6 +142,8 @@ export interface Goods {
   image?: string;
   /** Its full-size picture, tried when the preview cannot be had (a host may fail to make a preview of SVG art). */
   imageFull?: string;
+  /** A token's icon (Zerion's), for the faces of the coins it flies as. */
+  icon?: string;
   /** Collateral for a loan the guild lent (a Gondi loan's NFT): held while the loan runs, a padlock on its frame. */
   collateral?: boolean;
 }

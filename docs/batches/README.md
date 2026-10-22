@@ -37,6 +37,7 @@ Rules: `docs/STYLEGUIDE_V2.md`, especially §10 (lessons).
 | 24 | The Wayfarers' Gate at the avenue's far end (things from outside), the road beyond, the stranger | [24](24-wayfarers-gate.md) | blender-74 | ✅ approved, committed |
 | 25 | The Ember Furnace (burns), its stoker, the burn effect | [25](25-ember-furnace.md) | blender-e0 | ✅ approved, committed |
 | 26 | OpenSea, ENS and Gondi rebuilt at class M (sized by standing, 10 × a year's fees, not value locked) | [26](26-landmarks-standing.md) | design agent "landmarks-m" | ✅ approved, committed |
+| 27 | Tokens you can tell apart in flight: the ETH diamond (blender-74); the stablecoin banknote and the bitcoin ingot (blender-e0) | [27](27-tokens.md) | blender-74, blender-e0 | ✅ approved, committed |
 
 The landmark classes come from each protocol's value on Ethereum (`src/castle/world/tvl.json`), so a protocol may change class when the snapshot is renewed. Batch 3 (castle wings) was dropped: castle layout 2 has none.
 

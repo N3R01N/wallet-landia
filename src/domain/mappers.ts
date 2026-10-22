@@ -452,6 +452,8 @@ function goods(t: TransferResource): Goods {
     usd: t.value,
     isNft: nft !== undefined,
   };
+  const icon = nft === undefined ? imageUrl(t.fungible_info?.icon?.url) : undefined;
+  if (icon !== undefined) g.icon = icon;
   if (nft !== undefined) {
     const name = nft.name ?? (nft.token_id !== undefined ? `${g.symbol} #${nft.token_id}` : undefined);
     if (name !== undefined) g.name = name;

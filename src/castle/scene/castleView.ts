@@ -881,6 +881,10 @@ export class CastleView {
       'scenery.cloud.rain',
       ...Life.MODELS,
       'fx.coin',
+      // the tokens' own pieces (docs/batches/27-tokens.md): ETH's diamond, a stablecoin's note, bitcoin's ingot
+      'fx.eth',
+      'fx.banknote',
+      'fx.ingot',
       'fx.nft.frame',
       'fx.sparkle.burst',
       // townsfolk who stroll the avenue
@@ -903,6 +907,7 @@ export class CastleView {
         const d = this.#camera.getWorldDirection(this.#facingScratch);
         return Math.atan2(-d.x, -d.z);
       },
+      clips: (n) => this.#loaded.get(n)?.clips ?? [],
     });
     this.element.append(this.#exchangeLabels, this.#arrangeLabelLayer, this.#bubbleLayer, this.#followChip);
     this.#followChip.textContent = '👁 Following the courier ✕';

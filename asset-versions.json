@@ -5,8 +5,8 @@
     "where": "public/themes/medieval-castle/theme.json → \"version\""
   },
   "themes/medieval-castle-v2": {
-    "version": "0.12.0",
-    "hash": "0fb2031666c73ae7",
+    "version": "0.13.0",
+    "hash": "b2614baa886805be",
     "where": "public/themes/medieval-castle-v2/theme.json → \"version\""
   }
 }

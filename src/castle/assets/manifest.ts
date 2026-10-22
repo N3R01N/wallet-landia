@@ -585,6 +585,10 @@ const LIFE: AssetSpec[] = [
   { name: 'fx.coin', kind: 'model', required: false, size: [0.22, 0.05, 0.22], standin: { shape: 'cylinder', color: '#f2c14e' }, note: 'A flying coin: Logo faces (the token), Trim rim (silver for stablecoins).' },
   { name: 'fx.nft.frame', kind: 'model', required: false, size: [0.5, 0.06, 0.6], standin: { shape: 'box', color: '#d9a93a' }, note: 'A carried NFT picture: Picture face (the NFT), origin at the handle grip.' },
   { name: 'fx.sparkle.burst', kind: 'model', required: false, size: [0.6, 0.6, 0.6], clips: ['pop'], standin: { shape: 'sphere', color: '#ffe08a' }, note: 'Stars burst where goods land; ends invisible.' },
+  // batch 27 (docs/batches/27-tokens.md): tokens you can tell apart in flight
+  { name: 'fx.eth', kind: 'model', required: false, size: [0.14, 0.14, 0.24], standin: { shape: 'sphere', color: '#627eea' }, note: 'ETH (and its wrappers) in flight: the 3D ETH diamond over its chevron, all Tint (the token colour).' },
+  { name: 'fx.banknote', kind: 'model', required: false, size: [0.3, 0.04, 0.15], clips: ['flutter'], standin: { shape: 'box', color: '#2775ca' }, note: 'A stablecoin in flight: a folded note in Tint (the brand colour), the token icon on its Logo seal; flutter loops.' },
+  { name: 'fx.ingot', kind: 'model', required: false, size: [0.2, 0.09, 0.06], standin: { shape: 'box', color: '#e8b440' }, note: 'Bitcoin (wrapped) in flight: a gold ingot (Trim), the token icon stamped on its Logo plate.' },
   { name: 'fx.burn', kind: 'model', required: false, size: [1.2, 1.2, 2], clips: ['pop'], standin: { shape: 'sphere', color: '#f08a2a' }, note: 'Goods burned in the furnace: flame, embers and ash out of its mouth; ends invisible.' },
   // batch 15 (docs/batches/15-life.md)
   { name: 'person.tollkeeper', kind: 'model', required: false, size: [0.6, 0.4, 1.75], clips: ['idle', 'toll', 'tap', 'refuse'], standin: { shape: 'capsule', color: '#8a6a4a', offset: [0, 0.85, 0] }, note: 'The toll keeper at the booth.' },

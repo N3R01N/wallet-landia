@@ -11,6 +11,7 @@
  */
 
 import * as THREE from 'three';
+import { iconColor, isStable, tokenStyle, type TokenLook, type TokenStyle } from './tokens.js';
 import type { Goods } from '../../domain/model.js';
 
 export interface ExchangeHost {
@@ -29,6 +30,8 @@ export interface ExchangeHost {
   burst?(at: THREE.Vector3): void;
   /** The turn (about y) that faces a model's front (+Z) to the camera. */
   facing?(): number;
+  /** A theme model's clips (the banknote's flutter). */
+  clips?(name: string): readonly THREE.AnimationClip[];
 }
 
 interface Flying {
@@ -46,6 +49,10 @@ interface Flying {
   frame?: boolean;
   /** Bigger than usual (a coin seen from far off). */
   size?: number;
+  /** What token piece it is (a coin when not said): how it moves and how big it flies. */
+  look?: TokenLook;
+  /** Its own clip playing (a banknote's flutter). */
+  mixer?: THREE.AnimationMixer;
 }
 
 /** Coins and frames fly bigger than life (as in collecting games): readable from the game's camera. */
@@ -55,8 +62,12 @@ const PICTURE_PX = 512;
 const FRAME_SCALE = 2.2;
 /** How much an NFT's picture lights itself (0: only by the scene's light). */
 const PICTURE_GLOW = 0.55;
-/** Stablecoins travel as silver. */
-const STABLES = new Set(['USDC', 'USDT', 'DAI', 'USDS', 'FRAX', 'LUSD', 'PYUSD', 'GHO', 'USDE', 'CRVUSD', 'TUSD', 'USDP', 'BUSD', 'SUSD']);
+/** Each token piece's size against the coin's (docs/batches/27-tokens.md: the diamond 0.24 m tall, the note 0.30 m, the ingot 0.20 m, the coin 0.145 m). */
+const LOOK_SCALE: Record<TokenLook, number> = { coin: 1, eth: 1, note: 0.75, ingot: 0.85 };
+/** A token's icon is drawn down to this many pixels for a coin's face. */
+const ICON_PX = 128;
+/** A gold ingot's gold, and a coin's rim when the token's colour is not known. */
+const INGOT_GOLD = 0xe8b440;
 const GOLD = new THREE.MeshStandardMaterial({ color: 0xf2c14e, metalness: 0.75, roughness: 0.32, emissive: 0x6b4a10, emissiveIntensity: 0.35 });
 const SILVER = new THREE.MeshStandardMaterial({ color: 0xdfe6ee, metalness: 0.8, roughness: 0.3, emissive: 0x404a58, emissiveIntensity: 0.3 });
 const COIN = new THREE.CylinderGeometry(0.12, 0.12, 0.04, 20).rotateX(Math.PI / 2);
@@ -69,7 +80,7 @@ export function coinMark(symbol: string): string {
   const s = symbol.toUpperCase();
   if (!s || s === 'ETH' || s === 'WETH' || s.endsWith('ETH')) return 'Ξ';
   if (s === 'BTC' || s === 'WBTC' || s === 'CBBTC' || s === 'TBTC') return '₿';
-  if (STABLES.has(s)) return '$';
+  if (isStable(s)) return '$';
   return s.slice(0, 4);
 }
 
@@ -151,13 +162,27 @@ export class Exchange {
   /** (`quiet`: no label, sound or sparkle where they land: goods thrown into the furnace's fire.) */
   #coins(from: THREE.Vector3, to: THREE.Vector3, g: Goods, delay: number, incoming: boolean, size: number, quiet: boolean): number {
     const n = coinCount(g.usd);
-    const silver = STABLES.has(g.symbol.toUpperCase());
+    const silver = isStable(g.symbol);
+    const style = tokenStyle(g.symbol);
     let last = 0;
     for (let i = 0; i < n; i++) {
-      const model = this.#host.model('fx.coin');
-      if (model) this.#dressCoin(model, g.symbol, silver);
+      // its own piece (the ETH diamond, a banknote, an ingot), else the coin, else a plain disc
+      let look: TokenLook = style.look;
+      let model = this.#host.model(style.model);
+      if (!model && look !== 'coin') {
+        look = 'coin';
+        model = this.#host.model('fx.coin');
+      }
+      if (model) this.#dressToken(model, g, style, look);
       const obj = model ?? new THREE.Mesh(COIN, silver ? SILVER : GOLD);
-      obj.scale.setScalar(COIN_SCALE * size);
+      const flutter = look === 'note' ? this.#host.clips?.(style.model).find((c) => c.name === 'flutter') : undefined;
+      let mixer: THREE.AnimationMixer | undefined;
+      if (flutter) {
+        mixer = new THREE.AnimationMixer(obj);
+        mixer.clipAction(flutter).play();
+        mixer.setTime(Math.random() * flutter.duration);
+      }
+      obj.scale.setScalar(COIN_SCALE * LOOK_SCALE[look] * size);
       obj.visible = false;
       this.#host.add(obj);
       // a fountain first: each coin pops a little sideways, then streams
@@ -176,6 +201,8 @@ export class Exchange {
         age: 0,
         spin: 10 + Math.random() * 6,
         size,
+        look,
+        ...(mixer ? { mixer } : {}),
         done: () => {
           if (quiet) return;
           this.#host.onCoin(i, n, incoming);
@@ -266,20 +293,90 @@ export class Exchange {
 
   readonly #unflipped = new Map<THREE.Texture, THREE.Texture>();
 
-  /** The coin model's faces show the token (Ξ, $, its symbol) and its rim (`Trim`) is gold, or silver for a stablecoin; one material per kind, shared. */
-  #dressCoin(coin: THREE.Object3D, symbol: string, silver: boolean): void {
-    const key = `${coinMark(symbol)}|${silver}`;
-    coin.traverse((o) => {
+  /**
+   * A token piece in the token's look: its `Logo` faces (a coin's, a note's
+   * seal, an ingot's stamp) show its icon (its mark, Ξ $ ₿ or its symbol,
+   * until the icon has loaded, or when it has none); its colour goes on the
+   * diamond's and the note's `Tint` and on a coin's `Trim` rim (an ingot's is
+   * gold). A colour not known is measured from the icon. One material per
+   * token and part, shared, so a late icon or colour reaches every piece.
+   */
+  #dressToken(piece: THREE.Object3D, g: Goods, style: TokenStyle, look: TokenLook): void {
+    const sym = g.symbol.toUpperCase();
+    const silver = isStable(sym);
+    const color = (): THREE.ColorRepresentation => style.color ?? this.#measured.get(sym) ?? (look === 'note' ? 0x7e9a7c : silver ? 0xdfe6ee : INGOT_GOLD);
+    piece.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
       const swap = (m: THREE.Material): THREE.Material => {
-        if (m.name === 'Logo') return this.#coinMaterial(`face|${key}`, m, (mine) => (mine.map = this.#coinFace(symbol, silver)));
-        if (m.name === 'Trim') return this.#coinMaterial(`rim|${silver}`, m, (mine) => mine.color.set(silver ? 0xdfe6ee : 0xe8b440));
+        if (m.name === 'Logo') {
+          return this.#coinMaterial(`face|${look}|${sym}|${g.icon ?? ''}`, m, (mine) => {
+            mine.map = this.#coinFace(g.symbol, silver);
+            if (g.icon) this.#iconOnto(mine, g.icon, sym);
+          });
+        }
+        if (m.name === 'Tint' && (look === 'eth' || look === 'note')) return this.#coinMaterial(`tint|${look}|${sym}`, m, (mine) => this.#colorOf(mine, sym, color));
+        if (m.name === 'Trim') {
+          if (look === 'ingot') return this.#coinMaterial('rim|ingot', m, (mine) => mine.color.set(INGOT_GOLD));
+          // a note's edge bands: the paper's cream edge, not its colour
+          if (look === 'note') return this.#coinMaterial('rim|note', m, (mine) => mine.color.set(0xf2ead6));
+          return this.#coinMaterial(`rim|${look}|${sym}`, m, (mine) => this.#colorOf(mine, sym, color));
+        }
         return m;
       };
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(swap) : swap(mesh.material);
     });
   }
+
+  /** A token's colours measured from its icon, by symbol; and the materials waiting for one. */
+  readonly #measured = new Map<string, string>();
+  readonly #awaitingColor = new Map<string, THREE.MeshStandardMaterial[]>();
+
+  #colorOf(m: THREE.MeshStandardMaterial, sym: string, color: () => THREE.ColorRepresentation): void {
+    m.color.set(color());
+    if (!this.#measured.has(sym)) this.#awaitingColor.set(sym, [...(this.#awaitingColor.get(sym) ?? []), m]);
+  }
+
+  /** The token's icon (through our picture proxy) onto a face, once loaded; its colour measured from it on the way. */
+  #iconOnto(m: THREE.MeshStandardMaterial, url: string, sym: string): void {
+    let p = this.#icons.get(url);
+    if (!p) {
+      p = new THREE.ImageLoader()
+        .loadAsync(`/api/image?u=${encodeURIComponent(url)}`)
+        .then((img) => {
+          const c = document.createElement('canvas');
+          c.width = c.height = ICON_PX;
+          const ctx = c.getContext('2d', { willReadFrequently: true })!;
+          // on the coin's own gold: an icon's see-through corners show the metal, not black
+          ctx.fillStyle = '#f2e3b8';
+          ctx.fillRect(0, 0, ICON_PX, ICON_PX);
+          ctx.drawImage(img, 0, 0, ICON_PX, ICON_PX);
+          const t = new THREE.CanvasTexture(c);
+          t.colorSpace = THREE.SRGBColorSpace;
+          t.flipY = false; // on the models' glTF UVs
+          this.#textures.push(t);
+          const probe = document.createElement('canvas');
+          probe.width = probe.height = 32;
+          const pctx = probe.getContext('2d', { willReadFrequently: true })!;
+          pctx.drawImage(img, 0, 0, 32, 32);
+          return { texture: t as THREE.Texture, color: iconColor(pctx.getImageData(0, 0, 32, 32).data) };
+        })
+        .catch(() => null);
+      this.#icons.set(url, p);
+    }
+    void p.then((got) => {
+      if (!got) return;
+      m.map = got.texture;
+      m.needsUpdate = true;
+      if (got.color && !this.#measured.has(sym)) {
+        this.#measured.set(sym, got.color);
+        for (const waiting of this.#awaitingColor.get(sym) ?? []) waiting.color.set(tokenStyle(sym).color ?? got.color);
+        this.#awaitingColor.delete(sym);
+      }
+    });
+  }
+
+  readonly #icons = new Map<string, Promise<{ texture: THREE.Texture; color: string | null } | null>>();
 
   readonly #coinMaterials = new Map<string, THREE.Material>();
 
@@ -427,8 +524,18 @@ export class Exchange {
         f.obj.rotation.y = (this.#host.facing?.() ?? 0) + Math.sin(Math.PI * 2 * t) * 0.35;
         f.obj.scale.setScalar(FRAME_SCALE * (0.8 + Math.sin(Math.PI * t) * 0.5));
       } else {
-        f.obj.rotation.y += f.spin * dt;
-        f.obj.scale.setScalar(COIN_SCALE * (f.size ?? 1) * (t > 0.85 ? 1 - (t - 0.85) * 4 : 1));
+        const look = f.look ?? 'coin';
+        if (look === 'note') {
+          // a banknote sways and flutters down its arc rather than spinning
+          f.mixer?.update(dt);
+          f.obj.rotation.y += f.spin * 0.2 * dt;
+          f.obj.rotation.z = Math.sin(f.age * 7 + f.spin) * 0.35;
+        } else if (look === 'ingot') {
+          // an ingot tumbles end over end
+          f.obj.rotation.x += f.spin * 0.45 * dt;
+          f.obj.rotation.y += f.spin * 0.25 * dt;
+        } else f.obj.rotation.y += f.spin * dt;
+        f.obj.scale.setScalar(COIN_SCALE * LOOK_SCALE[look] * (f.size ?? 1) * (t > 0.85 ? 1 - (t - 0.85) * 4 : 1));
       }
     }
     for (const l of [...this.#labels]) {
