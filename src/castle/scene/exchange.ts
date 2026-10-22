@@ -108,6 +108,11 @@ export function goodsLabel(g: Goods, incoming: boolean): string {
   return `${sign}${shown} ${g.symbol}`;
 }
 
+/** What burned goods' label says: 🔥 and what went into the fire. */
+export function burnedLabel(g: Goods): string {
+  return `🔥 ${goodsLabel(g, false).replace(/^−/, '')}`;
+}
+
 export class Exchange {
   readonly #host: ExchangeHost;
   readonly #flying: Flying[] = [];
@@ -132,18 +137,19 @@ export class Exchange {
    * Returns how long until the last lands (s). `size`: coins this many times
    * their usual size (to be seen from a camera far off).
    */
-  send(from: THREE.Vector3, to: THREE.Vector3, goods: readonly Goods[], incoming: boolean, delay = 0, size = 1): number {
+  send(from: THREE.Vector3, to: THREE.Vector3, goods: readonly Goods[], incoming: boolean, delay = 0, size = 1, quiet = false): number {
     let end = 0;
     let at = delay;
     for (const g of goods.slice(0, 3)) {
-      const took = g.isNft ? this.#frame(from, to, g, at, incoming) : this.#coins(from, to, g, at, incoming, size);
+      const took = g.isNft ? this.#frame(from, to, g, at, incoming, quiet) : this.#coins(from, to, g, at, incoming, size, quiet);
       end = Math.max(end, took);
       at += 0.25;
     }
     return end;
   }
 
-  #coins(from: THREE.Vector3, to: THREE.Vector3, g: Goods, delay: number, incoming: boolean, size: number): number {
+  /** (`quiet`: no label, sound or sparkle where they land: goods thrown into the furnace's fire.) */
+  #coins(from: THREE.Vector3, to: THREE.Vector3, g: Goods, delay: number, incoming: boolean, size: number, quiet: boolean): number {
     const n = coinCount(g.usd);
     const silver = STABLES.has(g.symbol.toUpperCase());
     let last = 0;
@@ -171,6 +177,7 @@ export class Exchange {
         spin: 10 + Math.random() * 6,
         size,
         done: () => {
+          if (quiet) return;
           this.#host.onCoin(i, n, incoming);
           if (i === n - 1) {
             this.#label(to, goodsLabel(g, incoming), incoming);
@@ -182,7 +189,7 @@ export class Exchange {
     return last;
   }
 
-  #frame(from: THREE.Vector3, to: THREE.Vector3, g: Goods, delay: number, incoming: boolean): number {
+  #frame(from: THREE.Vector3, to: THREE.Vector3, g: Goods, delay: number, incoming: boolean, quiet: boolean): number {
     const obj = this.frame(g);
     obj.visible = false;
     this.#host.add(obj);
@@ -198,12 +205,13 @@ export class Exchange {
       spin: 0,
       frame: true,
       done: () => {
+        if (quiet) return;
         this.#host.onNft(true);
         this.#label(to, goodsLabel(g, incoming), incoming);
         this.#host.burst?.(to);
       },
     });
-    setTimeout(() => this.#host.onNft(false), delay * 1000);
+    if (!quiet) setTimeout(() => this.#host.onNft(false), delay * 1000);
     return delay + duration;
   }
 
@@ -383,6 +391,11 @@ export class Exchange {
       this.#pictures.set(url, p);
     }
     return p;
+  }
+
+  /** A floating label of one's own (goods burned). */
+  say(at: THREE.Vector3, text: string): void {
+    this.#label(at, text, false);
   }
 
   #label(at: THREE.Vector3, text: string, incoming: boolean): void {

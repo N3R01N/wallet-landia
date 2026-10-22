@@ -52,6 +52,21 @@ export type HistoryWindow = { kind: 'days'; days: number } | { kind: 'count'; co
 
 const CAMP_ID = 'mystery:camp';
 const CAMP_NAME = "Wanderers' Camp";
+/** Where burned goods go (sent to a burn address, or burned by their contract): gone for ever. */
+export const FURNACE_ID = 'place:furnace';
+const FURNACE_NAME = 'The Ember Furnace';
+
+/** Addresses nobody holds the key to: what is sent there is burned. */
+const BURN_ADDRESSES = new Set([
+  '0x0000000000000000000000000000000000000000',
+  '0x000000000000000000000000000000000000dead',
+  '0xdead000000000000000042069420694206942069',
+]);
+
+/** Whether an address is a known burn address. Pure. */
+export function isBurnAddress(address: string | undefined): boolean {
+  return address !== undefined && BURN_ADDRESSES.has(address.toLowerCase());
+}
 /** Unknown contracts get their own tent only if visited this often (and only this many). */
 const OWN_TENT_MIN_VISITS = 3;
 const MAX_OWN_TENTS = 4;
@@ -323,7 +338,10 @@ export function refineVerb(op: string, ctx: TxContext): Verb {
       if (nftOut) return 'sellNft';
       return 'swap';
     case 'send':
-      return category === 'bridge' ? 'bridge' : 'send';
+      if (category === 'bridge') return 'bridge';
+      // everything that left went to a burn address: burned, not given
+      if (outs.length > 0 && outs.every((t) => isBurnAddress(t.recipient))) return 'burn';
+      return 'send';
     case 'receive':
       if (category === 'bridge') return 'bridge';
       if (category === 'airdrop') return 'airdrop';
@@ -650,6 +668,11 @@ function resolveTarget(
   ctx: BuildCtx,
 ): { target: Target; protocol: Protocol | null } {
   const { verb, named, place, counterpartyHero, other, wallet } = o;
+  if (verb === 'burn') {
+    // into the fire: one furnace for every burn, whoever made the token
+    const furnace = ctx.book.fixed(FURNACE_ID, FURNACE_NAME, 'unknown');
+    return { target: { kind: 'building', protocolId: furnace.id }, protocol: furnace };
+  }
   if (place !== null && o.transferish && named === null) return { target: { kind: 'building', protocolId: place.id }, protocol: place };
   if (verb === 'send' || verb === 'receive' || verb === 'airdrop') {
     if (named !== null && verb === 'airdrop') return { target: { kind: 'building', protocolId: named.id }, protocol: named };

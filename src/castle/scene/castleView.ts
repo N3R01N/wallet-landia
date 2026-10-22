@@ -14,7 +14,7 @@
 import * as THREE from 'three';
 import { Figure } from './figure.js';
 import { Life, ROLE, type Person } from './life.js';
-import { Exchange } from './exchange.js';
+import { burnedLabel, Exchange } from './exchange.js';
 import type { Goods } from '../../domain/model.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { SIZE_CLASSES, assetPath, brandColor, findAsset, sizeClassOf, tierColor } from '../assets/manifest.js';
@@ -260,6 +260,24 @@ const PAD_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent:
 const LOOPING_CLIPS = ['idle', 'wave', 'swim'];
 /** The clip a building or a person plays once when tapped (docs/STYLEGUIDE_V2.md §8.2). */
 const TAP_CLIP = 'tap';
+/** The furnace's roar as goods go into its fire, and its stoker's throw (docs/batches/25-ember-furnace.md). */
+const ROAR_CLIP = 'roar';
+/** The Wayfarers' Gate's doors (docs/batches/24-wayfarers-gate.md). */
+const OPEN_CLIP = 'open';
+const CLOSE_CLIP = 'close';
+const DOORS_TIME = 0.8;
+/** What the stranger carries and the colour of their cloak's lining, by what came from (or went) outside. */
+const STRANGER_KIND: Record<'stranger' | 'airdrop' | 'bridge', { prop: string; tint: string }> = {
+  stranger: { prop: 'prop.sack', tint: '#c8902e' },
+  airdrop: { prop: 'prop.chest', tint: '#e8b440' },
+  bridge: { prop: 'prop.lantern', tint: '#3f8fb8' },
+};
+const STRANGER_PROPS = Object.values(STRANGER_KIND).map((k) => k.prop);
+const CAST_CLIP = 'cast';
+/** When in the stoker's `cast` the tongs let go (s). */
+const CAST_RELEASE = 0.42;
+/** At the furnace the courier waits while the stoker takes the goods and casts them in. */
+const FURNACE_TIMING = { ...DEFAULT_TIMING, handOver: 4.2 };
 /** A logo plate's ground colour round the logo (docs/STYLEGUIDE_V2.md §8.1), the picture's size, and the margin round the logo. */
 const LOGO_PLATE = '#efe3c8';
 const LOGO_SIZE = 256;
@@ -372,6 +390,15 @@ export class CastleView {
   readonly #runs: Run[] = [];
   /** Each building's person, by protocol id. */
   readonly #npcs = new Map<string, Figure>();
+  /** Buildings with clips, by protocol id (the furnace roars). */
+  readonly #buildingFigures = new Map<string, Figure>();
+  /** Places whose person is casting the goods in (the furnace's stoker), by protocol id. */
+  readonly #casting = new Set<string>();
+  /** The Wayfarers' Gate: its doors (open while the stranger is out; `closing` until the close ends). */
+  #gate: { obj: THREE.Object3D; figure: Figure; open: boolean; closing: number } | null = null;
+  /** The stranger who comes through it, and the errand they came for. */
+  #stranger: Figure | null = null;
+  #strangerFor: Errand | null = null;
   #lastSpawn = -Infinity;
   #replayAt = 0;
   #autoReplay = true;
@@ -846,6 +873,10 @@ export class CastleView {
       // the keep's guards: game units
       ...(this.#opts.guards ?? []).map((g) => g.model),
       ...[...categories].map((c) => `person.npc.${c}`),
+      // the town's own places: their person (the furnace's stoker) and the furnace's burn
+      ...plan.buildings.flatMap((b) => (b.protocol.place ? [b.protocol.place.npc, 'fx.burn'] : [])),
+      // the stranger at the Wayfarers' Gate
+      ...(plan.gate ? ['person.npc.stranger'] : []),
       ...CLOUD_MODELS,
       'scenery.cloud.rain',
       ...Life.MODELS,
@@ -970,10 +1001,16 @@ export class CastleView {
       const clips = this.#loaded.get(chosen)?.clips ?? [];
       const loop = clips.find((c) => LOOPING_CLIPS.includes(c.name));
       const tap = clips.find((c) => c.name === TAP_CLIP);
+      // the furnace's roar as goods go into its fire
+      const roar = clips.find((c) => c.name === ROAR_CLIP);
+      // the Wayfarers' Gate's doors
+      const doors = p.key === 'gate' ? clips.filter((c) => c.name === OPEN_CLIP || c.name === CLOSE_CLIP) : [];
       if (loop || tap) {
-        const moving = new Figure(obj, [loop, tap].filter((c): c is THREE.AnimationClip => !!c), [TAP_CLIP]);
+        const moving = new Figure(obj, [loop, tap, roar, ...doors].filter((c): c is THREE.AnimationClip => !!c), [TAP_CLIP, ROAR_CLIP, OPEN_CLIP, CLOSE_CLIP]);
+        if (p.key === 'gate') this.#gate = { obj, figure: moving, open: false, closing: 0 };
         if (loop) moving.play(loop.name);
         this.#ambient.push(moving);
+        if ('protocol' in p) this.#buildingFigures.set((p as BuildingPlacement).protocol.id, moving);
         if (tap) {
           this.#reactions.set(obj, moving);
           obj.userData.reacts = true;
@@ -1069,8 +1106,9 @@ export class CastleView {
 
     // Each building's person waits inside, to come out when a courier calls.
     for (const b of plan.buildings) {
-      const name = this.#loaded.get(`person.npc.${b.protocol.category}`) ? `person.npc.${b.protocol.category}` : 'person.npc.base';
-      const npc = new Figure(this.#make(name), this.#loaded.get(name)?.clips ?? [], ['emerge', 'receive', 'return', TAP_CLIP]);
+      const own = b.protocol.place?.npc;
+      const name = own && this.#loaded.get(own) ? own : this.#loaded.get(`person.npc.${b.protocol.category}`) ? `person.npc.${b.protocol.category}` : 'person.npc.base';
+      const npc = new Figure(this.#make(name), this.#loaded.get(name)?.clips ?? [], ['emerge', 'receive', CAST_CLIP, 'return', TAP_CLIP]);
       npc.object.position.set(b.npc.x, 0, b.npc.z);
       npc.object.rotation.y = b.rot ?? 0; // faces out of its door, towards the visitor
       npc.object.visible = false;
@@ -1084,6 +1122,24 @@ export class CastleView {
       this.#layout.add(npc.object);
       this.#figures.push(npc);
       this.#npcs.set(b.protocol.id, npc);
+    }
+
+    // the stranger at the Wayfarers' Gate: waits beyond its doors, comes through when a courier calls
+    const gateNpc = this.#gate?.obj.getObjectByName('npc');
+    if (this.#gate && gateNpc && this.#loaded.get('person.npc.stranger')) {
+      const stranger = new Figure(this.#make('person.npc.stranger'), this.#loaded.get('person.npc.stranger')?.clips ?? [], ['emerge', 'give', 'receive', 'return', TAP_CLIP]);
+      this.#gate.obj.updateMatrixWorld(true);
+      gateNpc.getWorldPosition(stranger.object.position);
+      stranger.object.position.y = 0;
+      stranger.object.rotation.y = this.#gate.obj.rotation.y; // facing the town
+      stranger.object.visible = false;
+      stranger.object.userData.reacts = true;
+      stranger.object.userData.person = true;
+      stranger.object.userData.who = { role: 'Wayfarer', trade: 'stranger', building: null } satisfies Person;
+      this.#reactions.set(stranger.object, stranger);
+      this.#layout.add(stranger.object);
+      this.#figures.push(stranger);
+      this.#stranger = stranger;
     }
 
     // two soldiers either side of the keep, who invite you to the games (not while a game has the streets)
@@ -1141,6 +1197,11 @@ export class CastleView {
     this.#ambient.length = 0;
     this.#reactions.clear();
     this.#npcs.clear();
+    this.#buildingFigures.clear();
+    this.#casting.clear();
+    this.#gate = null;
+    this.#stranger = null;
+    this.#strangerFor = null;
     for (const m of this.#towerMaterials) m.dispose();
     // the models' geometry and materials belong to the library and stay
     this.#layout.clear();
@@ -1489,7 +1550,9 @@ export class CastleView {
       // and brings the repayment home
       const back = !!errand.collateralBack && errand.direction === 'in';
       if (back) route = route.map(({ stop, ...p }) => (stop === 'toll' ? p : { ...p, ...(stop ? { stop } : {}) }));
-      script = buildCourierScript(route, DEFAULT_TIMING, back ? 'out' : errand.direction, { failed: errand.failed });
+      // at the furnace the stoker takes the goods and casts them into the fire before the courier goes
+      const timing = building?.protocol.place ? FURNACE_TIMING : DEFAULT_TIMING;
+      script = buildCourierScript(route, timing, back ? 'out' : errand.direction, { failed: errand.failed });
     }
     const figure = new Figure(this.#make('courier.base'), this.#loaded.get('courier.base')?.clips ?? [], [TAP_CLIP]);
     // its goods, sized by value, in its right hand (on the standin's back)
@@ -1539,7 +1602,8 @@ export class CastleView {
     }
     // the person at the door: between the courier and the building
     const b = run.building;
-    const them = b ? new THREE.Vector3(b.npc.x, 0, b.npc.z) : at.clone().add(new THREE.Vector3(0, 0, 1.5));
+    const them = b ? new THREE.Vector3(b.npc.x, 0, b.npc.z) : (this.#stranger?.object.position.clone() ?? at.clone().add(new THREE.Vector3(0, 0, 1.5)));
+    if (b && this.#burnAt(b, run, at, them, give)) return;
     let delay = 0;
     // the courier hands over what it took out (a loan's collateral going back too)
     const handed = e.collateralBack ? [e.collateralBack, ...give] : give;
@@ -1552,6 +1616,87 @@ export class CastleView {
       // an NFT got: the courier carries it home over its head
       const nft = get.find((g) => g.isNft);
       if (nft) setTimeout(() => this.#carryFrame(run, nft), back * 1000);
+    }
+  }
+
+  /**
+   * At the furnace: the goods go to the stoker's tongs; the stoker casts them
+   * into the fire (`mouth`), the furnace roars and the burn flares out of its
+   * mouth, and they are gone. False when this is no furnace (or its model has
+   * no mouth): the hand-over goes the usual way.
+   */
+  #burnAt(b: BuildingPlacement, run: Run, at: THREE.Vector3, them: THREE.Vector3, give: Goods[]): boolean {
+    const ex = this.#exchange;
+    const obj = b.protocol.place ? this.#buildingRoots.find((o) => o.userData.building === b) : undefined;
+    const mouthNode = obj?.getObjectByName('mouth');
+    if (!ex || !obj || !mouthNode) return false;
+    const mouth = mouthNode.getWorldPosition(new THREE.Vector3());
+    this.#dropFrame(run);
+    const goods = give.length ? give : this.#valueGoods(run.errand.valueUsd);
+    const id = b.protocol.id;
+    // (a flight ends 1 m over its end point: aimed 1 m under the mouth, it lands in the fire)
+    const into = mouth.clone().setY(mouth.y - 1);
+    const toTongs = ex.send(at, them, goods, false, 0, 1, true);
+    setTimeout(() => {
+      if (this.#disposed || !this.#npcs.has(id)) return;
+      this.#casting.add(id);
+      setTimeout(() => {
+        if (this.#disposed) return;
+        const flight = ex.send(them, into, goods, false, 0, 1, true);
+        setTimeout(() => {
+          if (this.#disposed) return;
+          this.#buildingFigures.get(id)?.react(ROAR_CLIP, true);
+          this.#burst(mouth, 'fx.burn', 0, obj.scale.x, obj.rotation.y);
+          ex.say(mouth, goods.map(burnedLabel).join(' · '));
+        }, flight * 1000);
+      }, CAST_RELEASE * 1000);
+    }, toTongs * 1000);
+    return true;
+  }
+
+  /**
+   * The stranger at the Wayfarers' Gate, for the courier of something from (or
+   * to) outside the town: the doors open, the stranger steps out of the mist
+   * with what fits (a sack; a chest for an airdrop or a mint; a lantern for
+   * funds from over the sea), gives or takes the goods and goes back, and the
+   * doors close behind.
+   */
+  #meetStranger(meet: { clip: NpcClip; errand: Errand } | null, now: number, dt: number): void {
+    const gate = this.#gate;
+    const figure = this.#stranger;
+    if (!gate || !figure) return;
+    if (meet) {
+      if (meet.errand !== this.#strangerFor) {
+        this.#strangerFor = meet.errand;
+        const v = meet.errand.verb;
+        const kind = STRANGER_KIND[v === 'airdrop' || v === 'mint' ? 'airdrop' : v === 'bridge' ? 'bridge' : 'stranger'];
+        for (const name of STRANGER_PROPS) {
+          const prop = figure.object.getObjectByName(name.replace(/\./g, ''));
+          if (prop) prop.visible = name === kind.prop;
+        }
+        paint(figure.object, 'Tint', kind.tint, this.#painted);
+      }
+      if (!gate.open) {
+        gate.open = true;
+        gate.figure.play(OPEN_CLIP);
+      }
+      figure.object.visible = true;
+      figure.play(meet.clip === 'receive' ? (meet.errand.direction === 'in' ? 'give' : 'receive') : meet.clip);
+      figure.update(dt);
+      return;
+    }
+    if (figure.object.visible) {
+      figure.object.visible = false;
+      figure.rest();
+      this.#strangerFor = null;
+    }
+    if (gate.open) {
+      gate.open = false;
+      gate.figure.play(CLOSE_CLIP);
+      gate.closing = now + DOORS_TIME;
+    } else if (gate.closing && now >= gate.closing) {
+      gate.closing = 0;
+      gate.figure.play('idle');
     }
   }
 
@@ -1607,13 +1752,14 @@ export class CastleView {
   }
 
   /** Stars burst where goods land. */
-  #burst(at: THREE.Vector3): void {
-    const loaded = this.#loaded.get('fx.sparkle.burst');
+  #burst(at: THREE.Vector3, name = 'fx.sparkle.burst', lift = 1.2, scale = BURST_SCALE, turn = 0): void {
+    const loaded = this.#loaded.get(name);
     const pop = loaded?.clips.find((c) => c.name === 'pop');
     if (!loaded || !pop) return;
-    const figure = new Figure(this.#make('fx.sparkle.burst'), [pop], ['pop']);
-    figure.object.position.copy(at).setY(at.y + 1.2);
-    figure.object.scale.setScalar(BURST_SCALE);
+    const figure = new Figure(this.#make(name), [pop], ['pop']);
+    figure.object.position.copy(at).setY(at.y + lift);
+    figure.object.rotation.y = turn;
+    figure.object.scale.setScalar(scale);
     this.#scene.add(figure.object);
     figure.react('pop', false);
     this.#bursts.push({ figure, until: this.#time + pop.duration });
@@ -1784,6 +1930,8 @@ export class CastleView {
       ...p.road,
       ...p.lit,
       ...p.buildings,
+      ...(p.gate ? [p.gate] : []),
+      ...(p.beyond ? [p.beyond] : []),
       ...p.scenery.filter(keep),
       ...p.decor.filter(keep),
       ...(ext?.placements ?? []),
@@ -1888,7 +2036,10 @@ export class CastleView {
     for (const c of cells) all.set(key(c.x, c.z), c);
     const tiles: Placement[] = [];
     for (const c of all.values()) {
-      const { shape, rot, straightRot } = pathShape({ n: all.has(key(c.x, c.z - 1)), e: all.has(key(c.x + 1, c.z)), s: all.has(key(c.x, c.z + 1)), w: all.has(key(c.x - 1, c.z)) });
+      // (the road's last tile runs on into the road beyond: no end kerb there)
+      const out = this.#plan.roadOut;
+      const onward = !!out && key(out.x, out.z) === key(c.x, c.z + 1);
+      const { shape, rot, straightRot } = pathShape({ n: all.has(key(c.x, c.z - 1)), e: all.has(key(c.x + 1, c.z)), s: onward || all.has(key(c.x, c.z + 1)), w: all.has(key(c.x - 1, c.z)) });
       const name = `path.tile.${shape}`;
       const own = shape === 'straight' || this.#loaded.get(name);
       tiles.push({ name: own ? name : 'path.tile.straight', x: c.x, z: c.z, rot: own ? rot : straightRot });
@@ -2356,6 +2507,7 @@ export class CastleView {
     let barrierUp = false;
     let refused = false;
     const npcState = new Map<string, NpcClip>();
+    let stranger: { clip: NpcClip; errand: Errand } | null = null;
     for (const run of [...this.#runs]) {
       const t = now - run.start;
       if (t >= run.script.duration) {
@@ -2392,15 +2544,18 @@ export class CastleView {
       bridgeDown ||= s.bridgeDown;
       barrierUp ||= s.barrierUp;
       if (run.building && s.npc !== 'hidden' && !npcState.has(run.building.protocol.id)) npcState.set(run.building.protocol.id, s.npc);
+      if (!run.building && run.errand.direction !== 'inside' && s.npc !== 'hidden' && !stranger) stranger = { clip: s.npc, errand: run.errand };
     }
+    this.#meetStranger(stranger, now, dt);
     for (const f of this.#ambient) f.update(dt);
     // the keep's guards: their idle, and a tap's one cheer
     for (const g of this.#guardFigures) g.update(dt);
     for (const [id, npc] of this.#npcs) {
       const clip = npcState.get(id);
+      if (clip !== 'receive') this.#casting.delete(id);
       if (clip) {
         npc.object.visible = true;
-        npc.play(npcClipFor(clip));
+        npc.play(clip === 'receive' && this.#casting.has(id) ? CAST_CLIP : npcClipFor(clip));
       } else if (npc.object.visible) {
         npc.object.visible = false;
         npc.rest();

@@ -8,6 +8,7 @@
 import type { ProtocolCategory } from '../../domain/catalog.js';
 import type { Goods, Guild, Journey, PositionKind, Verb } from '../../domain/model.js';
 import { tierOf } from '../../domain/tiers.js';
+import { FURNACE_ID } from '../../domain/mappers.js';
 import { walletFocus, type WalletFocus } from './halls.js';
 import { ethPriceFrom } from '../../domain/risk.js';
 import { SIZE_REFERENCE_USD, sizeFor, standingOf, tvlOf } from './size.js';
@@ -52,7 +53,15 @@ export interface WorldProtocol {
   size: number;
   /** The protocol's icon as Zerion gives it (for a logo when the bundled snapshot has none). */
   iconUrl: string | null;
+  /** A place of the town's own rather than a protocol's (the furnace): its model and its person. */
+  place?: { model: string; npc: string };
 }
+
+/** The town's own places, by the id the domain gives them: their model, their person, how big they stand. */
+const PLACES: Record<string, { model: string; npc: string; size: number }> = {
+  // class M (a 5 m plot): the size factor of half that
+  [FURNACE_ID]: { model: 'town.furnace', npc: 'person.npc.furnace', size: 2.5 },
+};
 
 export interface Holding {
   /** Token name or symbol. */
@@ -195,6 +204,7 @@ export function worldFromGuild(guild: Guild): CastleWorld {
       members.set(p.id, [p.id]);
       return true;
     });
+  const burnedUsd = guild.journeys.filter((j) => j.verb === 'burn').reduce((t, j) => t + j.valueUsd, 0);
   const sumHeld = (id: string) => (members.get(id) ?? [id]).reduce((t, m) => t + (held.get(m) ?? 0), 0);
   const protocols = candidates
     .slice(0, MAX_BUILDINGS)
@@ -207,18 +217,21 @@ export function worldFromGuild(guild: Guild): CastleWorld {
         .sort((a, b) => Math.abs(b.usd) - Math.abs(a.usd))
         .slice(0, MAX_HOLDINGS);
       const tvlUsd = tvlOf(p.id);
+      const place = PLACES[p.id];
       return {
         id: p.id,
         name: p.name,
         category: CATEGORY_FOR[p.category] ?? 'other',
-        tier: tierOf(sumHeld(p.id)),
+        // the furnace grows with what the guild has burned in all
+        tier: p.id === FURNACE_ID ? tierOf(burnedUsd) : tierOf(sumHeld(p.id)),
         signature: family in SIGNATURE_PROTOCOLS ? family : null,
         holdings,
         visits: [...group].reduce((t, m) => t + (known.get(m)?.visits ?? 0), 0),
         tvlUsd,
         // unknown to the snapshot: as big as what the guild keeps there, at least a house
-        size: sizeFor(standingOf(p.id) ?? Math.max(sumHeld(p.id), SIZE_REFERENCE_USD)),
+        size: place?.size ?? sizeFor(standingOf(p.id) ?? Math.max(sumHeld(p.id), SIZE_REFERENCE_USD)),
         iconUrl: [...group].map((m) => known.get(m)?.iconUrl ?? null).find((u) => u) ?? null,
+        ...(place ? { place: { model: place.model, npc: place.npc } } : {}),
       };
     });
 

@@ -99,6 +99,14 @@ export interface CastlePlan {
   courierRoute: Waypoint[];
   /** Woods, rocks and hills round the island and the town. */
   scenery: Placement[];
+  /**
+   * The Wayfarers' Gate across the avenue's far end, and the road on beyond it into the haze
+   * (docs/batches/24-wayfarers-gate.md; layout 2): where things from outside the town come in.
+   */
+  gate: Placement | null;
+  beyond: Placement | null;
+  /** A path cell just past the road's last tile that the road runs on into (the road beyond): no end kerb there. */
+  roadOut: { x: number; z: number } | null;
   /** Town props, the towers' flags, the moat's plants and animals: life, all optional. */
   decor: Placement[];
   /** The moat's outer edge, the island (castle) and the town, for the camera. */
@@ -113,6 +121,8 @@ export interface Avenue {
   plazaEnd: number;
   /** Where the avenue ends (past the last plot). */
   end: number;
+  /** Where someone from outside the town is met: the Wayfarers' Gate's door (layout 2), else the avenue's end. */
+  out?: number;
 }
 
 export type CastleLayout = 1 | 2;
@@ -292,9 +302,10 @@ export function planCastle(
     const byTier = `building.category.${cat}.t${clampTier(protocol.tier)}`;
     const byClass = `building.category.${cat}.${sizeClassOf(2 * plot.half)}`;
     buildings.push({
-      // a signature building when the protocol has one, else (and while its model is missing) its category's
-      name: protocol.signature ? `building.protocol.${protocol.signature}` : byClass,
-      fallbacks: protocol.signature ? [byClass, byTier] : [byTier],
+      // the town's own place (the furnace), a signature building when the protocol has one, else (and while
+      // its model is missing) its category's
+      name: protocol.place?.model ?? (protocol.signature ? `building.protocol.${protocol.signature}` : byClass),
+      fallbacks: protocol.place || protocol.signature ? [byClass, byTier] : [byTier],
       x: plot.x,
       z: plot.z,
       rot: plot.face,
@@ -311,11 +322,17 @@ export function planCastle(
   // nearest the gate first (couriers, the chronicle and the tests read them in this order)
   buildings.sort((a, b) => world.protocols.indexOf(a.protocol) - world.protocols.indexOf(b.protocol));
 
+  // the Wayfarers' Gate (layout 2) across the avenue's far end, its front (+Z) to the town: its passage on
+  // whole metres, so the road's tiles run through it edge to edge into the road beyond
+  const gate: Placement | null = layout === 2 ? { name: 'town.gate', x: 0, z: Math.ceil(avenue.end) + GATE_DOOR, rot: Math.PI, key: 'gate', optional: true } : null;
+  if (gate) avenue.out = gate.z - GATE_DOOR;
+  const beyond: Placement | null = gate ? { name: 'scenery.road.beyond', x: 0, z: gate.z + GATE_BACK, rot: Math.PI, optional: true } : null;
+
   const town = {
     x0: Math.min(-12, ...plots.list.map((p) => p.x - p.half - 3)),
     x1: Math.max(12, ...plots.list.map((p) => p.x + p.half + 3)),
     z0: 0,
-    z1: avenue.end + 3,
+    z1: gate ? gate.z + GATE_BACK + ROAD_BEYOND : avenue.end + 3,
   };
 
   // Paving: the avenue (round the tower), a step from it to each door; cobbles under the avenue's band and the plaza.
@@ -334,7 +351,8 @@ export function planCastle(
   for (let x = -1; x >= -TOWER_CLEAR; x -= 1) pave(x, turnIn, Math.PI / 2);
   for (let z = turnIn + 1; z < turnOut; z += 1) pave(-TOWER_CLEAR, z, 0);
   for (let x = -1; x >= -TOWER_CLEAR; x -= 1) pave(x, turnOut, Math.PI / 2);
-  for (let z = turnOut; z < avenue.end; z += 1) pave(0, z, 0);
+  // (through the gate's passage to the road beyond, when there is a gate)
+  for (let z = turnOut; z < (gate ? gate.z + GATE_BACK : avenue.end); z += 1) pave(0, z, 0);
   for (const b of buildings) pave(Math.sign(b.door.x), b.door.z, Math.PI / 2);
   // The lit overlay sits over every road and path tile; the view shows it while a courier is near.
   for (const t of road) lit.push({ name: 'path.tile.lit', x: t.x, z: t.z, rot: t.rot ?? 0, key: 'lit' });
@@ -350,7 +368,8 @@ export function planCastle(
   const seenCell = new Set<string>();
   const ground = [
     ...cells(island.x0, island.x1, island.z0, island.z1, () => false),
-    ...cells(-4, 4, 0, Math.ceil(avenue.end / 2) * 2, () => false),
+    // (to the gate's back, never under the road beyond's own cobbles)
+    ...cells(-4, 4, 0, gate ? Math.floor((gate.z + GATE_BACK) / 2) * 2 : Math.ceil(avenue.end / 2) * 2, () => false),
     ...cells(-10, 10, Math.floor(avenue.plazaStart / 2) * 2, Math.ceil(avenue.plazaEnd / 2) * 2, (x) => Math.abs(x) < 4),
     ...plotCells,
   ]
@@ -381,6 +400,9 @@ export function planCastle(
     avenue,
     courierRoute,
     scenery: planScenery(town, moat),
+    gate,
+    beyond,
+    roadOut: gate ? { x: 0, z: gate.z + GATE_BACK + 0.5 } : null,
     decor: planDecor(layout === 1 ? castle.wallets : [], tower, avenue, town, buildings.map((b) => b.door.z), moat),
     moat,
     island,
@@ -649,7 +671,7 @@ export function routeTo(avenue: Avenue, building: BuildingPlacement | null): Way
     { x: -TOWER_CLEAR, z: turnOut },
     { x: 0, z: turnOut },
   ];
-  if (!building) return [...start, ...roundTower, { x: 0, z: avenue.end, stop: 'hand-over' }];
+  if (!building) return [...start, ...roundTower, { x: 0, z: avenue.out ?? avenue.end, stop: 'hand-over' }];
   const z = building.door.z;
   return [...start, ...(z > avenue.plazaEnd ? roundTower : []), { x: 0, z }, { x: building.door.x, z, stop: 'hand-over' }];
 }
@@ -764,6 +786,11 @@ function planWorld(town: { x0: number; x1: number; z1: number }, MOAT: Rect, jit
   out.push(o('scenery.forest.patch', -14, south + 18, 1.0), o('scenery.forest.patch', 14, south + 20, 2.2), o('scenery.meadow', 0, south + 12, 0));
   return out;
 }
+
+/** The Wayfarers' Gate: its door empty this far in front of its middle (towards the town), the road beyond starting this far behind it, and that road's length. */
+const GATE_DOOR = 2;
+const GATE_BACK = 2;
+const ROAD_BEYOND = 12;
 
 /** The toll line: the booth beside the road, the barrier across it. */
 export const TOLL_Z = 2.5;
