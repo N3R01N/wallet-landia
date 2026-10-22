@@ -63,7 +63,9 @@ const FRAME_SCALE = 2.2;
 /** How much an NFT's picture lights itself (0: only by the scene's light). */
 const PICTURE_GLOW = 0.55;
 /** Each token piece's size against the coin's (docs/batches/27-tokens.md: the diamond 0.24 m tall, the note 0.30 m, the ingot 0.20 m, the coin 0.145 m). */
-const LOOK_SCALE: Record<TokenLook, number> = { coin: 1, eth: 1, note: 0.75, ingot: 0.85 };
+/** How far the ETH diamond tips back to face the camera's look from above (rad). */
+const ETH_TIP = 0.55;
+const LOOK_SCALE: Record<TokenLook, number> = { coin: 1, eth: 1.5, note: 0.75, ingot: 0.85 };
 /** A token's icon is drawn down to this many pixels for a coin's face. */
 const ICON_PX = 128;
 /** A gold ingot's gold, and a coin's rim when the token's colour is not known. */
@@ -315,7 +317,18 @@ export class Exchange {
             if (g.icon) this.#iconOnto(mine, g.icon, sym);
           });
         }
-        if (m.name === 'Tint' && (look === 'eth' || look === 'note')) return this.#coinMaterial(`tint|${look}|${sym}`, m, (mine) => this.#colorOf(mine, sym, color));
+        if (m.name === 'Tint' && look === 'eth') {
+          // crisp facets (flat, each its own shade) and a little glow of its own colour, so it reads as the logo, not a blob
+          return this.#coinMaterial(`tint|eth|${sym}`, m, (mine) => {
+            this.#colorOf(mine, sym, color);
+            mine.flatShading = true;
+            mine.roughness = 0.35;
+            mine.metalness = 0.1;
+            mine.emissive.set(color());
+            mine.emissiveIntensity = 0.28;
+          });
+        }
+        if (m.name === 'Tint' && look === 'note') return this.#coinMaterial(`tint|note|${sym}`, m, (mine) => this.#colorOf(mine, sym, color));
         if (m.name === 'Trim') {
           if (look === 'ingot') return this.#coinMaterial('rim|ingot', m, (mine) => mine.color.set(INGOT_GOLD));
           // a note's edge bands: the paper's cream edge, not its colour
@@ -534,6 +547,12 @@ export class Exchange {
           // an ingot tumbles end over end
           f.obj.rotation.x += f.spin * 0.45 * dt;
           f.obj.rotation.y += f.spin * 0.25 * dt;
+        } else if (look === 'eth') {
+          // the logo to the camera, as a frame's picture: its face turned to the camera and tipped back to meet its
+          // look from above (the V and the gap only read from the front), swaying a little as it flies
+          f.obj.rotation.order = 'YXZ';
+          f.obj.rotation.y = (this.#host.facing?.() ?? 0) + Math.sin(f.age * 3 + f.spin) * 0.45;
+          f.obj.rotation.x = -ETH_TIP;
         } else f.obj.rotation.y += f.spin * dt;
         f.obj.scale.setScalar(COIN_SCALE * LOOK_SCALE[look] * (f.size ?? 1) * (t > 0.85 ? 1 - (t - 0.85) * 4 : 1));
       }
