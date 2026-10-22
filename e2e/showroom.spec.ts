@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 /** The showroom: every model the v2 theme has, in one scene, and its 2D art; nothing fails to load. */
 test('the showroom lays out the theme’s models in rows and shows its 2D art', async ({ page }) => {

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 import { sceneState, showTown, tapBuilding } from './castleHelpers.js';
 
 /** Turning and tilting the castle view: keys, a right-drag and the corner buttons move the camera, and buildings can still be tapped after. */

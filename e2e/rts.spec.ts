@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 import { tapGuard } from './castleHelpers.js';
 
 /** Ledger Wars (rts.html): the start, the map, building from the hall and placing it, an upgrade. */

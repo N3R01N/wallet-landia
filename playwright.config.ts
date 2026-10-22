@@ -8,19 +8,24 @@ import { defineConfig } from '@playwright/test';
 /** Heavy specs (picture captures and the like) run before a commit only: name them *.slow.spec.ts. */
 const SLOW = /\.slow\.spec\.ts$/;
 
-// The tour already seen (it would cover the page), and low rendering quality (software WebGL is too slow for
-// shadows and the environment light; e2e/castle-quality.spec.ts opens the high quality on purpose).
+/**
+ * How the dev server's castle runs under test (software WebGL draws a few frames a second, slower still with
+ * several workers): low quality (no shadows or environment light; e2e/castle-quality.spec.ts opens the high
+ * quality on purpose), half the pixels, and the scene's clock at twice real time in steps that keep up however
+ * few frames are drawn (a courier walks as far whatever the machine), drawing at most 8 frames a second so several browsers share the
+ * CPU without starving each other.
+ */
+export const TEST_RENDERING = [
+  { name: 'wallet-landia-v4/dev/quality', value: 'low' },
+  { name: 'wallet-landia-v4/dev/pixel-ratio', value: '0.5' },
+  { name: 'wallet-landia-v4/dev/clock', value: '2' },
+  { name: 'wallet-landia-v4/dev/max-fps', value: '8' },
+];
+
+/** …and the tour already seen (it would cover the page). */
 const SEEN_TOUR = {
   cookies: [],
-  origins: [
-    {
-      origin: 'http://localhost:5198',
-      localStorage: [
-        { name: 'wallet-landia-v4/castle/tour-seen', value: '1' },
-        { name: 'wallet-landia-v4/dev/quality', value: 'low' },
-      ],
-    },
-  ],
+  origins: [{ origin: 'http://localhost:5198', localStorage: [{ name: 'wallet-landia-v4/castle/tour-seen', value: '1' }, ...TEST_RENDERING] }],
 };
 
 export default defineConfig({

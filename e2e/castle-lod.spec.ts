@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 import { sceneState, showTown } from './castleHelpers.js';
 
 /** Big buildings draw their far copy (`….lod1`) when they show small, the full one close up. */

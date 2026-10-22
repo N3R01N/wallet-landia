@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 /** The market: ETH's move over the last 24 hours, the arrow and the words pointing the way the number does. */
 

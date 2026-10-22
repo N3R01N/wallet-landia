@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 /** The siege gallery: every siege asset, every clip, the team colours, the damage states, the instanced view. */
 

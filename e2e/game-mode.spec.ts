@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 import { showTown, tapGuard } from './castleHelpers.js';
 
 /** Siege of the Ledger: the Knight by the keep invites you, the game goes over the castle view, and back to the town. */

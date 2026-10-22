@@ -14,11 +14,21 @@ interface Hook {
 }
 
 /**
+ * The castle scene is up and can be tapped: its models are loaded, and the
+ * loading screen (which stays a moment past that, for its welcome) is gone,
+ * so a tap reaches the scene and not the screen over it.
+ */
+export async function sceneUp(page: Page): Promise<void> {
+  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 120_000 });
+  await expect(page.locator('.loading-screen')).toHaveCount(0, { timeout: 15_000 });
+}
+
+/**
  * Waits for the castle scene to load its models, then taps a protocol's building
  * (by default the one nearest the gate). Returns the protocol's name.
  */
 export async function tapBuilding(page: Page, index = 0): Promise<string> {
-  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
+  await sceneUp(page);
   // in the middle of the view first: nothing in front of it
   const found = await page.evaluate((i) => {
     const v = (window as unknown as Hook).castleView!;
@@ -66,7 +76,7 @@ export async function sceneState(page: Page): Promise<ReturnType<NonNullable<Hoo
 
 /** Taps the first courier out (waits for one to set out and leave the castle: inside, the walls may hide it). */
 export async function tapCourier(page: Page): Promise<void> {
-  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
+  await sceneUp(page);
   await expect.poll(async () => (await sceneState(page)).courier?.z ?? -99, { timeout: 40_000 }).toBeGreaterThan(3);
   await expect.poll(() => page.evaluate(() => (window as unknown as Hook).castleView?.courierPoint() ?? null), { timeout: 20_000 }).not.toBeNull();
   const pt = await page.evaluate(() => (window as unknown as Hook).castleView!.courierPoint());
@@ -75,7 +85,7 @@ export async function tapCourier(page: Page): Promise<void> {
 
 /** Taps a townsperson out walking (waits for one in view). */
 export async function tapPerson(page: Page): Promise<void> {
-  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible();
+  await sceneUp(page);
   expect(await page.evaluate(() => (window as unknown as Hook).castleView!.focusPerson())).toBe(true);
   await page.waitForTimeout(2000); // the camera eases there
   await expect.poll(() => page.evaluate(() => (window as unknown as Hook).castleView?.personPoint() ?? null), { timeout: 20_000 }).not.toBeNull();
@@ -85,14 +95,14 @@ export async function tapPerson(page: Page): Promise<void> {
 
 /** Turns the scene to the town (once one tab, castle and town; the camera eases there). */
 export async function showTown(page: Page): Promise<void> {
-  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 120_000 });
+  await sceneUp(page);
   await page.evaluate(() => (window as unknown as { castleView: { lookAt(w: 'town'): void } }).castleView.lookAt('town'));
   await page.waitForTimeout(1500);
 }
 
 /** Taps a soldier by the keep (0: the Knight, Siege; 1: the Vault Warden, Ledger Wars); their invitation shows. */
 export async function tapGuard(page: Page, i: number): Promise<void> {
-  await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 120_000 });
+  await sceneUp(page);
   type View = { castleView: { lookAt(w: 'castle'): void; guardPoint(i: number): { x: number; y: number } | null } };
   await page.evaluate(() => (window as unknown as View).castleView.lookAt('castle'));
   // the camera eases there: wait until the guard stands still on the screen

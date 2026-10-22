@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 /** The Badges tab: the player's level and rank from all the guild's history, and every badge with the theme's art. */
 

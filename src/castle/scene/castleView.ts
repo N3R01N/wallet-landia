@@ -123,6 +123,15 @@ export interface CastleViewOptions {
    * those), or 'auto' (high, stepping down by itself if this device cannot keep up). Default 'auto'.
    */
   quality?: 'auto' | 'high' | 'low';
+  /** Pixels drawn per CSS pixel at low quality (1 when absent): the browser tests draw fewer, software WebGL being slow. */
+  lowPixelRatio?: number;
+  /**
+   * The scene's clock (the browser tests): `scale` × real time, and steps of up to `maxStep` s a frame (0.1 when
+   * absent), so a machine drawing a few frames a second does not slow the couriers down.
+   */
+  clock?: { scale: number; maxStep: number };
+  /** Draw at most this many frames a second (the browser tests: the scene moves on every frame, software WebGL draws few). */
+  maxFps?: number;
   /** The player's own arrangement of the town (build mode): protocol id → plot. */
   arranged?: Record<string, number>;
   /** Every model is placed: the scene is ready to look at. */
@@ -511,7 +520,7 @@ export class CastleView {
 
     this.#renderer = new THREE.WebGLRenderer({ canvas: this.#canvas, antialias: true });
     this.#quality = opts.quality === 'low' ? 'low' : 'high';
-    this.#renderer.setPixelRatio(this.#quality === 'low' ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+    this.#renderer.setPixelRatio(this.#quality === 'low' ? (opts.lowPixelRatio ?? 1) : Math.min(window.devicePixelRatio || 1, 2));
     this.#renderer.setClearColor(0xbcd3e0, 1);
     // Neutral tone mapping keeps the art's saturated colours as painted (ACES washes them out)
     this.#renderer.toneMapping = THREE.NeutralToneMapping;
@@ -1285,7 +1294,7 @@ export class CastleView {
   #setQuality(q: 'high' | 'low'): void {
     this.#quality = q;
     const high = q === 'high';
-    this.#renderer.setPixelRatio(high ? Math.min(window.devicePixelRatio || 1, 2) : 1);
+    this.#renderer.setPixelRatio(high ? Math.min(window.devicePixelRatio || 1, 2) : (this.#opts.lowPixelRatio ?? 1));
     this.#renderer.shadowMap.enabled = high;
     this.#scene.environment = high ? this.#environment : null;
     // shadows and the environment change the shaders: every material is built again
@@ -2458,7 +2467,8 @@ export class CastleView {
       return;
     }
     this.#timer.update(now);
-    const dt = Math.min(0.1, this.#timer.getDelta());
+    const clock = this.#opts.clock;
+    const dt = Math.min(clock?.maxStep ?? 0.1, this.#timer.getDelta()) * (clock?.scale ?? 1);
     this.#time += dt;
     // the camera turns and tilts towards where it was sent
     if (dampAngles(this.#angles, this.#angleTarget, dt)) this.#updateCamera();
@@ -2471,8 +2481,16 @@ export class CastleView {
       for (const fn of this.#frameFns) fn(dt);
       if (this.#time < this.#shadowsMoveUntil) this.#renderer.shadowMap.needsUpdate = true;
     }
+    const cap = this.#opts.maxFps;
+    if (cap) {
+      if (now - this.#lastDraw < 1000 / cap) return;
+      this.#lastDraw = now;
+    }
     this.#renderer.render(this.#scene, this.#camera);
   };
+
+  /** When the last frame was drawn (ms, the frame clock's), for `maxFps`. */
+  #lastDraw = -Infinity;
 
   #animate(dt: number): void {
     const now = this.#time;

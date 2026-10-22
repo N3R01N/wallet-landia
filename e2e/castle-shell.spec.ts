@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 import { showTown, tapBuilding } from './castleHelpers.js';
 
 /** The castle shell: a phone gets bottom tabs and a drawer sheet, a desktop a side rail and a docked sheet. */

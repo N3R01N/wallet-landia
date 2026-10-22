@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 /** The first load: a small animation per phase (wallets, castle, welcome), in order, then out of the way. */
 

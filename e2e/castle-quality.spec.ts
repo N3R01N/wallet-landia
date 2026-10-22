@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 /** Rendering quality: high has the sun's shadows and the environment light; ?quality pins it. */
 

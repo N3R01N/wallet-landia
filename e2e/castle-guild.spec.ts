@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 import { readFileSync } from 'node:fs';
 
 /** The Guild tab: the player's key and wallets, shared with the town. */

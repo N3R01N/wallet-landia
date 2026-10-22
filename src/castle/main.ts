@@ -108,6 +108,15 @@ const qualityParam = ((q) => (q === 'low' || q === 'high' ? q : 'auto'))(
   new URLSearchParams(location.search).get('quality') ?? (import.meta.env.DEV ? devStored('wallet-landia-v4/dev/quality') : null),
 );
 
+/** On the dev server, a stored pixel ratio for low quality (the browser tests draw at half: software WebGL is slow). */
+const lowPixelRatio = ((r) => (Number.isFinite(r) && r >= 0.25 && r <= 1 ? r : null))(Number(import.meta.env.DEV ? devStored('wallet-landia-v4/dev/pixel-ratio') : NaN));
+
+/** On the dev server, a stored clock for the scene: `<scale>` (the browser tests run it fast, in steps that keep up on a slow machine). */
+const devClock = ((s) => (Number.isFinite(s) && s >= 1 && s <= 8 ? { scale: s, maxStep: 0.4 } : null))(Number(import.meta.env.DEV ? (devStored('wallet-landia-v4/dev/clock') ?? NaN) : NaN));
+
+/** On the dev server, a stored frame cap (the browser tests draw few frames, so several browsers share the CPU). */
+const devMaxFps = ((n) => (Number.isFinite(n) && n >= 2 && n <= 60 ? n : null))(Number(import.meta.env.DEV ? (devStored('wallet-landia-v4/dev/max-fps') ?? NaN) : NaN));
+
 function devStored(key: string): string | null {
   try {
     return localStorage.getItem(key);
@@ -141,6 +150,9 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       ...(pinnedHour !== undefined ? { hour: pinnedHour } : {}),
       // `?quality=low|high` pins the rendering quality; otherwise it adapts to the device
       quality: qualityParam,
+      ...(lowPixelRatio ? { lowPixelRatio } : {}),
+      ...(devClock ? { clock: devClock } : {}),
+      ...(devMaxFps ? { maxFps: devMaxFps } : {}),
       onSelect: (b) => {
         const icon = protocolLogo(b.protocol.id);
         open({ id: SHEET_PREFIX + b.protocol.id, title: b.protocol.name, ...(icon ? { icon } : {}) });

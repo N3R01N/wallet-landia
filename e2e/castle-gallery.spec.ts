@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 test('the asset gallery lists every asset, filters them, and shows a spec', async ({ page }) => {
   const errors: string[] = [];

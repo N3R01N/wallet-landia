@@ -1,8 +1,10 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
+import { TEST_RENDERING } from '../playwright.config.js';
 
 /** The first-visit tour: shows once, walks through the castle into the Guild tab, can be skipped and shown again. */
 
-test.use({ storageState: { cookies: [], origins: [] }, viewport: { width: 390, height: 844 } });
+// the tour not yet seen, but the test rendering all the same (at high quality the tour took over a minute)
+test.use({ storageState: { cookies: [], origins: [{ origin: 'http://localhost:5198', localStorage: TEST_RENDERING }] }, viewport: { width: 390, height: 844 } });
 
 test('a first visit gets the tour; it ends in the Guild tab; it does not come back, but the ? button shows it again', async ({ page }) => {
   test.setTimeout(150_000); // the v2 town loads two scenes in software WebGL here
