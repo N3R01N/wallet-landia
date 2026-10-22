@@ -7,7 +7,10 @@ a town (the chain). See `docs/REDESIGN.md` for the plan, status and decisions,
 ## Testing
 
 - After every change: `npm run check` (typecheck, unit tests, the fast browser
-  tests; about a minute).
+  tests; about five minutes). New browser tests import `test` from
+  `e2e/fixtures.ts` (it answers requests to outside hosts) and tap the scene
+  through the helpers in `e2e/castleHelpers.ts` (they wait for the loading
+  screen).
 - The slow browser tests (`npm run e2e:slow`: specs named `*.slow.spec.ts`,
   for picture captures and the like) only after asking the user, usually right
   before a commit. They may have more changes to batch first.
