@@ -38,6 +38,7 @@ Rules: `docs/STYLEGUIDE_V2.md`, especially §10 (lessons).
 | 25 | The Ember Furnace (burns), its stoker, the burn effect | [25](25-ember-furnace.md) | blender-e0 | ✅ approved, committed |
 | 26 | OpenSea, ENS and Gondi rebuilt at class M (sized by standing, 10 × a year's fees, not value locked) | [26](26-landmarks-standing.md) | design agent "landmarks-m" | ✅ approved, committed |
 | 27 | Tokens you can tell apart in flight: the ETH diamond (blender-74); the stablecoin banknote and the bitcoin ingot (blender-e0) | [27](27-tokens.md) | blender-74, blender-e0 | ✅ approved, committed |
+| 28 | A world that lives: scaffold, ribbon, bunting, lanterns, fireworks, monument, shooting star (blender-74); pumpkin, snow, snowfall, airdrop crate, the old wanderer (blender-e0) | [28](28-living-world.md) | blender-74, blender-e0 | briefed (2026-10-22) |
 
 The landmark classes come from each protocol's value on Ethereum (`src/castle/world/tvl.json`), so a protocol may change class when the snapshot is renewed. Batch 3 (castle wings) was dropped: castle layout 2 has none.
 
