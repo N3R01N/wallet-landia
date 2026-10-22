@@ -74,3 +74,25 @@ not to keep). What works without one:
 2. Each track: unit tests and its own browser tests in its worktree (`--workers=2`, the machine is shared), then the developer reviews it in the game, merges (squash) and runs `npm run check`.
 3. Track D after A is merged (they share the last-visit state).
 4. The assets land when they are checked; each feature already works without them.
+
+## Status (2026-10-22)
+
+All four tracks and batch 28 are built, checked in the game and merged; `npm run check` passes (525 unit tests, 67 browser tests).
+
+| Feature | Where | State |
+|---|---|---|
+| While you were away | `src/castle/away.ts`, `awayCard.ts` | done |
+| The castle grows | `src/castle/world/growth.ts`, `scene/growth.ts` | done |
+| Real events (gas, festival, crash, seasons, anniversary, airdrop crate) | `src/castle/world/gas.ts`, `world/events.ts`, `scene/festive.ts` | done; December is weak (below) |
+| Lore | `src/castle/world/lore.ts` | done; the lines checked |
+| Secrets | `src/castle/world/secrets.ts`, `domain/moments.ts`, `townSecrets.ts` | done |
+| Rare moments | `src/castle/world/rare.ts`, `scene/wonders.ts` | done |
+| Notifications | `src/castle/notify.ts`, `notifications.ts`, `public/sw.js` | done; the installed app's background check is untested in a real browser |
+
+Dev switches for looking at them: `?market=boom|crash`, `?date=YYYY-MM-DD`, `?hour=H`, `?demo` (the demo wallets even where captures exist), `?landmarks=all`; in the console `townSecrets.sendBiggest()`, `castleView.setGas('jammed')`.
+
+### Open
+
+- **December:** the snowfall works, but landmark roofs (in `Tint`) stay coloured and the ground patches read as stray clouds. Better: `snow` points on the buildings' roofs (a small asset batch) and a winter look for the grass.
+- **Background check (installed app):** try it on a production build installed in Chrome (DevTools → Application → Periodic Background Sync → `wl-watch`).
+- **Followed wallets** are only watched while you visit them, so the shooting star shows only then.

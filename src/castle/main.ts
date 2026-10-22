@@ -20,16 +20,19 @@ import { lightAt, weatherFor, type Weather } from './world/sky.js';
 import { priceMove } from '../domain/risk.js';
 import { chronicleSheet, collateralSheet, errandSheet, guildSheet, personSheet, protocolSheet, walletSheet } from './sheets.js';
 import { pickLine } from './world/chatter.js';
+import { gasLevel, type GasLevel } from './world/gas.js';
+import { firstTxTime, freshDrop, occasionsFor, openedCrates, pinnedDate, rememberCrate } from './world/events.js';
 import { gondiTxs, lentLoans, type LentLoan } from '../data/gondi.js';
 import { nftLook, type NftLook } from '../data/nftLook.js';
 import type { Goods } from '../domain/model.js';
+import type { MomentId } from '../domain/moments.js';
 import { protocolFamily } from './assets/manifest.js';
 import type { Person } from './scene/life.js';
 import { Conditions } from './conditions.js';
 import { logoPath } from './world/logos.js';
 import { buildGuild, ethMarketOf } from '../domain/mappers.js';
 import { Session, type Mode, type Shown } from '../data/session.js';
-import { setRealmChains } from '../data/zerion/endpoints.js';
+import { realmScope, setRealmChains } from '../data/zerion/endpoints.js';
 import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { guildTab, historyRows, modeText, walletDisplayName } from './guildTab.js';
 import type { LedgerStatus } from '../data/ledger.js';
@@ -44,6 +47,8 @@ import { BADGE_SHEET, badgeSheet, badgesTab, castleBadgeSheet, playerTitle, type
 import { teachingQuests } from '../domain/feats.js';
 import type { Guild } from '../domain/model.js';
 import { castleBadges } from './world/castleBadges.js';
+import { TownSecrets } from './townSecrets.js';
+import { foundSecrets } from './world/secrets.js';
 import { PlayerController } from './player.js';
 import type { CastleTheme } from './assets/theme.js';
 import { currentRpcUrl, setRpcUrl, startHeartbeat, validRpcUrl } from '../data/rpc.js';
@@ -51,6 +56,11 @@ import { loadPrefs, savePrefs } from '../settings.js';
 import { Soundscape } from '../audio/soundscape.js';
 import { crestColors, setCrests } from '../util/rng.js';
 import { SIEGE_PARAM, SiegeMode } from '../game/ui/siegeMode.js';
+import { awaySummary, loadVisit, saveVisit, visitOf, visitScope, worthTelling, type AwaySummary } from './away.js';
+import { awayCard } from './awayCard.js';
+import { grownSince, growthLine, type Growth } from './world/growth.js';
+import { GrowthMoments } from './scene/growth.js';
+import { CourierNotifier, setBackgroundCheck, watchWallets } from './notifications.js';
 
 const SHEET_PREFIX = 'protocol:';
 const ERRAND_SHEET = 'errand:';
@@ -103,6 +113,18 @@ if (pinnedMood) weather = weatherFor(pinnedMood);
 let priceSettled = false;
 const hourParam = Number(new URLSearchParams(location.search).get('hour'));
 const pinnedHour = Number.isFinite(hourParam) && new URLSearchParams(location.search).has('hour') ? hourParam : undefined;
+// `?date=2026-12-24` (dev server only) dresses the town for that day's occasions
+const pinnedDay = import.meta.env.DEV ? pinnedDate(new URLSearchParams(location.search).get('date')) : null;
+/** The road's toll by the latest block's base fee (null until a block). */
+let gasNow: GasLevel | null = null;
+
+/** What the town dresses for now (world/events.ts), and your own guild's crate for a fresh airdrop or mint. */
+function occasionsNow(w: CastleWorld): { occasions: ReturnType<typeof occasionsFor>; drop: ReturnType<typeof freshDrop> } {
+  return {
+    occasions: occasionsFor({ date: pinnedDay ?? new Date(), mood: pinnedMood ?? conditions.mood, firstTx: firstTxTime(w.errands) }),
+    drop: shown?.visiting ? null : freshDrop(w.errands, openedCrates()),
+  };
+}
 /** `?quality=low|high`; on the dev server also a stored pick (the browser tests render low: software WebGL is slow). */
 const qualityParam = ((q) => (q === 'low' || q === 'high' ? q : 'auto'))(
   new URLSearchParams(location.search).get('quality') ?? (import.meta.env.DEV ? devStored('wallet-landia-v4/dev/quality') : null),
@@ -147,6 +169,9 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       theme,
       layout: themeLoaded.castleLayout ?? 1,
       weather,
+      gas: gasNow,
+      ...occasionsNow(world),
+      onCrateOpened: (e) => rememberCrate(e.key),
       ...(pinnedHour !== undefined ? { hour: pinnedHour } : {}),
       // `?quality=low|high` pins the rendering quality; otherwise it adapts to the device
       quality: qualityParam,
@@ -160,7 +185,10 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       onSelectWallet: (i) => open({ id: WALLET_SHEET + i, title: walletName(i) }),
       onSelectKeep: () => open({ id: KEEP_SHEET, title: shown?.label ?? 'Your guild' }),
       onTapped: (what) => sound.tap(what),
-      chatter: (who) => pickLine({ mood: pinnedMood ?? conditions.mood, road: conditions.road, trade: who.trade }, Math.random()),
+      chatter: (who, tapped) => townSecrets.say(who, tapped, () => pickLine({ mood: pinnedMood ?? conditions.mood, road: conditions.road, trade: who.trade }, Math.random())),
+      // the wishing well, the monuments, the old wanderer; the golden and the ghost couriers (townSecrets.ts)
+      onTapPlaced: (p) => townSecrets.tapped(p),
+      dressCourier: (e, courier) => townSecrets.dress(e, courier),
       onSelectPerson: (who, line) => {
         personNow = { who, line };
         // a fresh sheet each tap (its line changes): the same id would keep the old one
@@ -168,7 +196,11 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       },
       onCoin: (i, n, incoming) => sound.coinTink(i, n, incoming),
       onNft: (landed) => sound.nftShimmer(landed),
-      onReady: () => loading.report('welcome'),
+      onReady: () => {
+        loading.report('welcome');
+        // what happened while you were away, once the loading screen has gone
+        loading.afterGone(showWelcome);
+      },
       onSelectErrand: (e) => open({ id: ERRAND_SHEET + e.key, title: e.label || 'A transaction' }),
       onToll: (e) => sound.tollNow(Math.min(3, e.tier / 2)),
       onRefused: () => sound.refused(),
@@ -177,8 +209,9 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       // two soldiers either side of the keep invite you to the game modes
       guards: KEEP_GUARDS,
     });
-    // Test hook (dev server only): the browser tests find buildings on screen through it.
-    if (import.meta.env.DEV) (window as unknown as { castleView?: CastleView }).castleView = view;
+    // Test hooks (dev server only): the browser tests find buildings on screen through the view, the transactions in the world.
+    if (import.meta.env.DEV) Object.assign(window, { castleView: view, castleWorld: world });
+    townSecrets.attach(view, world, lifetime(), own);
     // the chronicle: every recent transaction, a tap away
     const chronicle = el('button', { class: 'btn scene-action chronicle-btn', type: 'button', 'aria-label': 'Chronicle: recent transactions' }, '📜 Chronicle');
     chronicle.addEventListener('click', () => open({ id: CHRONICLE_SHEET, title: 'Chronicle' }));
@@ -199,6 +232,8 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
         },
       });
     siege.attach(view);
+    // the herald's card, still open, stays over the castle drawn again
+    if (awayCardNow) view.element.append(awayCardNow);
     return el('section', { class: 'tab-page scene-tab', 'data-tab-page': tab }, view.element);
   }
   view = null;
@@ -210,7 +245,7 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
         savePrefs(prefs);
         showTopbar();
       },
-    }, walletQuests());
+    }, walletQuests(), foundSecrets());
   if (tab === 'guild') {
     return guildTab({
       prefs,
@@ -227,6 +262,10 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
         }
         // a moment for the audio to wake on the first tap
         setTimeout(() => sound.tap('building', i), sound.state === 'running' ? 0 : 150);
+      },
+      onNotify: (on) => {
+        void watchWallets(on ? ownWatched() : []);
+        void setBackgroundCheck(on);
       },
       onWalletsChanged: () => void session.home(),
       onKeyChanged: () => {
@@ -394,6 +433,27 @@ const KEEP_GUARDS: readonly KeepGuard[] = [
     tint: '#2f5d9e',
   },
 ];
+
+/** Lore, secrets and rare moments (docs/ENGAGEMENT.md, track C). */
+const townSecrets = new TownSecrets({
+  hour: () => pinnedHour ?? new Date().getHours() + new Date().getMinutes() / 60,
+  found: (text) => {
+    shell.setStatus(text, 'info');
+    setTimeout(() => {
+      if (shell.element.querySelector('.status')?.textContent === text) shell.setStatus('');
+    }, 6000);
+    if (shell.state.tab === 'badges') shell.refresh();
+  },
+  wish: () => sound.coinTink(0, 1, true),
+});
+// Test hook (dev server only): the secrets and rare moments.
+if (import.meta.env.DEV) (window as unknown as { townSecrets?: TownSecrets }).townSecrets = townSecrets;
+
+/** At home, what the player's profile knows of the whole kept history (null until worked out, or when visiting). */
+function lifetime(): { moments?: MomentId[]; firstAt: number | null } | null {
+  const p = player.profile;
+  return p && !shown?.visiting ? { ...(p.moments ? { moments: p.moments } : {}), firstAt: p.stats.firstAt } : null;
+}
 
 const shell = new Shell({ renderTab, renderSheet, topbar: { guild: 'Your guild', rank: 'Wanderer', level: 'Lv 1' } });
 root.replaceChildren(shell.element);
@@ -589,6 +649,8 @@ async function settlePrice(w: CastleWorld, town: Shown): Promise<void> {
   if (usd !== null) conditions.price(usd, move);
   weather = weatherFor(pinnedMood ?? move?.mood ?? null);
   view?.setWeather(weather);
+  const now = occasionsNow(w);
+  view?.setOccasions(now.occasions, now.drop);
 }
 
 function showTopbar(): void {
@@ -597,6 +659,79 @@ function showTopbar(): void {
   shell.setTopbar({ guild: shown?.label ?? 'Your guild', rank: p?.rank ?? 'Wanderer', level: `Lv ${p?.level ?? 1}` });
   shell.setRankTitle(p ? `${p.rank}, ${playerTitle(p, prefs.title)}` : '');
 }
+
+/** Since your last visit (your own castle only): what to tell and what grew, shown once the castle is up. */
+let welcomeBack: { summary: AwaySummary | null; grown: Growth[] } | null = null;
+/** The herald's card while it is open. */
+let awayCardNow: HTMLElement | null = null;
+
+/**
+ * Your own castle (never a visited or famous one): on opening, what happened
+ * since the last visit and which pieces grew; on newer data, what grew; and
+ * this visit remembered for next time (away.ts).
+ */
+function noteVisit(w: CastleWorld, town: Shown, opening: boolean): void {
+  if (opening) {
+    welcomeBack = null;
+    awayCardNow?.remove();
+    awayCardNow = null;
+  }
+  if (town.visiting) return;
+  const scope = visitScope(realmScope(), town.raws.map((r) => r.address));
+  const last = loadVisit(scope);
+  const now = Date.now();
+  const summary = opening && last ? awaySummary(w.errands, last, now) : null;
+  const pending = {
+    summary: (summary && worthTelling(summary) ? summary : null) ?? welcomeBack?.summary ?? null,
+    grown: [...(welcomeBack?.grown ?? []), ...(last ? grownSince(w, last.tiers) : [])],
+  };
+  welcomeBack = pending.summary || pending.grown.length ? pending : null;
+  saveVisit(scope, visitOf(w, last, now));
+}
+
+/** Once the castle is up (or at once, on newer data the castle shows as it is): the growth moments, then the herald's card. */
+function showWelcome(): void {
+  const v = view;
+  if (!welcomeBack || !v?.ready || shown?.visiting) return;
+  const { summary, grown } = welcomeBack;
+  welcomeBack = null;
+  if (grown.length) void new GrowthMoments(v.stage(), v.element).play(grown, (g) => growthLine(g, walletName));
+  if (!summary) return;
+  awayCardNow?.remove();
+  awayCardNow = awayCard(summary, (id) => world?.protocols.find((p) => p.id === id)?.name ?? id, {
+    // just those couriers, quicker
+    watch: () => {
+      awayCardNow = null;
+      const keys = new Set(summary.errands.map((e) => e.key));
+      timelineNow?.playThese(world?.errands.filter((e) => keys.has(e.key)) ?? summary.errands, summary.errands.length > 20 ? 4 : 2);
+    },
+    later: () => {
+      awayCardNow = null;
+    },
+  });
+  v.element.append(awayCardNow);
+}
+
+/** Notifications (notifications.ts): new couriers for your own wallets while the tab is hidden. */
+const notifier = new CourierNotifier({
+  on: () => prefs.notify,
+  place: (id) => world?.protocols.find((p) => p.id === id)?.name ?? id,
+  walletName: (a) => walletDisplayName(prefs, a),
+});
+
+/** Your wallets, named, for the service worker's look while the app is closed. */
+function ownWatched(): { address: string; name: string }[] {
+  return prefs.owned.map((a) => ({ address: a, name: walletDisplayName(prefs, a) }));
+}
+
+/** New couriers: a notification when they are your own castle's (never a visited or famous one), and the service worker's fingerprints kept current. */
+function tellCouriers(fresh: CastleWorld['errands'], town: Shown): void {
+  if (town.visiting || !prefs.notify) return;
+  notifier.note(fresh);
+  if (fresh.length) void watchWallets(ownWatched());
+}
+// Test hook (dev server only): the newest few couriers as if they had just come.
+if (import.meta.env.DEV) Object.assign(window, { castleNewCouriers: (n: number) => world && shown && tellCouriers(world.errands.slice(-n), shown) });
 
 /** How far back each wallet's history is gathered (the Guild tab shows it; null: the walk back is not running). */
 let historyWalk: { statuses: LedgerStatus[]; paused: string | null } | null = null;
@@ -621,10 +756,12 @@ const session = new Session(prefs, {
     mode = town.mode;
     void settlePrice(world, town);
     void readCollateral(world, town);
+    noteVisit(world, town, true);
     showTopbar();
     redrawForData();
     void player.refresh();
     if (!town.visiting) offerTour();
+    if (!town.visiting && prefs.notify) void watchWallets(ownWatched());
   },
   onUpdate: (town) => {
     shown = town;
@@ -634,8 +771,17 @@ const session = new Session(prefs, {
     const rebuild = !world || layoutChanged(world, next);
     world = next;
     void readCollateral(next, town);
+    noteVisit(next, town, false);
     if (rebuild) redrawForData();
-    else view?.enqueue(fresh);
+    else {
+      view?.enqueue(fresh);
+      if (view?.ready) showWelcome();
+      const now = occasionsNow(next);
+      view?.setOccasions(now.occasions, now.drop);
+    }
+    // a followed wallet moved: a shooting star
+    if (town.visiting && prefs.followed.includes(town.visiting) && fresh.length > 0) townSecrets.shootingStar();
+    tellCouriers(fresh, town);
   },
   onStatus: (text, kind) => {
     shell.setStatus(text, kind);
@@ -649,12 +795,20 @@ const session = new Session(prefs, {
 
 // the player's own node, if they chose one (the same setting as the town)
 if (prefs.rpcUrl !== '' && validRpcUrl(prefs.rpcUrl)) setRpcUrl(prefs.rpcUrl);
-startHeartbeat((beat) => {
-  conditions.block(beat);
-  view?.ringBell();
-  sound.ringNow(0.5 + beat.busy * 0.5); // a fuller block rings louder
-  void session.onBlock();
-});
+startHeartbeat(
+  (beat) => {
+    conditions.block(beat);
+    gasNow = gasLevel(beat.baseFeeGwei);
+    view?.setGas(gasNow);
+    if (!document.hidden) {
+      view?.ringBell();
+      sound.ringNow(0.5 + beat.busy * 0.5); // a fuller block rings louder
+    }
+    void session.onBlock();
+  },
+  // with notifications on, a hidden tab keeps watching your own live wallets (about once a minute)
+  { background: () => prefs.notify && shown?.mode === 'live' && !shown.visiting },
+);
 
 /** The player: level, rank and badges from all the guild's history, worked out off the main thread. */
 const player = new PlayerController({
@@ -666,6 +820,8 @@ const player = new PlayerController({
   changed: () => {
     showTopbar();
     if (shell.state.tab === 'badges') shell.refresh();
+    // monuments and the wanderer the whole history earned
+    if (world && view) townSecrets.show(world, lifetime(), !shown?.visiting);
   },
 });
 
@@ -684,7 +840,11 @@ void theme.then((t) => {
 // the dev server's files change constantly.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch((e: unknown) => console.warn('service worker', e));
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`)
+      // notifications on: the look while closed, where it is allowed now (the app may have been installed since)
+      .then(() => (prefs.notify ? setBackgroundCheck(true) : undefined))
+      .catch((e: unknown) => console.warn('service worker', e));
   });
 }
 

@@ -39,6 +39,8 @@ export interface Placement {
   fallbacks?: string[];
   /** Decoration: left out (not shown as a standin) while the theme has no model for it. */
   optional?: boolean;
+  /** A colour for its `Tint` parts (a monument's banner). */
+  tint?: string;
 }
 
 export interface BuildingPlacement extends Placement {

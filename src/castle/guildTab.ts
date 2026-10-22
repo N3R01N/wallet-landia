@@ -16,6 +16,7 @@ import type { BudgetSnapshot } from '../data/zerion/budget.js';
 import { encodeShare } from './share.js';
 import { bornCrest, crestColors, setCrests, TINCTURES } from '../util/rng.js';
 import { ALLOWED_RPC_HOSTS, DEFAULT_RPC, validRpcUrl } from '../data/rpc.js';
+import { askPermission, backgroundCheck, permission, type BackgroundCheck } from './notifications.js';
 
 export interface GuildTabContext {
   prefs: Prefs;
@@ -42,6 +43,8 @@ export interface GuildTabContext {
   onVisitFamous(castle: FamousCastle): void;
   /** Pick the click sound (TAP_SOUNDS) and hear it. */
   onTapSound(index: number): void;
+  /** Notifications were turned on (the browser said yes) or off. */
+  onNotify(on: boolean): void;
   /** How far back each wallet's history is gathered, and whether the walk back rests now (null: not running). */
   history: { statuses: LedgerStatus[]; paused: string | null } | null;
 }
@@ -128,6 +131,7 @@ export function guildTab(ctx: GuildTabContext): HTMLElement {
     famousSection(ctx),
     walletsSection(ctx, p),
     soundSection(ctx, p),
+    notifySection(ctx, p),
     shareSection(p),
     followedSection(ctx, p),
     historySection(ctx),
@@ -387,6 +391,60 @@ function historySection(ctx: GuildTabContext): HTMLElement {
     historyRows(ctx),
     el('div', { class: 'form-row' }, save, load, file),
     msg,
+  );
+}
+
+const NOTIFY_STATE: Record<NotificationPermission | 'unsupported' | 'on', string> = {
+  on: 'On.',
+  default: 'Off.',
+  granted: 'Off.',
+  denied: 'The browser blocks notifications for this site. To have them, allow notifications in the site’s settings (by the address bar), then tap the button again.',
+  unsupported: 'This browser can’t show notifications.',
+};
+
+const BACKGROUND_LINE: Record<BackgroundCheck, string> = {
+  ok: 'As an installed app it also looks about twice a day while closed (the browser picks when), and tells you if something moved in one of your wallets.',
+  'not-installed': 'Installed as an app (Chrome or Edge), it could also look about twice a day while closed; here it tells only while the tab is open.',
+  unsupported: 'This browser can’t look while the castle is closed: it tells only while the tab is open.',
+};
+
+/**
+ * Notifications (opt in): the browser is asked only once the player taps the
+ * button. Off again forgets the wallets kept for the check while closed.
+ */
+function notifySection(ctx: GuildTabContext, p: Prefs): HTMLElement {
+  const allowed = permission();
+  const on = p.notify && allowed === 'granted';
+  const state = el('p', { class: 'notify-state', role: 'status' }, NOTIFY_STATE[on ? 'on' : allowed]);
+  const button = el('button', { class: 'btn notify-toggle', type: 'button' }, on ? 'Turn off' : 'Notify me');
+  button.hidden = allowed === 'unsupported';
+  button.addEventListener('click', () => {
+    if (on) {
+      p.notify = false;
+      savePrefs(p);
+      ctx.onNotify(false);
+      ctx.refresh();
+      return;
+    }
+    void askPermission().then((answer) => {
+      if (answer === 'granted') {
+        p.notify = true;
+        savePrefs(p);
+        ctx.onNotify(true);
+        ctx.refresh();
+      } else state.textContent = answer === 'default' ? 'No answer from the browser, so nothing changed.' : NOTIFY_STATE[answer];
+    });
+  });
+  const background = el('p', { class: 'muted small notify-background' });
+  if (allowed !== 'unsupported') void backgroundCheck().then((b) => (background.textContent = BACKGROUND_LINE[b]));
+  return el(
+    'div',
+    { class: 'guild-section', 'data-section': 'notify', 'data-on': String(on) },
+    el('h2', {}, 'Notifications'),
+    el('p', { class: 'muted' }, 'While the castle is open in a background tab, a notification when a courier comes or goes for your own wallets. It is all worked out on this device: there is no push server, and nothing new about your wallets leaves it.'),
+    el('div', { class: 'form-row' }, button),
+    state,
+    background,
   );
 }
 

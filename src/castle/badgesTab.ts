@@ -13,6 +13,7 @@ import { assetPath } from './assets/manifest.js';
 import { themeFileUrl, type CastleTheme } from './assets/theme.js';
 import type { SheetState } from './shellState.js';
 import type { CastleBadge } from './world/castleBadges.js';
+import { secretsProgress, type SecretId } from './world/secrets.js';
 
 export const BADGE_SHEET = 'badge:';
 
@@ -72,10 +73,11 @@ export function badgesTab(
   castle: readonly CastleBadge[] = [],
   title?: TitleChoice,
   quests: readonly WalletQuest[] = [],
+  secrets: Partial<Record<SecretId, number>> = {},
 ): HTMLElement {
   const page = el('section', { class: 'tab-page badges-tab', 'data-tab-page': 'badges' }, el('h1', {}, 'Badges'));
   if (!profile) {
-    page.append(el('p', { class: 'muted' }, 'Working out your level from all your wallets’ history…'));
+    page.append(el('p', { class: 'muted' }, 'Working out your level from all your wallets’ history…'), secretsSection(secrets));
     return page;
   }
   page.append(playerCard(profile, theme, title));
@@ -93,7 +95,17 @@ export function badgesTab(
     page.append(el('h2', {}, 'Still to earn'));
     page.append(el('div', { class: 'badge-grid' }, ...locked.map((m) => badgeCard(m, null, theme, open))));
   }
+  page.append(secretsSection(secrets));
   return page;
+}
+
+/** The town's secrets: how many are found, and the found ones with how (the rest stay secret). */
+function secretsSection(found: Partial<Record<SecretId, number>>): HTMLElement {
+  const p = secretsProgress(found);
+  const out = el('section', { class: 'secrets', 'aria-label': 'Secrets' }, el('h2', {}, `Secrets found · ${p.found.length} of ${p.total}`));
+  if (p.found.length === 0) out.append(el('p', { class: 'muted' }, 'The town keeps a few secrets. Look closely, and tap about.'));
+  else out.append(el('ul', { class: 'secret-list' }, ...p.found.map((s) => el('li', { 'data-secret': s.id }, el('strong', {}, s.name), el('span', { class: 'muted' }, ` · ${s.hint}`)))));
+  return out;
 }
 
 function playerCard(p: PlayerProfile, theme: CastleTheme | null, title?: TitleChoice): HTMLElement {

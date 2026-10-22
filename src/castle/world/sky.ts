@@ -11,6 +11,11 @@ export function nightFactor(hour: number): number {
   return Math.max(0, Math.min(1, (Math.abs(hour - 13) - 5) / 3));
 }
 
+/** Night proper: past the middle of dusk and before the middle of dawn (19:30 to 06:30). */
+export function isNight(hour: number): boolean {
+  return nightFactor(((hour % 24) + 24) % 24) >= 0.5;
+}
+
 export interface Light {
   /** 0 day … 1 night. */
   night: number;

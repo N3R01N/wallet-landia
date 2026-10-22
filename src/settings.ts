@@ -68,6 +68,8 @@ export interface Prefs {
   landArea: number;
   /** Your wallets you are happy to show when sharing your town (lowercase addresses); the rest are private. */
   publicWallets: string[];
+  /** Notifications when couriers come and go for your wallets (opt in, docs/ENGAGEMENT.md Track D). */
+  notify: boolean;
 }
 
 const KEY = 'wallet-landia-v4/prefs/v1';
@@ -104,6 +106,7 @@ const DEFAULTS: Prefs = {
   unlocked: {},
   landArea: 0,
   publicWallets: [],
+  notify: false,
 };
 
 export function loadPrefs(): Prefs {

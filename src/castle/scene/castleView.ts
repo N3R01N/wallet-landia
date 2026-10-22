@@ -25,6 +25,9 @@ import { DEFAULT_TIMING, buildCourierScript, courierAt, type CourierScript, type
 import { pathRow, pathShape, planCastle, routeBetweenWallets, routeFromHome, routeTo, type BuildingPlacement, type CastleLayout, type CastlePlan, type Placement, type WalletPlacement } from './plan.js';
 import type { CastleWorld, Errand } from '../world/world.js';
 import { lightAt, type Weather } from '../world/sky.js';
+import { QUEUE_GAP, grumble, tollTiming, type GasLevel } from '../world/gas.js';
+import { NO_OCCASIONS, type Occasions } from '../world/events.js';
+import { Festive } from './festive.js';
 import { logoPath } from '../world/logos.js';
 import {
   ORBIT_RADIUS,
@@ -104,8 +107,12 @@ export interface CastleViewOptions {
   onNft?: (landed: boolean) => void;
   /** Something was tapped (for the sound): a building or castle piece, a person or animal, a courier. */
   onTapped?: (what: 'building' | 'person' | 'courier') => void;
-  /** What a townsperson says now (the chain's chatter, world/chatter.ts); none: they keep quiet. */
-  chatter?: (who: Person) => string;
+  /** What a townsperson says now (the chain's chatter, world/chatter.ts; tapped: they were tapped); none: they keep quiet. */
+  chatter?: (who: Person, tapped: boolean) => string;
+  /** Something placed that reacts was tapped (the well, a monument, the wanderer): what it says, if anything. */
+  onTapPlaced?: (p: Placement, obj: THREE.Object3D) => string | null;
+  /** A courier sets out: dress it for its errand (the golden courier, the ghost; scene/wonders.ts). */
+  dressCourier?: (errand: Errand, courier: THREE.Object3D) => void;
   /** A townsperson tapped: who they are and what they just said. */
   onSelectPerson?: (who: Person, line: string | null) => void;
   /** A courier was tapped: its errand (the transaction). */
@@ -118,6 +125,13 @@ export interface CastleViewOptions {
   hour?: number;
   /** The market's weather to start with. */
   weather?: Weather;
+  /** The road's toll by the latest block's base fee (world/gas.ts), to start with. */
+  gas?: GasLevel | null;
+  /** What the town dresses for (world/events.ts), and the airdrop or mint whose crate waits at the gate, to start with. */
+  occasions?: Occasions;
+  drop?: Errand | null;
+  /** The crate at the gate was opened. */
+  onCrateOpened?: (errand: Errand) => void;
   /**
    * Rendering quality: 'high' (sun shadows, the environment light, the full pixel ratio), 'low' (none of
    * those), or 'auto' (high, stepping down by itself if this device cannot keep up). Default 'auto'.
@@ -220,6 +234,8 @@ const FOLLOW_RATE = 3;
 const FOLLOW_ZOOM_TIME = 1.5;
 /** How long a follow waits for its courier to set out (s). */
 const FOLLOW_WAIT = 40;
+/** The toll keeper grumbles about a jammed road at most once in this many seconds. */
+const GRUMBLE_EVERY = 8;
 /** A speech bubble stays this many seconds; someone in the street speaks up every this many (plus up to 3). */
 const BUBBLE_TIME = 4.5;
 /** A townsperson of a building with no brand colour wears this. */
@@ -339,6 +355,8 @@ interface Run {
   handed?: boolean;
   /** An NFT it carries (a framed picture over its head), when it carries one. */
   frame?: THREE.Object3D | null;
+  /** How far back of the barrier it stands in the queue to pay (m, eased). */
+  queued?: number;
 }
 
 export class CastleView {
@@ -384,6 +402,10 @@ export class CastleView {
   readonly #exchangeLabels = el('div', 'exchange-labels');
   /** Birds, grazers, fish, strollers, the toll keeper (life.ts). */
   #life: Life | null = null;
+  /** The town's dressing for its occasions (festive.ts). */
+  #festive: Festive | null = null;
+  #gas: GasLevel | null = null;
+  #grumbledAt = -Infinity;
   /** Whether the far copies are drawn now (null: not decided yet). */
   #farNow: boolean | null = null;
   readonly #resize: ResizeObserver;
@@ -412,6 +434,8 @@ export class CastleView {
   #replayAt = 0;
   #autoReplay = true;
   readonly #extension: SceneExtension | null;
+  /** Placed after the plan (addPlacements). */
+  readonly #added: Placement[] = [];
   readonly #frameFns = new Set<(dt: number) => void>();
   readonly #placedByKey = new Map<string, THREE.Object3D[]>();
   /** When the bell last started ringing, and when a real block last came. */
@@ -499,6 +523,7 @@ export class CastleView {
 
   constructor(opts: CastleViewOptions) {
     this.#opts = opts;
+    this.#gas = opts.gas ?? null;
     const plan = planCastle(opts.world, opts.arranged, opts.layout ?? 1);
     this.#extension = opts.extend?.(plan) ?? null;
     // the camera roams as far as the extension reaches
@@ -817,6 +842,25 @@ export class CastleView {
     return this.#exchange?.send(new THREE.Vector3(from.x, 0, from.z), new THREE.Vector3(to.x, 0, to.z), goods, incoming, delay, size) ?? 0;
   }
 
+  /**
+   * More placed in town once it stands, like its decoration (the secrets' monuments and the
+   * old wanderer, found as the guild's history arrives): each once, kept through build mode.
+   */
+  async addPlacements(list: readonly Placement[]): Promise<void> {
+    const isNew = (p: Placement) => !this.#added.some((a) => a.name === p.name && a.key === p.key);
+    // (not where a game mode's extension stands)
+    const fresh = list.filter((p) => isNew(p) && !this.#extension?.cleared?.(p));
+    if (fresh.length === 0) return;
+    await Promise.all(fresh.map(async (p) => this.#loaded.set(p.name, await this.#library.load(p.name))));
+    const now = fresh.filter(isNew);
+    if (this.#disposed || now.length === 0) return;
+    this.#added.push(...now);
+    // placed now when the town stands, else with the rest of it
+    if (!this.#ready) return;
+    this.#placeEach(now, []);
+    this.#renderer.shadowMap.needsUpdate = true;
+  }
+
   /** Forget the couriers waiting to set out (those out finish their errands). */
   clearQueue(): void {
     this.#queue = [];
@@ -846,6 +890,7 @@ export class CastleView {
     for (const f of this.#ambient) f.dispose();
     for (const r of this.#runs) r.figure.dispose();
     this.#life?.dispose();
+    this.#festive?.dispose();
     this.#exchange?.dispose();
     // Everything shown came from this view's own library (models, standins, the tower's own materials):
     // nothing is shared beyond the view, so all of it goes.
@@ -904,6 +949,7 @@ export class CastleView {
 
     this.#placeLayout();
     this.#makeLife();
+    this.#makeFestive();
     this.#exchange = new Exchange({
       model: (n) => (this.#loaded.get(n) ? this.#make(n) : null),
       add: (o) => this.#scene.add(o),
@@ -1003,8 +1049,14 @@ export class CastleView {
     const tileSet = new Set(tiles);
     // the paths: the plan's road and each building's walkway, laid together once the buildings stand (#layPaths)
     const pathCells: { x: number; z: number }[] = plan.road.map((t) => ({ x: t.x, z: t.z }));
-    for (const p of placements) {
-      if (tileSet.has(p) || p.key === 'road') continue;
+    this.#placeEach(placements.filter((p) => !tileSet.has(p) && p.key !== 'road'), pathCells);
+    this.#placeRest(pathCells);
+  }
+
+  /** Places each as the plan has it: a building on its plot, a castle piece at its tier, decoration once its model is in. */
+  #placeEach(list: readonly Placement[], pathCells: { x: number; z: number }[]): void {
+    const plan = this.#plan;
+    for (const p of list) {
       // the first of the name and its fallbacks that has a model; the last one's standin otherwise
       const options = [p.name, ...(p.fallbacks ?? [])];
       if (p.optional && !options.some((n) => this.#loaded.get(n))) continue; // decoration waits for its model
@@ -1028,6 +1080,7 @@ export class CastleView {
         if (tap) {
           this.#reactions.set(obj, moving);
           obj.userData.reacts = true;
+          if (!('protocol' in p)) obj.userData.placement = p;
           // a skinned model (an animal) plays its tap instead of its idle, as a person does
           obj.traverse((o) => {
             if ((o as THREE.SkinnedMesh).isSkinnedMesh) obj.userData.person = true;
@@ -1114,8 +1167,13 @@ export class CastleView {
         this.#tower = obj;
         this.#towerMaterials = ownMaterials(obj);
       }
+      if (p.tint) paint(obj, 'Tint', p.tint, this.#painted);
     }
+  }
 
+  /** The paths, each building's person, the stranger at the gate, the keep's guards, and the glow of all that is placed. */
+  #placeRest(pathCells: { x: number; z: number }[]): void {
+    const plan = this.#plan;
     this.#layPaths(pathCells, new Set(plan.road.map((t) => `${t.x},${t.z}`)));
 
     // Each building's person waits inside, to come out when a courier calls.
@@ -1131,7 +1189,7 @@ export class CastleView {
       if (brand) paint(npc.object, 'Tint', brand, this.#painted);
       npc.object.userData.reacts = true;
       npc.object.userData.person = true;
-      npc.object.userData.who = { role: ROLE[b.protocol.category] ?? 'Villager', trade: b.protocol.category, building: b.protocol.name } satisfies Person;
+      npc.object.userData.who = { role: ROLE[b.protocol.category] ?? 'Villager', trade: b.protocol.category, building: b.protocol.name, protocolId: b.protocol.id } satisfies Person;
       this.#reactions.set(npc.object, npc);
       this.#layout.add(npc.object);
       this.#figures.push(npc);
@@ -1235,6 +1293,7 @@ export class CastleView {
     this.#plan = planCastle(this.#opts.world, arranged);
     this.#placeLayout();
     this.#makeLife();
+    this.#festive?.relayout(this.#plan);
     this.#applyLight();
     this.#renderer.shadowMap.needsUpdate = true;
     this.setArranging(this.#arranging, null);
@@ -1513,6 +1572,75 @@ export class CastleView {
     );
   }
 
+  /** The town's dressing for its occasions (festive.ts): its models load when an occasion needs them. */
+  #makeFestive(): void {
+    if (this.#extension?.quiet) return;
+    this.#festive = new Festive(
+      {
+        load: async (n) => {
+          const loaded = await this.#library.load(n);
+          this.#loaded.set(n, loaded);
+          return !!loaded;
+        },
+        make: (n) => this.#make(n),
+        clips: (n) => this.#loaded.get(n)?.clips ?? [],
+        add: (o) => this.#scene.add(o),
+        building: (id) => this.#buildingRoots.find((r) => (r.userData.building as BuildingPlacement).protocol.id === id) ?? null,
+        keep: () => this.#keepObj,
+        stalls: () => (this.#placedByKey.get('decor') ?? []).filter((o) => o.name === 'prop.market.stall'),
+        night: () => Number(this.element.dataset.night ?? 0),
+        focus: () => this.#focus,
+        say: (o, line) => this.#bubble(o, said(line), BUBBLE_TIME * 2),
+        element: this.element,
+        opened: (e) => this.#opts.onCrateOpened?.(e),
+      },
+      this.#plan,
+    );
+    this.#festive.set(this.#occasionsNow?.o ?? this.#opts.occasions ?? NO_OCCASIONS, this.#occasionsNow ? this.#occasionsNow.drop : (this.#opts.drop ?? null));
+  }
+
+  /** Occasions set before the scene was ready. */
+  #occasionsNow: { o: Occasions; drop: Errand | null } | null = null;
+
+  /** What the town dresses for now, and the crate waiting at the gate (null: none). */
+  setOccasions(o: Occasions, drop: Errand | null): void {
+    this.#occasionsNow = { o, drop };
+    this.#festive?.set(o, drop);
+  }
+
+  /** The road's toll by the latest block (couriers setting out from now wait as long at the barrier). */
+  setGas(level: GasLevel | null): void {
+    this.#gas = level;
+    this.element.dataset.gas = level ?? '';
+  }
+
+  /** The toll keeper grumbles on a jammed road (now and then, not at every courier). */
+  #grumble(): void {
+    const keeper = this.#life?.keeper;
+    const line = grumble(this.#gas, Math.random());
+    if (!keeper || !line || this.#time - this.#grumbledAt < GRUMBLE_EVERY) return;
+    this.#grumbledAt = this.#time;
+    this.#grumbles++;
+    const bubble = said(line);
+    bubble.classList.add('grumble');
+    this.#bubble(keeper, bubble, BUBBLE_TIME);
+  }
+
+  #grumbles = 0;
+
+  /** Test hook: the occasions dressed, the road's toll, the toll keeper's grumbles so far, the crate's point on the page. */
+  occasions(): { gas: GasLevel | null; tollWait: number; grumbles: number; crateAt: { x: number; z: number } | null; cratePoint: { x: number; y: number } | null } & ReturnType<Festive['state']> {
+    const at = this.#festive?.crateAt;
+    return {
+      gas: this.#gas,
+      tollWait: tollTiming(DEFAULT_TIMING, this.#gas).toll,
+      grumbles: this.#grumbles,
+      crateAt: at ? { x: at.x, z: at.z } : null,
+      cratePoint: at ? this.pagePoint(at.x, at.y, at.z) : null,
+      ...(this.#festive?.state() ?? { occasions: NO_OCCASIONS, planned: {}, shown: {}, snowfall: 0, fireworks: 0, crate: null, shut: 0, toast: null }),
+    };
+  }
+
   /** Places many copies of plain models as instanced meshes (one per mesh of a model): they never move. */
   #placeInstanced(tiles: readonly Placement[]): void {
     const byName = new Map<string, Placement[]>();
@@ -1565,7 +1693,8 @@ export class CastleView {
       const back = !!errand.collateralBack && errand.direction === 'in';
       if (back) route = route.map(({ stop, ...p }) => (stop === 'toll' ? p : { ...p, ...(stop ? { stop } : {}) }));
       // at the furnace the stoker takes the goods and casts them into the fire before the courier goes
-      const timing = building?.protocol.place ? FURNACE_TIMING : DEFAULT_TIMING;
+      // and the toll's wait by the road (world/gas.ts): brisk when quiet, a queue when jammed
+      const timing = tollTiming(building?.protocol.place ? FURNACE_TIMING : DEFAULT_TIMING, this.#gas);
       script = buildCourierScript(route, timing, back ? 'out' : errand.direction, { failed: errand.failed });
     }
     const figure = new Figure(this.#make('courier.base'), this.#loaded.get('courier.base')?.clips ?? [], [TAP_CLIP]);
@@ -1584,6 +1713,7 @@ export class CastleView {
     figure.object.add(target);
     this.#courierTargets.push(target);
     this.#scene.add(figure.object);
+    this.#opts.dressCourier?.(errand, figure.object);
     this.#runs.push({ errand, building, script, start: this.#time, figure, cargo, standin: !this.#loaded.get('courier.base') });
     // a loan ended: the courier takes its collateral from the hall back to the building, held up before it
     if (errand.collateralBack) this.#carryFrame(this.#runs[this.#runs.length - 1]!, errand.collateralBack);
@@ -1780,8 +1910,8 @@ export class CastleView {
   }
 
   /** A speech bubble over someone's head (it replaces their last); the line said, or null when they keep quiet. */
-  #say(obj: THREE.Object3D, who: Person): string | null {
-    const line = this.#opts.chatter?.(who);
+  #say(obj: THREE.Object3D, who: Person, tapped = false): string | null {
+    const line = this.#opts.chatter?.(who, tapped);
     if (!line) return null;
     this.#bubble(obj, said(line), BUBBLE_TIME);
     return line;
@@ -1949,6 +2079,7 @@ export class CastleView {
       ...p.scenery.filter(keep),
       ...p.decor.filter(keep),
       ...(ext?.placements ?? []),
+      ...this.#added,
     ];
   }
 
@@ -2300,6 +2431,11 @@ export class CastleView {
       this.#opts.onSelectErrand?.(errand);
       return;
     }
+    // the airdrop's crate at the gate: it opens
+    if (this.#festive?.tap(this.#raycaster)) {
+      this.#opts.onTapped?.('building');
+      return;
+    }
     // a grazer, a stroller or the toll keeper
     const lifeHit = this.#life ? this.#raycaster.intersectObjects(this.#life.tappable, true)[0] : undefined;
     if (lifeHit) {
@@ -2309,7 +2445,7 @@ export class CastleView {
         this.#life!.figureOf(l)!.react(TAP_CLIP, false);
         this.#opts.onTapped?.('person');
         const who = this.#life!.personOf(l);
-        if (who) this.#opts.onSelectPerson?.(who, this.#say(l, who));
+        if (who) this.#opts.onSelectPerson?.(who, this.#say(l, who, true));
         return;
       }
     }
@@ -2327,7 +2463,10 @@ export class CastleView {
       if (this.#reactions.get(o)?.react(TAP_CLIP, !o.userData.person) && !o.userData.person) this.#shadowsMoveUntil = this.#time + 2;
       this.#opts.onTapped?.(o.userData.person ? 'person' : 'building');
       const who = o.userData.who as Person | undefined;
-      if (who) this.#opts.onSelectPerson?.(who, this.#say(o, who));
+      if (who) this.#opts.onSelectPerson?.(who, this.#say(o, who, true));
+      const placed = o.userData.placement as Placement | undefined;
+      const words = placed ? this.#opts.onTapPlaced?.(placed, o) : null;
+      if (words) this.#bubble(o, said(words), BUBBLE_TIME);
       if (o.userData.walletIndex !== undefined) this.#opts.onSelectWallet?.(o.userData.walletIndex as number);
       else if (o.userData.keep) this.#opts.onSelectKeep?.();
       return;
@@ -2495,6 +2634,7 @@ export class CastleView {
   #animate(dt: number): void {
     const now = this.#time;
     this.#life?.update(dt);
+    this.#festive?.update(dt);
     this.#exchange?.update(dt);
     this.#chatter(dt);
     this.#followHover();
@@ -2531,6 +2671,7 @@ export class CastleView {
     let refused = false;
     const npcState = new Map<string, NpcClip>();
     let stranger: { clip: NpcClip; errand: Errand } | null = null;
+    let waiting = 0;
     for (const run of [...this.#runs]) {
       const t = now - run.start;
       if (t >= run.script.duration) {
@@ -2542,6 +2683,7 @@ export class CastleView {
         run.tolled = true;
         this.#opts.onToll?.(run.errand);
         this.#life?.toll(false);
+        this.#grumble();
         // the toll: a few coins to the toll keeper (or the booth)
         const keeper = this.#life?.keeperAt ?? new THREE.Vector3(this.#plan.tollbooth.x, 0, this.#plan.tollbooth.z);
         this.#exchange?.send(run.figure.object.position, keeper, [{ symbol: '', name: 'toll', quantity: 0, usd: run.errand.feeUsd ?? 0.5, isNft: false }], false);
@@ -2550,6 +2692,10 @@ export class CastleView {
         run.handed = true;
         this.#handOver(run);
       }
+      // waiting to pay behind another courier: a step further back each, in a queue
+      const ahead = s.clip === 'toll' ? waiting++ : 0;
+      run.queued = (run.queued ?? 0) + (-ahead * QUEUE_GAP - (run.queued ?? 0)) * Math.min(1, dt * 4);
+      s.z += run.queued;
       states.push(s);
       run.figure.object.position.set(s.x, run.script.height, s.z);
       refused ||= s.refused;

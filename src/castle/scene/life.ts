@@ -47,6 +47,8 @@ export interface Person {
   role: string;
   trade: string;
   building: string | null;
+  /** Their building's protocol, when they have one (for its lore). */
+  protocolId?: string;
 }
 
 /** Each trade's person (the models' people). */
@@ -152,7 +154,7 @@ export class Life {
       if (!name) continue;
       const avenue = i % 2 ? { x0: -1.2, x1: 1.2, z0: 2, z1: plan.avenue.plazaStart - 1 } : { x0: -1.2, x1: 1.2, z0: plan.avenue.plazaEnd + 1, z1: plan.avenue.end - 2 };
       // in their building's colour (as its door person), a villager in plain blue
-      this.#wanderer(name, avenue, 1.1, { role: ROLE[trade] ?? 'Villager', trade: trade === 'base' ? 'other' : trade, building: b?.protocol.name ?? null }, b ? `brand:${b.protocol.id}` : VILLAGER);
+      this.#wanderer(name, avenue, 1.1, { role: ROLE[trade] ?? 'Villager', trade: trade === 'base' ? 'other' : trade, building: b?.protocol.name ?? null, ...(b ? { protocolId: b.protocol.id } : {}) }, b ? `brand:${b.protocol.id}` : VILLAGER);
     }
     // the toll keeper at the booth's window, facing the road
     if (host.has('person.tollkeeper')) {
@@ -196,6 +198,11 @@ export class Life {
   /** The toll keeper takes a courier's toll, or turns a failed one back. */
   toll(failed: boolean): void {
     this.#tollkeeper?.react(failed ? 'refuse' : 'toll', false);
+  }
+
+  /** The toll keeper (his bubble grumbles on a jammed road), null without one. */
+  get keeper(): THREE.Object3D | null {
+    return this.#tollkeeper?.object ?? null;
   }
 
   /** Where the toll keeper stands (coins for the toll go to him), null without one. */

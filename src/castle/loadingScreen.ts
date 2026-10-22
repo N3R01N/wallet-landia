@@ -71,6 +71,9 @@ export class LoadingScreen {
   #timer: ReturnType<typeof setTimeout> | null = null;
   #shown: LoadPhase | 'done' | null = null;
   #gone = false;
+  /** Off the page; and what waits for that. */
+  #left = false;
+  readonly #afterGone: (() => void)[] = [];
   /** Every phase shown, in order (for tests). */
   readonly seen: LoadPhase[] = [];
 
@@ -96,6 +99,12 @@ export class LoadingScreen {
     if (this.#gone) return;
     this.#schedule.report(phase, performance.now());
     this.#update();
+  }
+
+  /** Calls `fn` once the screen has faded away (at once if it has). */
+  afterGone(fn: () => void): void {
+    if (this.#left) fn();
+    else this.#afterGone.push(fn);
   }
 
   /** A line under the phase (e.g. "Loading wallet 2 of 5…"); '' clears it. */
@@ -139,6 +148,10 @@ export class LoadingScreen {
     this.element.setAttribute('aria-busy', 'false');
     this.element.dataset.phase = 'done';
     this.element.classList.add('leaving');
-    setTimeout(() => this.element.remove(), 400);
+    setTimeout(() => {
+      this.element.remove();
+      this.#left = true;
+      for (const fn of this.#afterGone.splice(0)) fn();
+    }, 400);
   }
 }

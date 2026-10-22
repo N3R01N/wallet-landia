@@ -1151,6 +1151,100 @@ h1 {
   }
 }
 
+/* ---------- while you were away (awayCard.ts) and the castle growing (scene/growth.ts) ---------- */
+
+.away-card {
+  position: absolute;
+  left: 50%;
+  /* over the camera's buttons */
+  bottom: 64px;
+  z-index: 4;
+  transform: translateX(-50%);
+  width: min(360px, calc(100% - 32px));
+  padding: 14px 16px 12px;
+  background: var(--parchment);
+  color: var(--ink);
+  border: 3px solid #6b4a2b;
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px #4a3220, 6px 8px 0 rgba(0, 0, 0, 0.3);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.away-card h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.away-card p {
+  margin: 0 0 4px;
+}
+
+.away-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.away-card .away-watch {
+  background: var(--gold);
+  color: #2a2118;
+  font-weight: bold;
+}
+
+.away-card .away-later {
+  background: transparent;
+  color: var(--ink);
+}
+
+.growth-toasts {
+  position: absolute;
+  left: 50%;
+  top: 56px;
+  z-index: 4;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 32px);
+  pointer-events: none;
+}
+
+.growth-toast {
+  max-width: 100%;
+  padding: 8px 14px;
+  border: 2px solid var(--tier, #c9a24a);
+  border-radius: 999px;
+  background: rgba(43, 36, 51, 0.9);
+  color: #f3ead6;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  animation: growth-toast 4s ease forwards;
+}
+
+@keyframes growth-toast {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  10%,
+  85% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .growth-toast {
+    animation: none;
+  }
+}
+
 /* ---------- build mode ---------- */
 
 .arrange-open {
@@ -1848,6 +1942,47 @@ h1 {
   border: 6px solid transparent;
   border-bottom: 0;
   border-top-color: #fffaf0;
+}
+
+/* the toll keeper on a jammed road (castleView #grumble) */
+.speech-bubble.grumble {
+  background: #f6e3c8;
+}
+
+.speech-bubble.grumble::after {
+  border-top-color: #f6e3c8;
+}
+
+/* the guild's day (festive.ts #celebrate): a toast at the top of the scene */
+.castle-view .occasion-toast {
+  position: absolute;
+  left: 50%;
+  top: 56px;
+  transform: translateX(-50%);
+  z-index: 3;
+  max-width: calc(100% - 32px);
+  padding: 8px 16px;
+  border: 1px solid #c9a24a;
+  border-radius: 12px;
+  background: rgba(43, 36, 51, 0.88);
+  color: #f3ead6;
+  font-weight: 700;
+  text-align: center;
+  pointer-events: none;
+  animation: occasion-in 0.4s ease-out;
+}
+
+@keyframes occasion-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .castle-view .occasion-toast {
+    animation: none;
+  }
 }
 
 /* a keep guard's invitation to a game mode (castleView #invite): words, a button to play and one to decline */

@@ -166,23 +166,30 @@ export function nextPollDelay(o: { lastBlockMs: number | null; now: number; miss
   return Math.min(SLOT_MS + 2_000, Math.max(2_000, due));
 }
 
+/** How often a hidden tab asks, when it is asked to keep watching (`background`): browsers hold its timers to about once a minute anyway. */
+const BACKGROUND_POLL_MS = 60_000;
+
 /**
  * Follow a chain's blocks. By default Ethereum's, through the chosen node, at
  * its 12 s rhythm; `chain` + `url` + `every` follow a province's instead.
+ * A hidden tab asks nothing, unless `background` says to keep watching
+ * (notifications on): then about once a minute.
  */
-export function startHeartbeat(onBeat: (beat: BlockBeat) => void, opts: { chain?: string; url?: string; every?: number } = {}): () => void {
+export function startHeartbeat(onBeat: (beat: BlockBeat) => void, opts: { chain?: string; url?: string; every?: number; background?: () => boolean } = {}): () => void {
   const chain = opts.chain ?? 'ethereum';
   let last = -1;
   let lastBlockMs: number | null = null;
   let misses = 0;
   let failures = 0;
+  let lastAsk = 0;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const tick = async (): Promise<void> => {
     if (stopped) return;
     try {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' || (opts.background?.() && Date.now() - lastAsk >= BACKGROUND_POLL_MS)) {
+        lastAsk = Date.now();
         const body = (await rpcPost(opts.url ?? rpcUrl, { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['latest', false] })) as { result?: RpcBlock } | null;
         // stopped while it was asking (a realm switch): no last beat for the old town
         if (stopped) return;
@@ -208,7 +215,7 @@ export function startHeartbeat(onBeat: (beat: BlockBeat) => void, opts: { chain?
       failures++;
     }
     if (stopped) return;
-    // a hidden tab asks nothing; look again every so often to see if it is back
+    // a hidden tab asks nothing (or, watching, once a minute); look again every so often to see if it is back
     const delay = document.visibilityState === 'visible' ? nextPollDelay({ lastBlockMs, now: Date.now(), misses, failures, ...(opts.every !== undefined ? { every: opts.every } : {}) }) : 5_000;
     timer = setTimeout(() => void tick(), delay);
   };

@@ -19,8 +19,11 @@ export interface FixtureSet {
   wallets: RawWallet[];
 }
 
+/** On the dev server, `?demo` shows the synthetic demo even where captures exist (tests that rely on the demo's own data). */
+const demoAsked = import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).has('demo');
+
 export async function loadFixtures(): Promise<FixtureSet> {
-  const real = Object.values(captured);
+  const real = demoAsked ? [] : Object.values(captured);
   const loaders = real.length > 0 ? real : Object.values(demo);
   const wallets = await Promise.all(loaders.map((load) => load()));
   wallets.sort((a, b) => a.address.localeCompare(b.address));

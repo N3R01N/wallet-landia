@@ -17,6 +17,7 @@
 
 import type { Guild, Hero, Journey, Verb } from './model.js';
 import { ALL_MEDALS, medalRules, walkSeen, type Medal } from './feats.js';
+import { historyMoments, pastOfJourney, type MomentId } from './moments.js';
 
 /** Counts at which a repeatable badge reaches bronze, silver, gold. */
 export const BADGE_TIERS = [1, 10, 100] as const;
@@ -70,6 +71,8 @@ export interface PlayerProfile {
   stats: PlayerStats;
   /** Where the XP came from, for the sheet. */
   parts: { label: string; xp: number }[];
+  /** Historic moments of Ethereum the guild took part in (moments.ts): each a monument in town. */
+  moments?: MomentId[];
 }
 
 /** XP needed to reach a level (level 1 at 0). A gentle curve: early levels come quickly, later ones take years. */
@@ -155,6 +158,7 @@ export function playerProfile(guild: Guild, remembered: ReadonlyMap<string, Prov
     badges,
     parts,
     stats: { wallets: guild.heroes.length, signed: signed.length, received: received.length, firstAt, lastAt, chains, protocols: protocols.size, kinds: byVerb.size, activeMonths: months.size },
+    moments: historyMoments(journeys.map(pastOfJourney)),
   };
 }
 

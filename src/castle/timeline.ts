@@ -18,6 +18,8 @@ const MAX_OUT = 10;
 export interface Timeline {
   /** Opens the replay at this transaction: its courier sets out now, then the rest play on from it. */
   startAt(errand: Errand): void;
+  /** Replays just these transactions (those that came while you were away), at this speed. */
+  playThese(errands: readonly Errand[], speed: number): void;
 }
 
 export interface TimelineHost {
@@ -71,9 +73,9 @@ export function attachTimeline(view: CastleView, errands: readonly Errand[], hos
     show();
   };
 
-  /** The replay over the chosen range, from its first transaction (or a given one). */
-  const begin = (from?: Errand) => {
-    seq = new ReplaySequence(inRange(errands, replayRange(rangeId).range));
+  /** The replay over the chosen range (or just these transactions), from its first one (or a given one). */
+  const begin = (from?: Errand, only?: readonly Errand[]) => {
+    seq = new ReplaySequence(inRange(only ?? errands, only ? { kind: 'all' } : replayRange(rangeId).range));
     seq.speed = Number(speed.value) || 1;
     if (from) {
       let i = seq.items.indexOf(from);
@@ -131,6 +133,10 @@ export function attachTimeline(view: CastleView, errands: readonly Errand[], hos
   return {
     startAt(errand) {
       begin(errand);
+    },
+    playThese(list, pace) {
+      speed.value = String(REPLAY_SPEEDS.find((s) => s >= pace) ?? REPLAY_SPEEDS[REPLAY_SPEEDS.length - 1]);
+      begin(undefined, list);
     },
   };
 }
