@@ -93,6 +93,6 @@ Dev switches for looking at them: `?market=boom|crash`, `?date=YYYY-MM-DD`, `?ho
 
 ### Open
 
-- **December:** the snowfall works, but landmark roofs (in `Tint`) stay coloured and the ground patches read as stray clouds. Better: `snow` points on the buildings' roofs (a small asset batch) and a winter look for the grass.
+- **December:** done with batch 29 (a snow file on every building). Steep roofs (domes, sails) stay bare; the grass keeps its summer green.
 - **Background check (installed app):** try it on a production build installed in Chrome (DevTools → Application → Periodic Background Sync → `wl-watch`).
 - **Followed wallets** are only watched while you visit them, so the shooting star shows only then.
