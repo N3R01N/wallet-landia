@@ -5,6 +5,10 @@ import { defineConfig } from '@playwright/test';
  * taps on it, the shell's layouts, the pages' files). WebGL runs on
  * SwiftShader so it works headless.
  */
+/** The dev server's port for the tests: E2E_PORT lets runs in several worktrees side by side each have their own. */
+const PORT = Number(process.env['E2E_PORT'] ?? 5198);
+export const BASE_URL = `http://localhost:${PORT}`;
+
 /** Heavy specs (picture captures and the like) run before a commit only: name them *.slow.spec.ts. */
 const SLOW = /\.slow\.spec\.ts$/;
 
@@ -25,7 +29,7 @@ export const TEST_RENDERING = [
 /** …and the tour already seen (it would cover the page). */
 const SEEN_TOUR = {
   cookies: [],
-  origins: [{ origin: 'http://localhost:5198', localStorage: [{ name: 'wallet-landia-v4/castle/tour-seen', value: '1' }, ...TEST_RENDERING] }],
+  origins: [{ origin: BASE_URL, localStorage: [{ name: 'wallet-landia-v4/castle/tour-seen', value: '1' }, ...TEST_RENDERING] }],
 };
 
 export default defineConfig({
@@ -35,7 +39,7 @@ export default defineConfig({
   workers: 2,
   expect: { timeout: 15_000 },
   use: {
-    baseURL: 'http://localhost:5198',
+    baseURL: BASE_URL,
     viewport: { width: 1400, height: 860 },
     launchOptions: { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
   },
@@ -46,8 +50,8 @@ export default defineConfig({
     { name: 'slow', testMatch: SLOW, use: { storageState: SEEN_TOUR } },
   ],
   webServer: {
-    command: 'npx vite --port 5198 --strictPort',
-    url: 'http://localhost:5198',
+    command: `npx vite --port ${PORT} --strictPort`,
+    url: BASE_URL,
     reuseExistingServer: false,
   },
 });
