@@ -504,6 +504,24 @@ interface BuildCtx {
   names: Map<string, string>;
   /** Contract → dApp, learned from transactions where Zerion did name the dApp. */
   learned: Map<string, { id: string; name: string; iconUrl: string | undefined }>;
+  /** Addresses a story names (a famous castle's): each is a place, people included. */
+  labels?: ReadonlyMap<string, PlaceLabel>;
+}
+
+/** The id prefix of the places a story names (famous.ts parseFamousStory). */
+export const STORY_PLACE = 'story:';
+
+/** A named address: where it stands in town. Several addresses may share an id (one protocol, many contracts). */
+export interface PlaceLabel {
+  id: string;
+  name: string;
+  category: ProtocolCategory;
+}
+
+/** The labelled place for an address, or null. */
+function labelled(address: string, ctx: BuildCtx): Protocol | null {
+  const l = ctx.labels?.get(address);
+  return l === undefined ? null : ctx.book.fixed(l.id, l.name, l.category);
 }
 
 /**
@@ -531,6 +549,8 @@ function learnContracts(raws: readonly RawWallet[]): BuildCtx['learned'] {
 function contractPlace(address: string, raw: TransactionResource, ctx: BuildCtx): Protocol | null {
   const addr = address.toLowerCase();
   if (addr === '' || ctx.guild.has(addr)) return null;
+  const label = labelled(addr, ctx);
+  if (label !== null) return label;
   const known = KNOWN_CONTRACTS[addr];
   if (known !== undefined) return ctx.book.fixed(known.id, known.name, known.category);
   const learned = ctx.learned.get(addr);
@@ -570,7 +590,8 @@ function mapJourney(raw: TransactionResource, hero: Hero, ctx: BuildCtx): Journe
 
   const verb = refineVerb(a.operation_type, {
     wallet,
-    category: (named ?? place)?.category ?? null,
+    // a place a story names is where the money came from or went to, not what was done there (a receive from a bridge is no crossing)
+    category: named === null && place?.id.startsWith(STORY_PLACE) ? null : ((named ?? place)?.category ?? null),
     initiated,
     ins,
     outs,
@@ -658,6 +679,8 @@ function resolvePlace(raw: TransactionResource, named: Protocol | null, wallet: 
       if (called !== '' && called !== wallet && !internal && !PASS_THROUGH.has(called) && !ctx.guild.has(called) && !parties.has(called) && !tokens.has(called)) {
         place = contractPlace(called, raw, ctx);
       }
+      // a person the story names is a place too (the multisig the money went back to)
+      place ??= [...parties].reduce<Protocol | null>((found, x) => found ?? (x !== wallet ? labelled(x, ctx) : null), null);
     }
   }
   return { place, other, transferish };
@@ -848,6 +871,8 @@ export function suggestClass(counts: Partial<Record<Verb, number>>): HeroClass {
 export interface GuildOptions {
   /** Primary ENS names; a hero with one is called by it. */
   names?: ReadonlyMap<string, string>;
+  /** Named addresses (a famous castle's story): they become places in town. */
+  labels?: ReadonlyMap<string, PlaceLabel>;
 }
 
 export function buildGuild(raws: readonly RawWallet[], window: HistoryWindow = DEFAULT_WINDOW, options: GuildOptions = {}): Guild {
@@ -903,7 +928,7 @@ export function buildGuild(raws: readonly RawWallet[], window: HistoryWindow = D
       .sort((x, y) => Date.parse(y.attributes.mined_at) - Date.parse(x.attributes.mined_at))
       .slice(0, perHero);
     for (const tx of recent) {
-      const j = mapJourney(tx, hero, { book, guild, names, learned });
+      const j = mapJourney(tx, hero, { book, guild, names, learned, ...(options.labels ? { labels: options.labels } : {}) });
       if (j === null) continue;
       hero.lastActiveAt = Math.max(hero.lastActiveAt ?? 0, j.time);
       hero.verbCounts[j.verb] = (hero.verbCounts[j.verb] ?? 0) + 1;

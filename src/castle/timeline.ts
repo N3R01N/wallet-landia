@@ -16,16 +16,20 @@ const TICK_MS = 200;
 const MAX_OUT = 10;
 
 export interface Timeline {
-  /** Opens the replay at this transaction: its courier sets out now, then the rest play on from it. */
-  startAt(errand: Errand): void;
+  /** Opens the replay at this transaction: its courier sets out now, then the rest play on from it (at this speed, else the bar's). */
+  startAt(errand: Errand, pace?: number): void;
   /** Replays just these transactions (those that came while you were away), at this speed. */
   playThese(errands: readonly Errand[], speed: number): void;
+  /** Stops where it is (the bar stays, ▶ goes on). */
+  pause(): void;
 }
 
 export interface TimelineHost {
   /** What to replay (a REPLAY_RANGES id), and keeping a new choice. */
   range: string;
   setRange(id: string): void;
+  /** Each transaction the replay reaches, as its courier sets out (a story's beats and messages). */
+  onReach?(errand: Errand): void;
 }
 
 /** Adds the "⏱ Replay" button and its bar to a scene view. */
@@ -69,7 +73,15 @@ export function attachTimeline(view: CastleView, errands: readonly Errand[], hos
     // a full town waits: the next sets out when one is home
     if (view.state().couriers >= MAX_OUT) return show();
     const reached = seq.advance(TICK_MS / 1000);
-    for (const e of reached) view.sendNow(e);
+    for (const e of reached) {
+      view.sendNow(e);
+      host.onReach?.(e);
+      // the host paused here (a story's beat): the rest wait, setting out next
+      if (seq && !seq.playing) {
+        seq.seek(seq.items.indexOf(e) + 1);
+        break;
+      }
+    }
     show();
   };
 
@@ -131,8 +143,14 @@ export function attachTimeline(view: CastleView, errands: readonly Errand[], hos
 
   view.element.append(open, bar);
   return {
-    startAt(errand) {
+    startAt(errand, pace) {
+      if (pace !== undefined) speed.value = String(REPLAY_SPEEDS.find((s) => s >= pace) ?? REPLAY_SPEEDS[REPLAY_SPEEDS.length - 1]);
       begin(errand);
+    },
+    pause() {
+      if (!seq) return;
+      seq.playing = false;
+      show();
     },
     playThese(list, pace) {
       speed.value = String(REPLAY_SPEEDS.find((s) => s >= pace) ?? REPLAY_SPEEDS[REPLAY_SPEEDS.length - 1]);

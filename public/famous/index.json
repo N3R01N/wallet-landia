@@ -25,6 +25,7 @@
     "address": "0xc8a65fadf0e0ddaf421f28feab69bf6e2e589963",
     "name": "Poly Network exploiter",
     "about": "The address behind the 2021 Poly Network hack, about $610M taken and later returned",
-    "capturedAt": 1792756211859
+    "capturedAt": 1792758471821,
+    "story": true
   }
 ]

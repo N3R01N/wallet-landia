@@ -21,6 +21,114 @@
     "slug": "poly-exploiter",
     "who": "0xC8a65Fadf0e0dDAf421F28FEAb69Bf6E2E589963",
     "name": "Poly Network exploiter",
-    "about": "The address behind the 2021 Poly Network hack, about $610M taken and later returned"
+    "about": "The address behind the 2021 Poly Network hack, about $610M taken and later returned",
+    "history": "full",
+    "story": {
+      "labels": [
+        {
+          "address": "0x838bf9e95cb12dd76a54c9f9d2e3082eaf928270",
+          "id": "poly-network",
+          "name": "Poly Network",
+          "category": "bridge"
+        },
+        {
+          "address": "0x250e76987d838a75310c34bf422ea9f1ac4cc906",
+          "id": "poly-network",
+          "name": "Poly Network",
+          "category": "bridge"
+        },
+        {
+          "address": "0x71fb9db587f6d47ac8192cd76110e05b8fd2142f",
+          "id": "poly-multisig",
+          "name": "Poly Network's multisig",
+          "category": "governance"
+        },
+        {
+          "address": "0x34d6b21d7b773225a102b382815e00ad876e23c2",
+          "id": "shared-multisig",
+          "name": "The shared multisig (Poly and the hacker)",
+          "category": "governance"
+        },
+        {
+          "address": "0x0e860f44d73f9fdbaf5e9b19afc554bf3c8e8a57",
+          "id": "dear-poly",
+          "name": "The address he wrote to as \"Dear Poly\"",
+          "category": "unknown"
+        },
+        {
+          "address": "0xf8b5c45c6388c9ee12546061786026aaeaa4b682",
+          "id": "tipped-stranger",
+          "name": "The stranger who got 13.37 ETH",
+          "category": "unknown"
+        }
+      ],
+      "beats": [
+        {
+          "hash": "0x8a329e82c8c2dac82e2192a074907945b4ff6939b6947f32eb2b55fa71ebf905",
+          "title": "The first coins",
+          "text": "9 August 2021. A small 0.47 ETH arrives at a fresh address: enough to pay for what comes next."
+        },
+        {
+          "hash": "0xb1f70464bd95b774c6ce60fc706eb5f9e35cb5f06e6cfe7c17dcda46ffd59581",
+          "title": "The trick",
+          "text": "10 August, 09:48. A single call to Poly Network's cross-chain manager makes it believe this address may move the bridge's funds."
+        },
+        {
+          "hash": "0xad7a2c70c958fcd3effbf374d0acf3774a9257577625ae4c838e24b0de17602a",
+          "title": "The vault empties",
+          "text": "In 36 minutes Poly's vault pays out ten times: $96.4M in USDC, $82M in WETH, $47.5M in WBTC, $33.4M in USDT, $9M in ETH, and some SHIB, UNI, DAI, renBTC and FEI. About $273.6M on Ethereum alone.",
+          "effect": "hack",
+          "place": "poly-network"
+        },
+        {
+          "hash": "0xdf3afc47c7914e06ddb1be19afcd769e558111d353e55273a62c4a96e6a6090f",
+          "title": "A tip of 13.37 ETH",
+          "text": "He sends 13.37 ETH to a stranger. Later he explains: \"I feeled the warmth from the Ethereum community.\""
+        },
+        {
+          "hash": "0x2465d4cf19d3bf557ea5eec8d57b1ad75c8378e68ba242139e7e186bf463c1a1",
+          "title": "Away from the coins that can be frozen",
+          "text": "USDC and USDT can be frozen by the companies behind them. He puts the $96.4M of USDC into Curve's pool and takes out $96.9M of DAI, which nobody can freeze. The USDT is frozen and never moves again. \"How about unlocking my USDT after returning enough USDC?\"",
+          "effect": "freeze"
+        },
+        {
+          "hash": "0x3a09c98f99edd9601ed017ff269652fd80c7e9aedcea57126990031128851043",
+          "title": "He starts talking",
+          "text": "Messages written into his own transactions: \"Wonder why Tornado? Will miner stop me?\" Forty minutes later: \"It would have been a billion hack… now considering returning some tokens.\" Strangers write back by the hundred."
+        },
+        {
+          "hash": "0x7b6009ea08c868d7c5c336bf1bc30c33b87a0eedd59dac8c26e6a8551b20b68a",
+          "title": "The turn",
+          "text": "11 August, 03:48. \"Ready to return the fund! … I need a secured multisig wallet from you.\""
+        },
+        {
+          "hash": "0xd3327a266add4ec655ef5fe00fd042bdcdf1b886c26af3b5dd21b2e4ec9bde49",
+          "title": "The first returns",
+          "text": "FEI, SHIB, renBTC and UNI, about $4.6M, go back to Poly's multisig. In between, his Q&A, parts one to four: \"Why hacking? For fun :)\""
+        },
+        {
+          "hash": "0xf91e43dceeb80cd2d5fbf2c5cf94ea364929515bbac29f57270163c3de812271",
+          "title": "The big return",
+          "text": "12 August. \"Just confirmed the shared multisig wallet with the Poly!!!\" Within two hours $46.1M in WBTC, $95.4M in DAI and 28,953 ETH ($88.3M) go to a multisig he shares with Poly. He publishes Poly's $500k bounty offer and says he will send everything back instead.",
+          "effect": "repair",
+          "place": "poly-network"
+        },
+        {
+          "hash": "0xf34ee3551be7be57df6643d4ec7e4bdf9fd047d925c3c32a74e64e7428e5f8a9",
+          "title": "The diary",
+          "text": "For ten more days he writes: Q&A parts five to eight, lessons for \"DeFi noobs\", notes to the press. His USDT stays frozen."
+        },
+        {
+          "hash": "0x675d40b6f04f145c3981a062aeaee072c61db76c5d93ae2926f78ebffda5b882",
+          "title": "The end",
+          "text": "23 August. \"Dear Poly team, keep calm and this is the happy ending!\""
+        },
+        {
+          "hash": "0xe591cd829bd2746d69c783d0dd41fcc2e3f5b49dc76f41e48ee51cb1e0c9f3be",
+          "title": "An empty castle",
+          "text": "About $3,500 is left, and four years of junk tokens and NFTs that strangers keep sending. On Ethereum about $273.6M came in, about $234.5M went back, $33.4M of USDT stayed frozen, and 13.37 ETH went to a stranger."
+        }
+      ]
+    }
   }
 ]

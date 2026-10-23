@@ -605,6 +605,14 @@ const LIFE: AssetSpec[] = [
   { name: 'person.npc.wanderer', kind: 'model', required: false, size: [0.6, 0.4, 1.75], clips: ['idle', 'tap', 'emerge'], standin: { shape: 'capsule', color: '#5a4a3a', offset: [0, 0.85, 0] }, note: 'The old wanderer by the ruin (a secret): shows for a guild whose first transaction is over five years old.' },
   { name: 'prop.monument', kind: 'model', required: false, size: [1.2, 1.2, 2.2], clips: ['idle', 'tap'], standin: { shape: 'box', color: '#9a9284' }, note: 'A monument on the plaza for a moment of Ethereum’s history the guild took part in: Logo plaque, Tint banner.' },
   { name: 'fx.shooting.star', kind: 'model', required: false, size: [0.5, 8, 0.5], clips: ['pop'], standin: { shape: 'sphere', color: '#fff2b0' }, note: 'A shooting star across the sky when a followed wallet moves: the star leads along +Z, its tail along −Z; ends invisible.' },
+  // batch 30 (docs/batches/30-the-hack.md): a famous castle's story, the robbed building and the messages
+  { name: 'fx.blast', kind: 'model', required: false, size: [4, 4, 4], clips: ['pop'], standin: { shape: 'sphere', color: '#f08a2a' }, note: 'A building is robbed: flash, fireball turning to smoke, shockwave ring, debris; ends invisible.' },
+  { name: 'fx.fire', kind: 'model', required: false, size: [1, 1, 1.4], clips: ['idle'], standin: { shape: 'cone', color: '#f08a2a' }, note: 'Flames on a roof, a seamless loop; set on a ruin file’s fire.N points.' },
+  { name: 'fx.smoke.column', kind: 'model', required: false, size: [2, 2, 6], clips: ['idle'], standin: { shape: 'cylinder', color: '#5a5a5a' }, note: 'A leaning column of dark smoke, a seamless loop; set on a ruin file’s smoke point.' },
+  { name: 'prop.rubble', kind: 'model', required: false, size: [2.2, 2.2, 0.6], standin: { shape: 'box', color: '#7a6a5a' }, note: 'Rubble heaps, nodes rubble.s / rubble.m / rubble.l, at a robbed building’s foot.' },
+  { name: 'fx.scorch', kind: 'model', required: false, size: [3, 3, 0.02], standin: { shape: 'cylinder', color: '#2a2622' }, note: 'A soot mark on the ground under a robbed building.' },
+  { name: 'fx.ice', kind: 'model', required: false, size: [0.32, 0.32, 0.2], standin: { shape: 'box', color: '#cfe6ff' }, note: 'A block of ice with a coin in it: tokens their issuer froze.' },
+  { name: 'prop.notice.board', kind: 'model', required: false, size: [2, 0.6, 2.2], clips: ['idle', 'pin'], standin: { shape: 'box', color: '#8a6a4a' }, note: 'The notice board at the gate: note.0–note.7 (scale 0 at rest) pinned as a famous castle’s messages arrive; pin taps a note on.' },
   // batch 15 (docs/batches/15-life.md)
   { name: 'person.tollkeeper', kind: 'model', required: false, size: [0.6, 0.4, 1.75], clips: ['idle', 'toll', 'tap', 'refuse'], standin: { shape: 'capsule', color: '#8a6a4a', offset: [0, 0.85, 0] }, note: 'The toll keeper at the booth.' },
   { name: 'animal.bird', kind: 'model', required: false, size: [0.35, 0.3, 0.15], clips: ['fly', 'glide', 'idle'], standin: { shape: 'sphere', color: '#f5f2ea' }, note: 'A bird; flocks over the town.' },
@@ -680,7 +688,13 @@ export function tierFallbacks(name: string): string[] {
 
 export function findAsset(name: string): AssetSpec | undefined {
   const own = ASSETS.find((a) => a.name === name);
-  if (own || !name.endsWith(SNOW)) return own;
+  if (own) return own;
+  if (name.endsWith(RUIN)) {
+    // a robbed building's damage (docs/batches/30-the-hack.md): `<asset>.ruin`, laid on it like the snow
+    const base = ASSETS.find((a) => a.name === name.slice(0, -RUIN.length));
+    return base?.kind === 'model' ? { name, kind: 'model', required: false, size: base.size, standin: base.standin, note: `The damage on ${base.name} when it is robbed.` } : undefined;
+  }
+  if (!name.endsWith(SNOW)) return undefined;
   // a piece's winter snow (docs/batches/29-winter.md): `<asset>.snow`, its own file beside the asset's, laid on it in December
   const base = ASSETS.find((a) => a.name === name.slice(0, -SNOW.length));
   return base?.kind === 'model' ? { name, kind: 'model', required: false, size: base.size, standin: base.standin, note: `The snow on ${base.name}'s roofs in winter.` } : undefined;
@@ -688,6 +702,8 @@ export function findAsset(name: string): AssetSpec | undefined {
 
 /** The suffix of a piece's winter snow file. */
 export const SNOW = '.snow';
+/** The suffix of a robbed building's damage file. */
+export const RUIN = '.ruin';
 
 /** The theme's folder under public/, where the design agent's files go (docs/ASSET_SPEC.md §1.9). */
 export const THEME_DIR = 'themes/medieval-castle-v2';

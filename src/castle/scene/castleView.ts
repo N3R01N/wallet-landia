@@ -29,6 +29,7 @@ import { lightAt, type Weather } from '../world/sky.js';
 import { QUEUE_GAP, grumble, tollTiming, type GasLevel } from '../world/gas.js';
 import { NO_OCCASIONS, type Occasions } from '../world/events.js';
 import { Festive } from './festive.js';
+import { StoryScene } from './storyScene.js';
 import { logoPath } from '../world/logos.js';
 import {
   ORBIT_RADIUS,
@@ -289,6 +290,9 @@ const TAP_CLIP = 'tap';
 /** The furnace's roar as goods go into its fire, and its stoker's throw (docs/batches/25-ember-furnace.md). */
 const ROAR_CLIP = 'roar';
 /** The pieces that may have a winter snow file (docs/batches/29-winter.md): buildings, the castle's and the town's own, the stalls. */
+/** The story's notice board on the plaza (from the tower): in the monuments' row past the well, before them, facing the avenue. */
+const BOARD_DX = 7.5;
+const BOARD_DZ = -8;
 const SNOWY = /^(building\.|castle\.(?!tollbooth\.barrier)|town\.(gate|furnace|tower\.chronicle)$|prop\.market\.stall$)/;
 /** The Wayfarers' Gate's doors (docs/batches/24-wayfarers-gate.md). */
 const OPEN_CLIP = 'open';
@@ -407,6 +411,7 @@ export class CastleView {
   #life: Life | null = null;
   /** The town's dressing for its occasions (festive.ts). */
   #festive: Festive | null = null;
+  #story: StoryScene | null = null;
   #gas: GasLevel | null = null;
   #grumbledAt = -Infinity;
   /** Whether the far copies are drawn now (null: not decided yet). */
@@ -896,6 +901,7 @@ export class CastleView {
     for (const r of this.#runs) r.figure.dispose();
     this.#life?.dispose();
     this.#festive?.dispose();
+    this.#story?.dispose();
     this.#exchange?.dispose();
     // Everything shown came from this view's own library (models, standins, the tower's own materials):
     // nothing is shared beyond the view, so all of it goes.
@@ -2144,6 +2150,31 @@ export class CastleView {
     };
   }
 
+  /**
+   * A famous castle's story in the town (storyScene.ts): the notice board, the
+   * robbed building, the frozen coins. Made on first use, once the scene is up.
+   */
+  async story(): Promise<StoryScene | null> {
+    if (!this.ready || this.#disposed) return null;
+    if (this.#story) return this.#story;
+    const story = new StoryScene({
+      load: async (n) => {
+        const loaded = await this.#library.load(n);
+        this.#loaded.set(n, loaded);
+        return !!loaded;
+      },
+      make: (n) => this.#make(n),
+      clips: (n) => this.#loaded.get(n)?.clips ?? [],
+      add: (o) => this.#scene.add(o),
+      building: (id) => this.#buildingRoots.find((r) => (r.userData.building as BuildingPlacement).protocol.id === id) ?? null,
+      keep: () => this.#keepObj,
+      boardSpot: () => ({ x: this.#plan.tower.x + BOARD_DX, z: this.#plan.tower.z + BOARD_DZ, rot: Math.PI / 2 }),
+    });
+    this.#story = story;
+    await story.prepare();
+    return this.#disposed ? null : story;
+  }
+
   /** Shows a castle piece's damage (`damage.N` parts from state N; `ruin` instead of `body` at 4). */
   setDamage(obj: THREE.Object3D, state: number): void {
     showDamageParts(obj, state);
@@ -2675,6 +2706,7 @@ export class CastleView {
     this.#river?.update(dt);
     this.#life?.update(dt);
     this.#festive?.update(dt);
+    this.#story?.update(dt);
     this.#exchange?.update(dt);
     this.#chatter(dt);
     this.#followHover();

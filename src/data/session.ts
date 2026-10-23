@@ -9,7 +9,7 @@
  *   the tab is visible) picks up incoming tokens, which move neither.
  */
 
-import { loadFamousWallet, type FamousCastle } from './famous.js';
+import { loadFamousStory, loadFamousWallet, type FamousCastle, type FamousStory } from './famous.js';
 import { loadFixtures } from './fixtures.js';
 import { reverseName } from './ens.js';
 import { openCache, type KV } from './cache.js';
@@ -34,6 +34,8 @@ export interface Shown {
   visiting: string | null;
   names: Map<string, string>;
   label: string;
+  /** A famous castle's story (its places, beats and messages), when it has one. */
+  story?: FamousStory;
 }
 
 export interface SessionEvents {
@@ -306,7 +308,7 @@ export class Session {
   async visitFamous(castle: FamousCastle): Promise<void> {
     const gen = ++this.#generation;
     this.#walkBack(null, null);
-    const raw = await loadFamousWallet(castle);
+    const [raw, story] = await Promise.all([loadFamousWallet(castle), loadFamousStory(castle)]);
     if (gen !== this.#generation) return;
     if (raw === null) {
       this.#events.onStatus(`${castle.name}'s castle could not be loaded. Try again in a moment.`, 'error');
@@ -314,7 +316,7 @@ export class Session {
     }
     const day = new Date(castle.capturedAt).toISOString().slice(0, 10);
     const names = new Map([[castle.address, castle.name]]);
-    this.#show({ mode: 'snapshot', raws: [raw], visiting: castle.address, names, label: `Visiting ${castle.name}'s castle · snapshot of ${day}` }, 'town');
+    this.#show({ mode: 'snapshot', raws: [raw], visiting: castle.address, names, label: `Visiting ${castle.name}'s castle · snapshot of ${day}`, ...(story ? { story } : {}) }, 'town');
   }
 
   /** Bring the town on show up to date now, at the player's request (~5 requests a wallet). */

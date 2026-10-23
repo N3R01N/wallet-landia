@@ -8,7 +8,7 @@
 import type { ProtocolCategory } from '../../domain/catalog.js';
 import type { Goods, Guild, Journey, PositionKind, Verb } from '../../domain/model.js';
 import { tierOf } from '../../domain/tiers.js';
-import { FURNACE_ID } from '../../domain/mappers.js';
+import { FURNACE_ID, STORY_PLACE } from '../../domain/mappers.js';
 import { walletFocus, type WalletFocus } from './halls.js';
 import { ethPriceFrom } from '../../domain/risk.js';
 import { SIZE_REFERENCE_USD, sizeFor, standingOf, tvlOf } from './size.js';
@@ -184,7 +184,8 @@ export function worldFromGuild(guild: Guild): CastleWorld {
   const recent = new Set<string>();
   for (const j of guild.journeys.slice(-RECENT_JOURNEYS)) for (const st of j.steps ?? []) if (st.target.kind === 'building') recent.add(st.target.protocolId);
   // what the guild really keeps first, then where its couriers went lately; dust ($0 positions) last
-  const rank = (id: string) => ((held.get(id) ?? 0) >= HELD_MIN ? 0 : recent.has(id) ? 1 : 2);
+  // (the places a famous castle's story names come before all: the story walks to them)
+  const rank = (id: string) => (id.startsWith(STORY_PLACE) ? -1 : (held.get(id) ?? 0) >= HELD_MIN ? 0 : recent.has(id) ? 1 : 2);
   // one building per protocol family: OpenSea's Seaport and SeaDrop, Aave's v2 and v3 share one (the first
   // in the order stands for the family; what the guild holds in the others counts there too)
   const members = new Map<string, string[]>();

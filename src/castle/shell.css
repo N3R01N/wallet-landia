@@ -2139,3 +2139,55 @@ h1 {
   font: inherit;
   color: inherit;
 }
+
+/* ---------- a famous castle's story (storyTour.ts) ---------- */
+
+.story-open {
+  top: 58px;
+}
+
+.story-board {
+  top: 106px;
+}
+
+.story-card .story-step {
+  margin: 0 0 2px;
+  font-size: 12px;
+}
+
+.story-card .story-haul {
+  margin-top: 6px;
+  font-weight: 600;
+}
+
+.story-card .story-next {
+  background: var(--moss);
+  color: var(--parchment);
+}
+
+.errand-note {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-left: 3px solid #8a6a4a;
+  background: rgba(138, 106, 74, 0.1);
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* words from the chain: to read, not to copy and send money to */
+  user-select: none;
+}
+
+.notices {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+}
+
+.notice {
+  margin-bottom: 10px;
+}
+
+.notice .chronicle-meta {
+  margin: 0 0 2px;
+}

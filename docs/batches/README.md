@@ -40,6 +40,7 @@ Rules: `docs/STYLEGUIDE_V2.md`, especially §10 (lessons).
 | 27 | Tokens you can tell apart in flight: the ETH diamond (blender-74); the stablecoin banknote and the bitcoin ingot (blender-e0) | [27](27-tokens.md) | blender-74, blender-e0 | ✅ approved, committed |
 | 28 | A world that lives: scaffold, ribbon, bunting, lanterns, fireworks, monument, shooting star (blender-74); pumpkin, snow, snowfall, airdrop crate, the old wanderer (blender-e0) | [28](28-living-world.md) | blender-74, blender-e0 | ✅ approved, committed |
 | 29 | Winter: a snow file beside every building (`<asset>.snow.glb`): landmarks and town pieces (blender-74); category buildings, castle pieces and the stall (blender-e0) | [29](29-winter.md) | blender-74, blender-e0 | ✅ approved, committed |
+| 30 | The hack: blast, fire, smoke column, rubble, scorch (blender-b5); notice board, harbour house ruins (`<asset>.ruin.glb`), ice block (blender-93) | [30](30-the-hack.md) | blender-b5, blender-93 | ✅ approved, committed |
 
 The landmark classes come from each protocol's value on Ethereum (`src/castle/world/tvl.json`), so a protocol may change class when the snapshot is renewed. Batch 3 (castle wings) was dropped: castle layout 2 has none.
 

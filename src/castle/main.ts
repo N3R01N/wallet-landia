@@ -15,10 +15,11 @@ import { TAB_LABEL, type SheetState, type TabId } from './shellState.js';
 import { CastleView, proxied, type KeepGuard } from './scene/castleView.js';
 import { assetPath } from './assets/manifest.js';
 import { artTheme, loadCastleTheme, themeChain, themeFileUrl, themeFromUrl } from './assets/theme.js';
-import { newErrands, previewWorld, worldFromGuild, type CastleWorld } from './world/world.js';
+import { newErrands, previewWorld, worldFromGuild, type CastleWorld, type Errand } from './world/world.js';
 import { lightAt, weatherFor, type Weather } from './world/sky.js';
 import { priceMove } from '../domain/risk.js';
-import { chronicleSheet, collateralSheet, errandSheet, guildSheet, personSheet, protocolSheet, walletSheet } from './sheets.js';
+import { chronicleSheet, collateralSheet, errandSheet, guildSheet, noticeSheet, personSheet, protocolSheet, walletSheet } from './sheets.js';
+import { StoryTour } from './storyTour.js';
 import { pickLine } from './world/chatter.js';
 import { gasLevel, type GasLevel } from './world/gas.js';
 import { firstTxTime, freshDrop, occasionsFor, openedCrates, pinnedDate, rememberCrate } from './world/events.js';
@@ -65,6 +66,9 @@ import { CourierNotifier, setBackgroundCheck, watchWallets } from './notificatio
 const SHEET_PREFIX = 'protocol:';
 const ERRAND_SHEET = 'errand:';
 const CHRONICLE_SHEET = 'chronicle';
+const NOTICE_SHEET = 'notices';
+/** A famous castle with a story shows its whole history (its beats reach back years). */
+const STORY_HISTORY = 5000;
 const WALLET_SHEET = 'wallet:';
 const KEEP_SHEET = 'keep';
 const CONDITIONS_SHEET = 'conditions';
@@ -98,6 +102,8 @@ let themeLoaded: CastleTheme | null = null;
 let world: CastleWorld | null = null;
 /** The replay timeline of the scene shown. */
 let timelineNow: Timeline | null = null;
+/** A famous castle's story, over the scene shown (null: none). */
+let storyTourNow: StoryTour | null = null;
 /** Build mode on the scene shown (your own castle only). */
 let arrangeNow: Arrange | null = null;
 let view: CastleView | null = null;
@@ -222,7 +228,19 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
         prefs.replayRange = id;
         savePrefs(prefs);
       },
+      onReach: (e) => storyTourNow?.reached(e),
     });
+    storyTourNow = shown?.story
+      ? new StoryTour({
+          view,
+          story: shown.story,
+          errands: world.errands,
+          timeline: timelineNow,
+          categories: new Map([...shown.story.labels.values()].map((l) => [l.id, l.category])),
+          openBoard: () => open({ id: NOTICE_SHEET, title: 'The notice board' }),
+        })
+      : null;
+    if (import.meta.env.DEV) Object.assign(window, { storyTour: storyTourNow });
     if (own)
       arrangeNow = attachArrange(view, {
         get: () => prefs.castleArrangement,
@@ -311,7 +329,10 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
 }
 
 function renderSheet(sheet: SheetState): HTMLElement {
-  if (sheet.id === CHRONICLE_SHEET) return chronicleSheet(world?.errands ?? [], (e) => shell.open({ id: ERRAND_SHEET + e.key, title: e.label || 'A transaction' }));
+  const openErrand = (e: Errand) => shell.open({ id: ERRAND_SHEET + e.key, title: e.label || 'A transaction' });
+  const noteOf = (e: Errand) => shown?.story?.notes.get(e.hash.toLowerCase());
+  if (sheet.id === CHRONICLE_SHEET) return chronicleSheet(world?.errands ?? [], openErrand, (e) => noteOf(e) !== undefined);
+  if (sheet.id === NOTICE_SHEET) return noticeSheet(storyTourNow?.notes ?? [], shown?.story?.crowd ?? [], openErrand);
   if (sheet.id.startsWith(ERRAND_SHEET)) {
     const e = world?.errands.find((x) => x.key === sheet.id.slice(ERRAND_SHEET.length));
     if (e)
@@ -322,7 +343,7 @@ function renderSheet(sheet: SheetState): HTMLElement {
         else view?.sendNow(e);
         view?.follow(e);
         shell.close();
-      });
+      }, noteOf(e));
   }
   if (sheet.id.startsWith(BADGE_SHEET)) {
     const id = sheet.id.slice(BADGE_SHEET.length);
@@ -554,7 +575,9 @@ function protocolLogo(id: string): string | undefined {
 }
 
 function worldOf(town: Shown): CastleWorld {
-  const guild = buildGuild(town.raws, prefs.window, { names: town.names });
+  const guild = town.story
+    ? buildGuild(town.raws, { kind: 'count', count: STORY_HISTORY }, { names: town.names, labels: town.story.labels })
+    : buildGuild(town.raws, prefs.window, { names: town.names });
   if (town.visiting === null) homeGuild = guild;
   guildNow = guild;
   const real = worldFromGuild(guild);

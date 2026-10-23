@@ -104,9 +104,11 @@ function stepRow(step: ErrandStep, n: number): HTMLElement {
   );
 }
 
-export function errandSheet(e: Errand, protocolName: string | null, onReplay?: () => void): HTMLElement {
+export function errandSheet(e: Errand, protocolName: string | null, onReplay?: () => void, note?: string): HTMLElement {
   const out = el('div', { class: 'sheet-content' });
   if (e.failed) out.append(el('p', { class: 'failed' }, 'It failed: turned back at the barrier. The toll (the fee) was still paid; nothing else moved.'));
+  // a message written into the transaction (a famous castle's story)
+  if (note) out.append(el('blockquote', { class: 'errand-note' }, note));
   out.append(el('p', {}, VERB_EXPLAIN[e.verb] ?? 'A transaction.'));
   out.append(el('p', { class: 'muted' }, DIRECTION_TEXT[e.direction]));
   const rows: [string, string][] = [
@@ -139,7 +141,7 @@ export function errandSheet(e: Errand, protocolName: string | null, onReplay?: (
 export const CHRONICLE_LENGTH = 40;
 
 /** The chronicle: the guild's recent transactions, newest first; a row opens its sheet. */
-export function chronicleSheet(errands: readonly Errand[], openErrand: (e: Errand) => void): HTMLElement {
+export function chronicleSheet(errands: readonly Errand[], openErrand: (e: Errand) => void, hasNote?: (e: Errand) => boolean): HTMLElement {
   const recent = [...errands].sort((a, b) => b.time - a.time).slice(0, CHRONICLE_LENGTH);
   if (recent.length === 0) return el('div', { class: 'sheet-content' }, el('p', { class: 'muted' }, 'No transactions yet.'));
   const arrow: Record<Errand['direction'], string> = { out: '↗', in: '↙', inside: '↔' };
@@ -154,7 +156,7 @@ export function chronicleSheet(errands: readonly Errand[], openErrand: (e: Erran
           'button',
           { class: `chronicle-row${e.failed ? ' failed' : ''}`, type: 'button', 'data-errand': e.key },
           el('span', { class: 'chronicle-dir', 'aria-hidden': 'true' }, arrow[e.direction]),
-          el('span', { class: 'chronicle-label' }, e.label || 'A transaction'),
+          el('span', { class: 'chronicle-label' }, `${hasNote?.(e) ? '✉ ' : ''}${e.label || 'A transaction'}`),
           el('span', { class: 'chronicle-meta muted' }, `${fmtDate(e.time)}${e.failed ? ' · failed' : ''}`),
           el('span', { class: 'chronicle-usd' }, approxUsd(e.valueUsd)),
         );
@@ -163,6 +165,37 @@ export function chronicleSheet(errands: readonly Errand[], openErrand: (e: Erran
       }),
     ),
   );
+}
+
+/**
+ * The notice board of a famous castle: its own messages pinned so far (newest
+ * first; a row opens its transaction), and what the crowd wrote to it.
+ */
+export function noticeSheet(notes: readonly { errand: Errand | null; time: number; text: string }[], crowd: readonly { at: number; text: string }[], openErrand: (e: Errand) => void): HTMLElement {
+  const out = el('div', { class: 'sheet-content' });
+  out.append(el('p', { class: 'muted' }, 'Messages written into transactions: anyone can put words in the data a transaction carries, and they stay on the chain for good.'));
+  out.append(el('h3', {}, notes.length ? `Pinned by the castle · ${notes.length}` : 'Nothing pinned yet'));
+  out.append(
+    el(
+      'ul',
+      { class: 'notices' },
+      ...[...notes].reverse().map((n) => {
+        const row = el('li', { class: 'notice' }, el('p', { class: 'chronicle-meta muted' }, fmtDate(n.time)), el('blockquote', { class: 'errand-note' }, n.text));
+        if (n.errand) {
+          const errand = n.errand;
+          const open = el('button', { class: 'btn notice-open', type: 'button' }, 'Its transaction');
+          open.addEventListener('click', () => openErrand(errand));
+          row.append(open);
+        }
+        return row;
+      }),
+    ),
+  );
+  if (crowd.length) {
+    out.append(el('h3', {}, `From the crowd · ${crowd.length}`));
+    out.append(el('ul', { class: 'notices crowd' }, ...crowd.map((c) => el('li', { class: 'notice' }, el('p', { class: 'chronicle-meta muted' }, fmtDate(c.at)), el('blockquote', { class: 'errand-note' }, c.text)))));
+  }
+  return out;
 }
 
 /** A small table of facts (label, value), as the errand's sheet shows them. */

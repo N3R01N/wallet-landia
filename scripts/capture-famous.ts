@@ -21,9 +21,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnv } from 'vite';
 import { ZerionClient, ZerionError } from '../src/data/zerion/client.js';
-import { fetchRawWallet } from '../src/data/zerion/endpoints.js';
+import { fetchRawWallet, getTransactions, type RawWallet } from '../src/data/zerion/endpoints.js';
+import type { TransactionResource } from '../src/data/zerion/types.js';
+import { DEFAULT_RPC } from '../src/data/rpc.js';
 import { toAddress } from '../src/data/ens.js';
-import { parseFamousIndex, trimForSnapshot, type FamousCastle } from '../src/data/famous.js';
+import { inputText, parseFamousIndex, SNAPSHOT_MIN_USD, trimForSnapshot, type FamousCastle } from '../src/data/famous.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = resolve(ROOT, 'public/famous');
@@ -34,7 +36,70 @@ interface Entry {
   who: string;
   name: string;
   about: string;
+  /** 'full': every transaction, not only the newest page (a story told from its beginning). */
+  history?: 'full';
+  /** Places and beats of a guided replay (see FamousStory); its messages are read from the chain. */
+  story?: { labels: unknown[]; beats: unknown[] };
 }
+
+/** Strangers' notes kept for the crowd at the gate (the newest dropped past this). */
+const CROWD_MAX = 150;
+const LINK = /https?:\/\/|www\.|\.(com|io|xyz|net|org|finance|app)\b/i;
+
+/** Input data of transactions, from the public node, in batches. */
+async function inputsOf(hashes: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (let i = 0; i < hashes.length; i += 40) {
+    const batch = hashes.slice(i, i + 40);
+    const res = await fetch(DEFAULT_RPC, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(batch.map((h, id) => ({ jsonrpc: '2.0', id, method: 'eth_getTransactionByHash', params: [h] }))),
+    });
+    if (!res.ok) throw new Error(`the public node answered ${res.status}`);
+    for (const r of (await res.json()) as { id: number; result?: { input?: string } }[]) {
+      const h = batch[r.id];
+      if (h !== undefined && typeof r.result?.input === 'string') out.set(h, r.result.input);
+    }
+  }
+  return out;
+}
+
+/**
+ * The story file beside a snapshot: the entry's places and beats, its own
+ * messages, and what strangers wrote to it (addresses shortened, links left out).
+ * The strangers' transactions themselves (worth nothing, hundreds of them) are
+ * then dropped from the snapshot: they live on as the crowd.
+ */
+async function writeStory(entry: Entry, raw: RawWallet): Promise<RawWallet> {
+  const me = raw.address;
+  const own = raw.transactions.filter((t) => t.attributes.sent_from.toLowerCase() === me && t.attributes.transfers.length === 0);
+  const worth = (t: TransactionResource) => t.attributes.transfers.reduce((s, x) => s + (x.value ?? 0), 0);
+  const strangers = raw.transactions.filter((t) => t.attributes.sent_from.toLowerCase() !== me && t.attributes.sent_to.toLowerCase() === me);
+  const inputs = await inputsOf([...own, ...strangers].map((t) => t.attributes.hash));
+  const notes = own.flatMap((t) => {
+    const text = inputText(inputs.get(t.attributes.hash));
+    return text === null ? [] : [{ hash: t.attributes.hash.toLowerCase(), text }];
+  });
+  const seen = new Set<string>();
+  const crowd = strangers
+    .flatMap((t) => {
+      const text = inputText(inputs.get(t.attributes.hash));
+      if (text === null || text.startsWith('(') || LINK.test(text) || seen.has(text)) return [];
+      seen.add(text);
+      return [{ at: Date.parse(t.attributes.mined_at), text: text.slice(0, 280) }];
+    })
+    .sort((x, y) => x.at - y.at)
+    .slice(0, CROWD_MAX);
+  const story = { labels: entry.story?.labels ?? [], beats: entry.story?.beats ?? [], notes, crowd };
+  await writeFile(resolve(OUT, `${me}.story.json`), `${JSON.stringify(story, null, 1)}\n`, 'utf8');
+  console.log(`  story: ${notes.length} own messages, ${crowd.length} from the crowd (of ${strangers.length} strangers' transactions)`);
+  const crowdOnly = new Set(strangers.filter((t) => worth(t) < SNAPSHOT_MIN_USD).map((t) => t.attributes.hash));
+  return { ...raw, transactions: raw.transactions.filter((t) => !crowdOnly.has(t.attributes.hash)) };
+}
+
+/** Pages a full history may take (100 transactions each). */
+const FULL_HISTORY_PAGES = 20;
 
 async function main(): Promise<void> {
   const only = process.argv.slice(2).filter((a) => !a.startsWith('--'));
@@ -69,15 +134,16 @@ async function main(): Promise<void> {
       const full = await fetchRawWallet(client, address, {
         label: `Snapshot ${new Date(capturedAt).toISOString().slice(0, 10)}`,
         onWarn: (m) => console.warn(`  warning: ${m}`),
+        ...(entry.history === 'full' ? { transactions: () => getTransactions(client, address, { pages: FULL_HISTORY_PAGES }) } : {}),
       });
-      const raw = trimForSnapshot(full);
+      const raw = entry.story ? await writeStory(entry, trimForSnapshot(full)) : trimForSnapshot(full);
       const text = JSON.stringify(raw);
       await writeFile(resolve(OUT, `${raw.address}.json`), text, 'utf8');
       console.log(
         `  ${raw.simple.length} tokens (of ${full.simple.length}), ${raw.complex.length} protocol positions (of ${full.complex.length}), ` +
           `${raw.nfts.length} NFTs, ${raw.transactions.length} transactions, ${Math.round(text.length / 1024)} KB`,
       );
-      index.set(entry.slug, { slug: entry.slug, address: raw.address, name: entry.name, about: entry.about, capturedAt });
+      index.set(entry.slug, { slug: entry.slug, address: raw.address, name: entry.name, about: entry.about, capturedAt, ...(entry.story ? { story: true } : {}) });
     } catch (error) {
       console.warn(`  skipped ${entry.slug}: ${error instanceof Error ? error.message : String(error)}`);
       skipped.push(entry.slug);
