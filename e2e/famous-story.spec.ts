@@ -30,6 +30,15 @@ test('the story plays beat by beat: the vault empties, the bridge is hit, his me
   await expect(vault.locator('.story-haul')).toContainText('Taken so far');
   expect((await storyState(page))?.hit).toEqual(['story:poly-network']);
 
+  // while the couriers walk: where to and how many, and a skip straight there
+  await page.locator('.story-card .story-next').click();
+  await expect(page.locator('.story-playing')).toContainText('A tip of 13.37 ETH');
+  await page.locator('.story-playing .story-skip').click();
+  await expect(page.locator('.story-card[data-beat="3"]')).toBeVisible();
+  await expect(page.locator('.story-playing')).toHaveCount(0);
+  await page.locator('.story-card .story-back').click();
+  await expect(vault).toBeVisible();
+
   // jumping back: the town as it was then (the bridge whole again)
   await vault.locator('.story-back').click();
   await expect(page.locator('.story-card[data-beat="1"]')).toBeVisible();

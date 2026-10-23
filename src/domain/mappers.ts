@@ -713,8 +713,10 @@ function resolveTarget(
   }
   if (place !== null && o.transferish && named === null) return { target: { kind: 'building', protocolId: place.id }, protocol: place };
   if (verb === 'send' || verb === 'receive' || verb === 'airdrop') {
-    if (named !== null && verb === 'airdrop') return { target: { kind: 'building', protocolId: named.id }, protocol: named };
-    return { target: counterpartyHero !== null ? { kind: 'home', address: counterpartyHero } : { kind: 'gate' }, protocol: named };
+    // between the guild's own wallets it is home to home; a place named (an exchange paying out, a dApp) is where the courier goes
+    if (counterpartyHero !== null) return { target: { kind: 'home', address: counterpartyHero }, protocol: named };
+    if (named !== null) return { target: { kind: 'building', protocolId: named.id }, protocol: named };
+    return { target: { kind: 'gate' }, protocol: named };
   }
   if (named !== null) return { target: { kind: 'building', protocolId: named.id }, protocol: named };
   if (verb === 'deploy') {

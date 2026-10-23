@@ -46,10 +46,10 @@
   {
    "hash": "0xb1f70464bd95b774c6ce60fc706eb5f9e35cb5f06e6cfe7c17dcda46ffd59581",
    "title": "The trick",
-   "text": "10 August, 09:48. A single call to Poly Network's cross-chain manager makes it believe this address may move the bridge's funds."
+   "text": "10 August. A single call to Poly Network's cross-chain manager makes it believe this address may move the bridge's funds."
   },
   {
-   "hash": "0xad7a2c70c958fcd3effbf374d0acf3774a9257577625ae4c838e24b0de17602a",
+   "hash": "0xd8c1f7424593ddba11a0e072b61082bf3d931583cb75f7843fc2a8685d20033a",
    "title": "The vault empties",
    "text": "In 36 minutes Poly's vault pays out ten times: $96.4M in USDC, $82M in WETH, $47.5M in WBTC, $33.4M in USDT, $9M in ETH, and some SHIB, UNI, DAI, renBTC and FEI. About $273.6M on Ethereum alone.",
    "effect": "hack",
@@ -64,7 +64,8 @@
    "hash": "0x2465d4cf19d3bf557ea5eec8d57b1ad75c8378e68ba242139e7e186bf463c1a1",
    "title": "Away from the coins that can be frozen",
    "text": "USDC and USDT can be frozen by the companies behind them. He puts the $96.4M of USDC into Curve's pool and takes out $96.9M of DAI, which nobody can freeze. The USDT is frozen and never moves again. \"How about unlocking my USDT after returning enough USDC?\"",
-   "effect": "freeze"
+   "effect": "freeze",
+   "frozen": 33431197.73
   },
   {
    "hash": "0x3a09c98f99edd9601ed017ff269652fd80c7e9aedcea57126990031128851043",
@@ -74,10 +75,10 @@
   {
    "hash": "0x7b6009ea08c868d7c5c336bf1bc30c33b87a0eedd59dac8c26e6a8551b20b68a",
    "title": "The turn",
-   "text": "11 August, 03:48. \"Ready to return the fund! … I need a secured multisig wallet from you.\""
+   "text": "11 August. \"Ready to return the fund! … I need a secured multisig wallet from you.\""
   },
   {
-   "hash": "0xd3327a266add4ec655ef5fe00fd042bdcdf1b886c26af3b5dd21b2e4ec9bde49",
+   "hash": "0x09fe1ec4a9ad2c159362e7ec23b0410de34d71db5f314c4b04247c48d812fcbf",
    "title": "The first returns",
    "text": "FEI, SHIB, renBTC and UNI, about $4.6M, go back to Poly's multisig. In between, his Q&A, parts one to four: \"Why hacking? For fun :)\""
   },
@@ -91,7 +92,7 @@
   {
    "hash": "0xf34ee3551be7be57df6643d4ec7e4bdf9fd047d925c3c32a74e64e7428e5f8a9",
    "title": "The diary",
-   "text": "For ten more days he writes: Q&A parts five to eight, lessons for \"DeFi noobs\", notes to the press. His USDT stays frozen."
+   "text": "For ten more days he writes: Q&A parts five to eight, lessons for \"DeFi noobs\", notes to the press. His USDT stays frozen; he keeps asking Poly to have it unlocked."
   },
   {
    "hash": "0x675d40b6f04f145c3981a062aeaee072c61db76c5d93ae2926f78ebffda5b882",
@@ -101,7 +102,7 @@
   {
    "hash": "0xe591cd829bd2746d69c783d0dd41fcc2e3f5b49dc76f41e48ee51cb1e0c9f3be",
    "title": "An empty castle",
-   "text": "About $3,500 is left, and four years of junk tokens and NFTs that strangers keep sending. On Ethereum about $273.6M came in, about $234.5M went back, $33.4M of USDT stayed frozen, and 13.37 ETH went to a stranger."
+   "text": "About $3,500 is left, and four years of junk tokens and NFTs that strangers keep sending. On Ethereum about $273.6M came in and about $234.5M went back. The $33.4M of USDT that Tether froze is no longer in the wallet either: the address is still on Tether's blacklist and holds $6.99 of USDT today, though it never sent the USDT anywhere. 13.37 ETH went to a stranger."
   }
  ],
  "notes": [

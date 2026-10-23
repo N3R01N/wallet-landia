@@ -2191,3 +2191,48 @@ h1 {
 .notice .chronicle-meta {
   margin: 0 0 2px;
 }
+
+.story-playing {
+  position: absolute;
+  left: 50%;
+  bottom: 64px;
+  z-index: 4;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(360px, calc(100% - 32px));
+  box-sizing: border-box;
+  padding: 6px 8px 6px 12px;
+  background: var(--parchment);
+  color: var(--ink);
+  border: 2px solid #6b4a2b;
+  border-radius: 8px;
+  box-shadow: 4px 5px 0 rgba(0, 0, 0, 0.25);
+  font-size: 13px;
+}
+
+.story-playing-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.story-card .story-others {
+  font-size: 12px;
+}
+
+/* while a story is open, its own controls replace the replay bar */
+.castle-view[data-story='on'] .timeline,
+.castle-view[data-story='on'] .replay-open {
+  display: none;
+}
+
+/* on a phone the follow chip keeps clear of the buttons down the left */
+@media (max-width: 480px) {
+  .castle-view .follow-chip {
+    left: auto;
+    right: 10px;
+    transform: none;
+  }
+}

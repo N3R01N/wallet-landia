@@ -10,7 +10,7 @@ import { inputText, parseFamousStory, shortenAddresses } from '../src/data/famou
 import type { RawWallet } from '../src/data/zerion/endpoints.js';
 import { buildGuild } from '../src/domain/mappers.js';
 import { worldFromGuild } from '../src/castle/world/world.js';
-import { haulAt, storyBeats } from '../src/castle/storyTour.js';
+import { haulAt, haulLine, storyBeats, storySegment } from '../src/castle/storyTour.js';
 
 const hex = (s: string) => `0x${Buffer.from(s, 'utf8').toString('hex')}`;
 const A = '0x71fb9db587f6d47ac8192cd76110e05b8fd2142f';
@@ -87,6 +87,26 @@ describe('the Poly Network exploiter’s story', () => {
     expect(taken / 1e6).toBeCloseTo(273.6, 0);
     expect(back / 1e6).toBeCloseTo(234.5, 0);
     expect(haulAt(world.errands, 'story:poly-network', categories, Date.parse('2021-08-10T00:00:00Z'))).toEqual({ taken: 0, back: 0 });
+  });
+
+  it('walking beat to beat, every building in town gets a courier, and no more than 16 walk at a time', () => {
+    const beats = storyBeats(story.beats, world.errands);
+    const walked = new Set<string>();
+    beats.reduce<(typeof world.errands)[number] | null>((prev, b) => {
+      const { key } = storySegment(world.errands, prev, b.errand);
+      expect(key.length).toBeLessThanOrEqual(16);
+      expect(key.at(-1)).toBe(b.errand);
+      for (const e of key) if (e.protocolId) walked.add(e.protocolId);
+      return b.errand;
+    }, null);
+    const unvisited = world.protocols.filter((p) => !p.id.startsWith('mystery:') && !walked.has(p.id)).map((p) => p.name);
+    expect(unvisited).toEqual([]);
+  });
+
+  it('the running total says what was frozen, so the numbers add up', () => {
+    expect(haulLine(273.6e6, 0, 0)).toBe('Taken so far ~$274M');
+    expect(haulLine(273.6e6, 234.5e6, 33.4e6)).toBe('Taken so far ~$274M · given back ~$235M · frozen ~$33M');
+    expect(story.beats.find((b) => b.effect === 'freeze')?.frozen).toBeCloseTo(33.43e6, -4);
   });
 
   it('no message keeps a full address', () => {

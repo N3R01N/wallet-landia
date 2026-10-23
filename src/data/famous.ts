@@ -50,6 +50,8 @@ export interface StoryBeat {
   effect?: 'hack' | 'repair' | 'freeze';
   /** The label id the effect is about. */
   place?: string;
+  /** Dollars frozen at this beat (by the token's issuer): neither taken away nor given back. */
+  frozen?: number;
 }
 
 const CATEGORIES: readonly ProtocolCategory[] = ['dex', 'aggregator', 'lending', 'staking', 'restaking', 'yield', 'nft-market', 'bridge', 'governance', 'names', 'wrapper', 'mint', 'airdrop', 'unknown'];
@@ -75,7 +77,8 @@ export function parseFamousStory(raw: unknown): FamousStory {
     if (!HASH.test(hash) || title === null || text === null) return [];
     const effect = b.effect === 'hack' || b.effect === 'repair' || b.effect === 'freeze' ? b.effect : undefined;
     const place = str(b.place, 40);
-    return [{ hash, title, text, ...(effect ? { effect } : {}), ...(place !== null && SLUG.test(place) ? { place: `story:${place}` } : {}) }];
+    const frozen = typeof b.frozen === 'number' && Number.isFinite(b.frozen) && b.frozen > 0 ? b.frozen : undefined;
+    return [{ hash, title, text, ...(effect ? { effect } : {}), ...(place !== null && SLUG.test(place) ? { place: `story:${place}` } : {}), ...(frozen ? { frozen } : {}) }];
   });
   const notes = new Map<string, string>();
   for (const n of list(o.notes)) {

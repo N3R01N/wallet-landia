@@ -15,8 +15,10 @@ import type { StoryScene } from './scene/storyScene.js';
 import type { Timeline } from './timeline.js';
 import type { Errand } from './world/world.js';
 
-/** How fast the couriers go between beats (hundreds of them between two). */
-const STORY_SPEED = 4;
+/** Couriers between two beats: at most this many walk (the rest are told of on the card). */
+const KEY_MAX = 16;
+/** A transaction worth this much walks between beats wherever it goes. */
+const KEY_USD = 100_000;
 
 export interface StoryTourHost {
   view: CastleView;
@@ -41,6 +43,27 @@ export function storyBeats(beats: readonly StoryBeat[], errands: readonly Errand
   }).sort((a, b) => a.errand.time - b.errand.time);
 }
 
+/** Whether a transaction moves the story: at a place in town with a name (the story's, a dApp's, an exchange's), or a big one; the strangers' tips at the gate are not. */
+function isKey(e: Errand): boolean {
+  if (e.valueUsd >= KEY_USD) return true;
+  return e.protocolId !== null && !e.protocolId.startsWith('mystery:');
+}
+
+/**
+ * The couriers that walk on from one beat to the next: the transactions after
+ * `from` up to and with `to` that move the story (the biggest KEY_MAX, in time
+ * order, `to` last), and how many others happened meanwhile. Pure.
+ */
+export function storySegment(errands: readonly Errand[], from: Errand | null, to: Errand): { key: Errand[]; others: number } {
+  const between = errands.filter((e) => e !== from && e !== to && (from === null || e.time >= from.time) && e.time <= to.time);
+  const key = between
+    .filter(isKey)
+    .sort((a, b) => b.valueUsd - a.valueUsd)
+    .slice(0, KEY_MAX - 1)
+    .sort((a, b) => a.time - b.time);
+  return { key: [...key, to], others: between.length - key.length };
+}
+
 /**
  * What was taken from the robbed place and given back by this time: in from
  * it, and out to it or to a council (a multisig) the story names. Pure.
@@ -58,6 +81,11 @@ export function haulAt(errands: readonly Errand[], robbed: string | null, catego
   return { taken, back };
 }
 
+/** "Taken so far ~$274M · given back ~$234M · frozen ~$33M". Pure. */
+export function haulLine(taken: number, back: number, frozen: number): string {
+  return [`Taken so far ${approxUsd(taken)}`, back >= 1 ? `given back ${approxUsd(back)}` : null, frozen >= 1 ? `frozen ${approxUsd(frozen)}` : null].filter(Boolean).join(' · ');
+}
+
 export class StoryTour {
   readonly #host: StoryTourHost;
   readonly #beats: Beat[];
@@ -69,6 +97,9 @@ export class StoryTour {
   /** The beat the couriers are playing on to, or null. */
   #playingTo: number | null = null;
   #card: HTMLElement | null = null;
+  /** While the couriers walk on to a beat: where to, how many are left, and a skip. */
+  #strip: HTMLElement | null = null;
+  #left = 0;
   #pinned = 0;
   readonly #onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && this.#card?.isConnected) this.close();
@@ -106,8 +137,11 @@ export class StoryTour {
     const beat = this.#beats[i];
     if (!beat) return;
     this.#host.timeline.pause();
+    this.#host.view.clearQueue();
+    this.#hideStrip();
     this.#playingTo = null;
     this.#at = i;
+    this.#host.view.element.dataset.story = 'on';
     const scene = this.#scene ?? (await this.#host.view.story());
     this.#scene = scene;
     // the town at that moment: what was hit and mended by then, the messages pinned by then
@@ -120,36 +154,70 @@ export class StoryTour {
     this.#showCard();
   }
 
-  /** The replay reached a transaction: a message is pinned; at the beat it plays to, it stops. */
+  /** The replay reached a transaction: the camera goes with its courier, the messages written by then are pinned; at the beat it plays to, it stops. */
   reached(e: Errand): void {
     if (this.#playingTo === null) return;
-    if (this.#host.story.notes.has(e.hash.toLowerCase())) this.#scene?.board(++this.#pinned);
+    this.#host.view.follow(e);
+    this.#pinned = this.notes.filter((n) => n.time <= e.time).length;
+    this.#scene?.board(this.#pinned);
+    this.#left = Math.max(0, this.#left - 1);
+    this.#showStrip();
     const target = this.#beats[this.#playingTo];
     if (target && target.errand === e) {
       this.#host.timeline.pause();
       this.#at = this.#playingTo;
       this.#playingTo = null;
+      this.#hideStrip();
       void this.#effect(target, true);
-      this.#host.view.follow(e);
       this.#showCard();
     }
   }
 
-  /** Plays the couriers on from this beat to the next one. */
+  /** Plays the couriers that move the story on from this beat to the next one, one after another, the camera with each. */
   next(): void {
     const from = this.#beats[this.#at];
-    if (!from || this.#at + 1 >= this.#beats.length) return;
+    const to = this.#beats[this.#at + 1];
+    if (!from || !to) return;
     this.#hideCard();
+    this.#host.view.clearQueue();
     this.#playingTo = this.#at + 1;
-    // its own courier went already: the replay goes on from the one after it
-    const i = this.#host.errands.indexOf(from.errand);
-    const after = [...this.#host.errands].sort((a, b) => a.time - b.time).find((e) => e.time > from.errand.time || (e.time === from.errand.time && e !== from.errand && this.#host.errands.indexOf(e) > i));
-    this.#host.timeline.startAt(after ?? this.#beats[this.#playingTo]!.errand, STORY_SPEED);
+    const { key } = storySegment(this.#host.errands, from.errand, to.errand);
+    this.#left = key.length;
+    this.#showStrip();
+    this.#host.timeline.playThese(key, 1);
+  }
+
+  /** Straight to the beat it is playing on to. */
+  skip(): void {
+    if (this.#playingTo !== null) void this.show(this.#playingTo);
   }
 
   close(): void {
     this.#hideCard();
+    this.#hideStrip();
+    if (this.#playingTo !== null) this.#host.timeline.pause();
     this.#playingTo = null;
+    delete this.#host.view.element.dataset.story;
+  }
+
+  #showStrip(): void {
+    const to = this.#playingTo === null ? undefined : this.#beats[this.#playingTo];
+    if (!to) return;
+    if (!this.#strip) {
+      const skip = el('button', { class: 'btn story-skip', type: 'button' }, '⏭ Skip');
+      skip.addEventListener('click', () => this.skip());
+      const close = el('button', { class: 'btn story-close', type: 'button', 'aria-label': 'Close the story' }, '✕');
+      close.addEventListener('click', () => this.close());
+      this.#strip = el('section', { class: 'story-playing', role: 'status' }, el('span', { class: 'story-playing-text' }), skip, close);
+      this.#host.view.element.append(this.#strip);
+    }
+    const text = this.#strip.querySelector('.story-playing-text');
+    if (text) text.textContent = `▶ ${to.title} · ${this.#left <= 1 ? 'last courier' : `${this.#left} to go`}`;
+  }
+
+  #hideStrip(): void {
+    this.#strip?.remove();
+    this.#strip = null;
   }
 
   async #effect(beat: StoryBeat, live: boolean): Promise<void> {
@@ -168,6 +236,8 @@ export class StoryTour {
     // by the next beat: a beat tells of what happened until then (the vault's ten payouts)
     const until = this.#beats[i + 1]?.errand.time ?? Infinity;
     const haul = haulAt(this.#host.errands, this.#robbed, this.#host.categories, until - 1);
+    // what happened since the beat before and did not walk
+    const others = storySegment(this.#host.errands, this.#beats[i - 1]?.errand ?? null, beat.errand).others;
     const back = el('button', { class: 'btn story-back', type: 'button', 'aria-label': 'The beat before' }, '◀');
     back.disabled = i === 0;
     back.addEventListener('click', () => void this.show(i - 1));
@@ -182,7 +252,8 @@ export class StoryTour {
       el('p', { class: 'story-step muted' }, `${i + 1} of ${this.#beats.length} · ${fmtDate(beat.errand.time)}`),
       el('h3', {}, beat.title),
       el('p', {}, beat.text),
-      haul.taken > 0 ? el('p', { class: 'story-haul' }, `Taken so far ${approxUsd(haul.taken)}${haul.back >= 1 ? ` · given back ${approxUsd(haul.back)}` : ''}`) : null,
+      others > 0 ? el('p', { class: 'story-others muted' }, `Meanwhile ${others} smaller transaction${others === 1 ? '' : 's'}, mostly strangers' tips and notes (not walked here).`) : null,
+      haul.taken > 0 ? el('p', { class: 'story-haul' }, haulLine(haul.taken, haul.back, this.#beats.slice(0, i + 1).reduce((t, b) => t + (b.frozen ?? 0), 0))) : null,
       el('div', { class: 'away-actions' }, back, close, next),
     );
     this.#host.view.element.append(this.#card);
