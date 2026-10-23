@@ -78,6 +78,9 @@ export async function sceneState(page: Page): Promise<ReturnType<NonNullable<Hoo
 export async function tapCourier(page: Page): Promise<void> {
   await sceneUp(page);
   await expect.poll(async () => (await sceneState(page)).courier?.z ?? -99, { timeout: 40_000 }).toBeGreaterThan(3);
+  // the camera to it (it may be walking down a side street out of view), then a tap where it is now
+  await page.evaluate(() => (window as unknown as { castleView: { focusCourier(): boolean } }).castleView.focusCourier());
+  await page.waitForTimeout(2500);
   await expect.poll(() => page.evaluate(() => (window as unknown as Hook).castleView?.courierPoint() ?? null), { timeout: 20_000 }).not.toBeNull();
   const pt = await page.evaluate(() => (window as unknown as Hook).castleView!.courierPoint());
   await page.mouse.click(pt!.x, pt!.y);

@@ -132,13 +132,13 @@ const MOMENT_ORDER: readonly MomentId[] = ['dao-year', 'ens-airdrop', 'merge'];
  * shows while the theme has no model): a monument on the plaza for each moment
  * (its key `monument:<id>`), the old wanderer by the ruin.
  */
-export function secretPlacements(plan: Pick<CastlePlan, 'tower' | 'scenery'>, o: { moments: readonly MomentId[]; wanderer: boolean }): Placement[] {
+export function secretPlacements(plan: Pick<CastlePlan, 'tower' | 'scenery'> & Partial<Pick<CastlePlan, 'plazaSpots'>>, o: { moments: readonly MomentId[]; wanderer: boolean }): Placement[] {
   const out: Placement[] = [];
   MOMENT_ORDER.forEach((id, i) => {
     if (!o.moments.includes(id)) return;
-    const spot = MONUMENT_SPOTS[i]!;
-    // facing the avenue
-    out.push({ name: 'prop.monument', x: plan.tower.x + spot.dx, z: plan.tower.z + spot.dz, rot: -Math.PI / 2, optional: true, key: `monument:${id}`, tint: MONUMENTS[id].tint, plaque: MONUMENTS[id].plaque });
+    // the plaza's monument spots (facing the avenue, or in a district town's square), else beside the well
+    const spot = plan.plazaSpots?.monuments[i] ?? { x: plan.tower.x + MONUMENT_SPOTS[i]!.dx, z: plan.tower.z + MONUMENT_SPOTS[i]!.dz, rot: -Math.PI / 2 };
+    out.push({ name: 'prop.monument', x: spot.x, z: spot.z, rot: spot.rot, optional: true, key: `monument:${id}`, tint: MONUMENTS[id].tint, plaque: MONUMENTS[id].plaque });
   });
   const ruin = plan.scenery.find((p) => p.name === 'scenery.ruin');
   if (o.wanderer && ruin) out.push({ name: 'person.npc.wanderer', x: ruin.x - 3, z: ruin.z + 3, rot: -0.6, optional: true, key: 'wanderer' });

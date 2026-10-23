@@ -290,9 +290,11 @@ const TAP_CLIP = 'tap';
 /** The furnace's roar as goods go into its fire, and its stoker's throw (docs/batches/25-ember-furnace.md). */
 const ROAR_CLIP = 'roar';
 /** The pieces that may have a winter snow file (docs/batches/29-winter.md): buildings, the castle's and the town's own, the stalls. */
-/** The story's notice board on the plaza (from the tower): in the monuments' row past the well, before them, facing the avenue. */
-const BOARD_DX = 7.5;
-const BOARD_DZ = -8;
+/** The town is laid out in districts (side streets off the avenue) with the v2 castle; the first themes keep their avenue. */
+function districtsFor(layout: CastleLayout): boolean {
+  return layout === 2;
+}
+
 const SNOWY = /^(building\.|castle\.(?!tollbooth\.barrier)|town\.(gate|furnace|tower\.chronicle)$|prop\.market\.stall$)/;
 /** The Wayfarers' Gate's doors (docs/batches/24-wayfarers-gate.md). */
 const OPEN_CLIP = 'open';
@@ -534,7 +536,7 @@ export class CastleView {
   constructor(opts: CastleViewOptions) {
     this.#opts = opts;
     this.#gas = opts.gas ?? null;
-    const plan = planCastle(opts.world, opts.arranged, opts.layout ?? 1);
+    const plan = planCastle(opts.world, opts.arranged, opts.layout ?? 1, districtsFor(opts.layout ?? 1));
     this.#extension = opts.extend?.(plan) ?? null;
     // the camera roams as far as the extension reaches
     const reach = this.#extension?.reachZ;
@@ -677,6 +679,15 @@ export class CastleView {
   }
 
   /** Test hook: brings a townsperson out walking to the middle of the view (false: none). */
+  /** Test hook: the camera follows the first courier out (in a town of districts it may be down a side street), so it holds still on the screen. */
+  focusCourier(): boolean {
+    const run = this.#runs[0];
+    if (!run) return false;
+    // the camera goes with it, so it stays where it is on the screen
+    this.follow(run.errand);
+    return true;
+  }
+
   focusPerson(): boolean {
     const one = this.#life?.someone(0);
     if (!one) return false;
@@ -1340,7 +1351,7 @@ export class CastleView {
     this.#towerMaterials = [];
     this.#towerOpacity = 1;
     this.#bell = null;
-    this.#plan = planCastle(this.#opts.world, arranged);
+    this.#plan = planCastle(this.#opts.world, arranged, this.#opts.layout ?? 1, districtsFor(this.#opts.layout ?? 1));
     this.#placeLayout();
     this.#makeLife();
     this.#festive?.relayout(this.#plan);
@@ -1379,9 +1390,11 @@ export class CastleView {
       }
     };
     for (const f of this.#plan.freeSlots) mark(f.x, f.z, f.half, PLOT_MATERIAL, 'Move here', { slot: f.slot });
+    // (in a town of districts, only within the chosen one's street: a lending protocol stays on Bankers' Row)
+    const street = this.#plan.buildings.find((b) => b.protocol.id === selected)?.street?.district;
     for (const b of this.#plan.buildings) {
       if (b.protocol.id === selected) mark(b.x, b.z, b.half, CHOSEN_MATERIAL, null, {});
-      else mark(b.x, b.z, b.half, SWAP_MATERIAL, `Swap with ${b.protocol.name}`, { protocolId: b.protocol.id });
+      else if (!street || b.street?.district === street) mark(b.x, b.z, b.half, SWAP_MATERIAL, `Swap with ${b.protocol.name}`, { protocolId: b.protocol.id });
     }
   }
 
@@ -2168,7 +2181,7 @@ export class CastleView {
       add: (o) => this.#scene.add(o),
       building: (id) => this.#buildingRoots.find((r) => (r.userData.building as BuildingPlacement).protocol.id === id) ?? null,
       keep: () => this.#keepObj,
-      boardSpot: () => ({ x: this.#plan.tower.x + BOARD_DX, z: this.#plan.tower.z + BOARD_DZ, rot: Math.PI / 2 }),
+      boardSpot: () => this.#plan.plazaSpots.board,
     });
     this.#story = story;
     await story.prepare();
@@ -2234,10 +2247,19 @@ export class CastleView {
     if (!door) return [];
     const at = new THREE.Vector3();
     (door as THREE.Object3D).getWorldPosition(at);
+    const cells: { x: number; z: number }[] = [];
+    if (b.street) {
+      // on a street: from the plan's step (a metre off the street's row) across to the door's point, then a turn along the plot's front
+      const across = Math.sign(b.door.z - b.street.z);
+      const out = Math.max(2, Math.round(Math.abs(at.z - b.street.z)));
+      for (let d = 2; d <= out; d++) cells.push({ x: b.door.x, z: b.street.z + across * d });
+      const col = Math.round(at.x);
+      for (let x = b.door.x; x !== col; x += Math.sign(col - x)) cells.push({ x: x + Math.sign(col - x), z: b.street.z + across * out });
+      return cells;
+    }
     const side = Math.sign(b.door.x);
     // along the door's row from the plan's step (x = ±1) out to the door's point (a metre in front of
     // the door); then, if the model's door sits off that row, a turn along the plot's front to it
-    const cells: { x: number; z: number }[] = [];
     const out = Math.max(2, Math.round(Math.abs(at.x)));
     for (let x = 2; x <= out; x++) cells.push({ x: side * x, z: b.door.z });
     const row = pathRow(at.z);

@@ -52,8 +52,10 @@ export interface BuildingPlacement extends Placement {
   slot: number;
   /** Its footprint's half width (metres): the 2 × 2 m model times its size, halved. */
   half: number;
-  /** Where a visitor stands: the model's `door` point, at the avenue's edge. */
+  /** Where a visitor stands: the model's `door` point, at the avenue's (or its street's) edge. */
   door: { x: number; z: number };
+  /** Its district's side street (null: it stands on the avenue): the street's row, and its name. */
+  street: { z: number; district: District } | null;
   /** Where the building's person comes out to: between the front wall and the door point. */
   npc: { x: number; z: number };
 }
@@ -100,6 +102,10 @@ export interface CastlePlan {
   freeSlots: { slot: number; x: number; z: number; half: number }[];
   /** The avenue: the plaza it goes round (z range), and where it ends. */
   avenue: Avenue;
+  /** The districts' side streets (empty when the buildings line the avenue). */
+  streets: Street[];
+  /** Spots on the plaza, clear of its roads: the well, the benches, the monuments, the notice board. */
+  plazaSpots: PlazaSpots;
   /** The courier's way out to the first building (routeTo for any other). */
   courierRoute: Waypoint[];
   /** Woods, rocks and hills round the island and the town. */
@@ -122,6 +128,47 @@ export interface CastlePlan {
   town: { x0: number; x1: number; z0: number; z1: number };
 }
 
+/**
+ * The town's districts (docs/TOWN_DISTRICTS.md): each a side street off the
+ * avenue, its buildings on both sides. A building's district is its category's.
+ */
+export type District = 'market' | 'bankers' | 'temple' | 'gallery' | 'harbour' | 'council' | 'commons';
+
+export const DISTRICT_FOR: Record<string, District> = {
+  dex: 'market',
+  lending: 'bankers',
+  staking: 'temple',
+  nft: 'gallery',
+  bridge: 'harbour',
+  governance: 'council',
+  other: 'commons',
+};
+
+export const DISTRICT_NAME: Record<District, string> = {
+  market: 'Market Street',
+  bankers: "Bankers' Row",
+  temple: 'Temple Lane',
+  gallery: 'Gallery Lane',
+  harbour: 'Harbour Road',
+  council: 'Council Lane',
+  commons: "Wanderers' Lane",
+};
+
+/** A district's street: its row on the path grid, which side of the avenue (−1 left, 1 right), and where it ends (|x|). */
+export interface Street {
+  district: District;
+  z: number;
+  side: number;
+  end: number;
+}
+
+export interface PlazaSpots {
+  well: { x: number; z: number };
+  benches: { x: number; z: number; rot: number }[];
+  monuments: { x: number; z: number; rot: number }[];
+  board: { x: number; z: number; rot: number };
+}
+
 export interface Avenue {
   /** The plaza with the bell tower: no buildings beside it; the avenue goes round the tower on the left. */
   plazaStart: number;
@@ -130,6 +177,11 @@ export interface Avenue {
   end: number;
   /** Where someone from outside the town is met: the Wayfarers' Gate's door (layout 2), else the avenue's end. */
   out?: number;
+  /**
+   * A town in districts: the road round the bell tower (a square ring, its rows
+   * z0 and z1, its columns at ±x) and the row its two streets leave it on.
+   */
+  ring?: { z0: number; z1: number; x: number; row: number };
 }
 
 export type CastleLayout = 1 | 2;
@@ -271,6 +323,8 @@ export function planCastle(
   world: Pick<CastleWorld, 'wallets' | 'tier' | 'protocols'> & Partial<Pick<CastleWorld, 'walletTiers' | 'walletFocus'>>,
   arranged: Readonly<Record<string, number>> = {},
   layout: CastleLayout = 1,
+  /** The town in districts, each a side street off the avenue (docs/TOWN_DISTRICTS.md); else every building on the avenue. */
+  districts = false,
 ): CastlePlan {
   const tier = clampTier(world.tier);
   const cells = (x0: number, x1: number, z0: number, z1: number, inside: (x: number, z: number) => boolean) => {
@@ -290,25 +344,14 @@ export function planCastle(
   // (layout 2's booth holds the barrier's post: 0.14 m off its middle, so the booth stands that much further along)
   const tollbooth: Placement = { name: 'castle.tollbooth', x: -2, z: layout === 2 ? TOLL_Z + 0.14 : TOLL_Z, rot: Math.PI / 2 };
   const barrier: Placement = { name: 'castle.tollbooth.barrier', x: BARRIER_POST_X, z: TOLL_Z, key: 'barrier' };
-  // The town: plots along the avenue, sized to their buildings, the plaza halfway.
-  const slotOf = assignSlots(
-    world.protocols.map((p) => p.id),
-    arranged,
-  );
-  const inSlot = new Map<number, WorldProtocol>();
-  for (const p of world.protocols.slice(0, SLOT_COUNT)) inSlot.set(slotOf.get(p.id)!, p);
-  const plots = layPlots(Array.from({ length: SLOT_COUNT }, (_, i) => inSlot.get(i)?.size ?? 1));
-  const avenue = plots.avenue;
-  const tower: Placement = { name: 'town.tower.chronicle', x: 0, z: round((avenue.plazaStart + avenue.plazaEnd) / 2) };
-
+  // The town: plots along the avenue (or its districts' streets), sized to their buildings, the plaza between.
   const buildings: BuildingPlacement[] = [];
-  for (const [slot, protocol] of inSlot) {
-    const plot = plots.list[slot]!;
+  const building = (protocol: WorldProtocol, slot: number, plot: { x: number; z: number; face: number; half: number }, door: { x: number; z: number }, npc: { x: number; z: number }, street: BuildingPlacement['street']): BuildingPlacement => {
     const cat = protocol.category in WING_FOR ? protocol.category : 'other';
     // its category's building: the v2 one of its size class (tiers as parts), else the first themes' tier model
     const byTier = `building.category.${cat}.t${clampTier(protocol.tier)}`;
     const byClass = `building.category.${cat}.${sizeClassOf(2 * plot.half)}`;
-    buildings.push({
+    return {
       // the town's own place (the furnace), a signature building when the protocol has one, else (and while
       // its model is missing) its category's
       name: protocol.place?.model ?? (protocol.signature ? `building.protocol.${protocol.signature}` : byClass),
@@ -321,11 +364,54 @@ export function planCastle(
       protocol,
       slot,
       half: plot.half,
-      // the door's step on the path grid's row nearest the plot's middle (cells are 1 m, centred on half metres)
-      door: { x: Math.sign(plot.x) * AVENUE_HALF, z: pathRow(plot.z) },
-      npc: { x: round(Math.sign(plot.x) * (AVENUE_HALF + plot.half * (1 - NPC_IN))), z: pathRow(plot.z) },
+      door,
+      npc,
+      street,
+    };
+  };
+  let avenue: Avenue;
+  let streets: Street[] = [];
+  let freeSlots: CastlePlan['freeSlots'] = [];
+  if (districts) {
+    // each district's protocols in its street's order: the ones the player arranged (build mode swaps two in a street) where they asked
+    const shown = world.protocols.slice(0, SLOT_COUNT);
+    const rank = (p: WorldProtocol) => arranged[p.id] ?? SLOT_COUNT + shown.indexOf(p);
+    const firsts: District[] = [];
+    for (const p of shown) {
+      const d = DISTRICT_FOR[p.category] ?? 'commons';
+      if (!firsts.includes(d)) firsts.push(d);
+    }
+    const ordered = firsts.flatMap((d) => shown.filter((p) => (DISTRICT_FOR[p.category] ?? 'commons') === d).sort((a, b) => rank(a) - rank(b)));
+    const laid = layStreets(ordered);
+    avenue = laid.avenue;
+    streets = laid.streets;
+    laid.list.forEach((plot, slot) => {
+      const protocol = ordered[slot]!;
+      const across = Math.sign(plot.door.z - plot.street.z);
+      const npc = { x: plot.x, z: round(plot.street.z + across * (STREET_HALF + plot.half * (1 - NPC_IN))) };
+      buildings.push(building(protocol, slot, plot, plot.door, npc, { z: plot.street.z, district: plot.street.district }));
     });
+  } else {
+    const slotOf = assignSlots(
+      world.protocols.map((p) => p.id),
+      arranged,
+    );
+    const inSlot = new Map<number, WorldProtocol>();
+    for (const p of world.protocols.slice(0, SLOT_COUNT)) inSlot.set(slotOf.get(p.id)!, p);
+    const plots = layPlots(Array.from({ length: SLOT_COUNT }, (_, i) => inSlot.get(i)?.size ?? 1));
+    avenue = plots.avenue;
+    for (const [slot, protocol] of inSlot) {
+      const plot = plots.list[slot]!;
+      // the door's step on the path grid's row nearest the plot's middle (cells are 1 m, centred on half metres)
+      const door = { x: Math.sign(plot.x) * AVENUE_HALF, z: pathRow(plot.z) };
+      const npc = { x: round(Math.sign(plot.x) * (AVENUE_HALF + plot.half * (1 - NPC_IN))), z: pathRow(plot.z) };
+      buildings.push(building(protocol, slot, plot, door, npc, null));
+    }
+    freeSlots = plots.list.map((p, slot) => ({ slot, x: p.x, z: p.z, half: p.half })).filter((p) => !inSlot.has(p.slot));
   }
+  const tower: Placement = { name: 'town.tower.chronicle', x: 0, z: round((avenue.plazaStart + avenue.plazaEnd) / 2) };
+  const spots = plazaSpots(tower, avenue.ring !== undefined);
+
   // nearest the gate first (couriers, the chronicle and the tests read them in this order)
   buildings.sort((a, b) => world.protocols.indexOf(a.protocol) - world.protocols.indexOf(b.protocol));
 
@@ -336,8 +422,8 @@ export function planCastle(
   const beyond: Placement | null = gate ? { name: 'scenery.road.beyond', x: 0, z: gate.z + GATE_BACK, rot: Math.PI, optional: true } : null;
 
   const town = {
-    x0: Math.min(-12, ...plots.list.map((p) => p.x - p.half - 3)),
-    x1: Math.max(12, ...plots.list.map((p) => p.x + p.half + 3)),
+    x0: Math.min(-12, ...buildings.map((p) => p.x - p.half - 3), ...streets.map((t) => (t.side < 0 ? -t.end - 3 : 0))),
+    x1: Math.max(12, ...buildings.map((p) => p.x + p.half + 3), ...streets.map((t) => (t.side > 0 ? t.end + 3 : 0))),
     z0: 0,
     z1: gate ? gate.z + GATE_BACK + ROAD_BEYOND : avenue.end + 3,
   };
@@ -353,14 +439,35 @@ export function planCastle(
     road.push({ name: 'path.tile.straight', x: round(x), z: round(z), rot, key: 'road' });
   };
   // all on one grid: x on whole metres, z on half metres, so every turn and branch meets its neighbour edge to edge
-  const [turnIn, turnOut] = plazaRows(avenue);
-  for (let z = 0.5; z <= turnIn; z += 1) pave(0, z, 0);
-  for (let x = -1; x >= -TOWER_CLEAR; x -= 1) pave(x, turnIn, Math.PI / 2);
-  for (let z = turnIn + 1; z < turnOut; z += 1) pave(-TOWER_CLEAR, z, 0);
-  for (let x = -1; x >= -TOWER_CLEAR; x -= 1) pave(x, turnOut, Math.PI / 2);
-  // (through the gate's passage to the road beyond, when there is a gate)
-  for (let z = turnOut; z < (gate ? gate.z + GATE_BACK : avenue.end); z += 1) pave(0, z, 0);
-  for (const b of buildings) pave(Math.sign(b.door.x), b.door.z, Math.PI / 2);
+  const ring = avenue.ring;
+  if (ring) {
+    // up the avenue to the ring round the tower, round it, and on from it to the gate
+    for (let z = 0.5; z <= ring.z0; z += 1) pave(0, z, 0);
+    for (let x = -ring.x; x <= ring.x; x += 1) {
+      pave(x, ring.z0, Math.PI / 2);
+      pave(x, ring.z1, Math.PI / 2);
+    }
+    for (let z = ring.z0 + 1; z < ring.z1; z += 1) {
+      pave(-ring.x, z, 0);
+      pave(ring.x, z, 0);
+    }
+    for (let z = ring.z1; z < (gate ? gate.z + GATE_BACK : avenue.end); z += 1) pave(0, z, 0);
+  } else {
+    const [turnIn, turnOut] = plazaRows(avenue);
+    for (let z = 0.5; z <= turnIn; z += 1) pave(0, z, 0);
+    for (let x = -1; x >= -TOWER_CLEAR; x -= 1) pave(x, turnIn, Math.PI / 2);
+    for (let z = turnIn + 1; z < turnOut; z += 1) pave(-TOWER_CLEAR, z, 0);
+    for (let x = -1; x >= -TOWER_CLEAR; x -= 1) pave(x, turnOut, Math.PI / 2);
+    // (through the gate's passage to the road beyond, when there is a gate)
+    for (let z = turnOut; z < (gate ? gate.z + GATE_BACK : avenue.end); z += 1) pave(0, z, 0);
+  }
+  // the districts' streets off the avenue, and a step from each to its doors
+  // (the plaza's streets leave the ring's sides)
+  for (const t of streets) for (let x = t.z === ring?.row ? ring.x + 1 : 1; x <= Math.ceil(t.end); x += 1) pave(t.side * x, t.z, Math.PI / 2);
+  for (const b of buildings) {
+    if (b.street) pave(b.door.x, round(b.street.z + Math.sign(b.door.z - b.street.z)), 0);
+    else pave(Math.sign(b.door.x), b.door.z, Math.PI / 2);
+  }
   // The lit overlay sits over every road and path tile; the view shows it while a courier is near.
   for (const t of road) lit.push({ name: 'path.tile.lit', x: t.x, z: t.z, rot: t.rot ?? 0, key: 'lit' });
 
@@ -369,6 +476,12 @@ export function planCastle(
   const even = (v: number, up: boolean) => (up ? Math.ceil(v / 2) : Math.floor(v / 2)) * 2;
   const plotCells = buildings.flatMap((b) => {
     const reach = b.half + 0.5;
+    if (b.street) {
+      // from the street's band to the plot's far side
+      const across = Math.sign(b.z - b.street.z);
+      const far = b.z + across * reach;
+      return cells(even(b.x - reach, false), even(b.x + reach, true), even(Math.min(b.street.z + across * 2, far), false), even(Math.max(b.street.z + across * 2, far), true), () => false);
+    }
     const outer = Math.abs(b.x) + reach;
     return cells(b.x < 0 ? -even(outer, true) : 4, b.x < 0 ? -4 : even(outer, true), even(b.z - reach, false), even(b.z + reach, true), () => false);
   });
@@ -378,6 +491,8 @@ export function planCastle(
     // (to the gate's back, never under the road beyond's own cobbles)
     ...cells(-4, 4, 0, gate ? Math.floor((gate.z + GATE_BACK) / 2) * 2 : Math.ceil(avenue.end / 2) * 2, () => false),
     ...cells(-10, 10, Math.floor(avenue.plazaStart / 2) * 2, Math.ceil(avenue.plazaEnd / 2) * 2, (x) => Math.abs(x) < 4),
+    // the streets' bands
+    ...streets.flatMap((t) => cells(t.side < 0 ? -even(t.end + 1, true) : 4, t.side < 0 ? -4 : even(t.end + 1, true), even(t.z - 2, false), even(t.z + 2, true), () => false)),
     ...plotCells,
   ]
     .filter((c) => {
@@ -403,15 +518,18 @@ export function planCastle(
     road,
     lit,
     buildings,
-    freeSlots: plots.list.map((p, slot) => ({ slot, x: p.x, z: p.z, half: p.half })).filter((p) => !inSlot.has(p.slot)),
+    freeSlots,
     avenue,
+    streets,
+    plazaSpots: spots,
     courierRoute,
     scenery: planScenery(town, moat),
     river: riverOf(town, moat),
     gate,
     beyond,
     roadOut: gate ? { x: 0, z: gate.z + GATE_BACK + 0.5 } : null,
-    decor: planDecor(layout === 1 ? castle.wallets : [], tower, avenue, town, buildings.map((b) => b.door.z), moat),
+    // (no lantern across a door's step or a street's mouth)
+    decor: planDecor(layout === 1 ? castle.wallets : [], tower, avenue, town, [...buildings.filter((b) => !b.street).map((b) => b.door.z), ...streets.map((t) => t.z)], moat, spots),
     moat,
     island,
     town,
@@ -618,6 +736,108 @@ export function layPlots(sizes: readonly number[]): { list: { x: number; z: numb
   return { list, avenue: { plazaStart, plazaEnd, end: round(Math.max(plazaEnd + 2, ...cursor)) } };
 }
 
+/** A street's half width: its doors stand at its edge, as on the avenue. */
+const STREET_HALF = AVENUE_HALF;
+/** Where a street's first plots start (|x|), clear of the avenue and its lanterns. */
+const STREET_START = 3;
+/** Room between two blocks of plots. */
+const BAND_GAP = 2;
+/** The plaza in a town of districts: its half width and half length round the bell tower, and its ring road's distance from the tower. */
+const PLAZA_HALF_X = 9;
+const PLAZA_HALF_Z = 7;
+const RING = 3;
+
+/**
+ * The town in districts (docs/TOWN_DISTRICTS.md), round the plaza: a ring
+ * road round the bell tower, the avenue coming in from the castle and going
+ * on to the gate, and the town's two first districts' streets leaving the
+ * ring left and right (their buildings both sides, past the square). The next
+ * two districts get a crossroads between the castle and the plaza (their
+ * buildings towards the castle), the two after that a crossroads past the
+ * plaza (towards the gate), and any more one further on. The districts come
+ * in the order of their first protocol (the town's order: what the guild
+ * holds most first). `protocols` lists them as placed; the plots are
+ * numbered across the streets (the slots).
+ */
+export function layStreets(protocols: readonly { id: string; category: string; size: number }[]): {
+  list: { id: string; x: number; z: number; face: number; half: number; door: { x: number; z: number }; street: Street }[];
+  streets: Street[];
+  avenue: Avenue;
+} {
+  const groups = new Map<District, (typeof protocols)[number][]>();
+  for (const p of protocols) {
+    const d = DISTRICT_FOR[p.category] ?? 'commons';
+    if (!groups.has(d)) groups.set(d, []);
+    groups.get(d)!.push(p);
+  }
+  const districts = [...groups.keys()];
+  // which sides of its row a street's buildings take, in turn (+1: towards the gate, −1: towards the castle)
+  const acrossOf = (slot: number): number[] => (slot < 2 ? [1, -1] : slot < 4 ? [-1] : [1]);
+  const sideOf = (slot: number) => (slot % 2 === 0 ? -1 : 1);
+  const reach = (slot: number, across: number) => {
+    const d = districts[slot];
+    if (!d) return 0;
+    const ways = acrossOf(slot);
+    return STREET_HALF + 3 * Math.max(0, ...groups.get(d)!.filter((_, i) => ways[i % ways.length] === across).map((p) => p.size));
+  };
+  const both = (slots: number[], across: number) => Math.max(0, ...slots.map((i) => reach(i, across)));
+  const hasA = districts.length > 2;
+  // crossroads A, then the plaza (its streets' buildings clear of A's street), crossroads B, and C
+  const zA = pathRow(TOWN_START + both([2, 3], -1));
+  const tz = Math.ceil(hasA ? zA + STREET_HALF + BAND_GAP + Math.max(PLAZA_HALF_Z, both([0, 1], -1) - 0.5) : TOWN_START + 2 + Math.max(PLAZA_HALF_Z, both([0, 1], -1)));
+  const row = tz + 0.5;
+  const zB = pathRow(tz + Math.max(PLAZA_HALF_Z, both([0, 1], 1) + 0.5) + BAND_GAP + STREET_HALF);
+  const zC = pathRow(zB + both([4, 5], 1) + BAND_GAP + STREET_HALF);
+  const rowOf = (slot: number) => (slot < 2 ? row : slot < 4 ? zA : slot < 6 ? zB : zC);
+  const streets: Street[] = districts.map((district, slot) => ({ district, z: rowOf(slot), side: sideOf(slot), end: 0 }));
+  const list: ReturnType<typeof layStreets>['list'] = [];
+  streets.forEach((street, slot) => {
+    const ways = acrossOf(slot);
+    // the plaza's streets build past the square
+    const start = slot < 2 ? PLAZA_HALF_X + 1 : STREET_START;
+    const along = new Map(ways.map((w) => [w, start]));
+    groups.get(street.district)!.forEach((p, i) => {
+      const half = p.size;
+      const across = ways[i % ways.length]!;
+      // its door on a whole metre, so the step's tile lies on the path grid
+      const x = Math.round(street.side * (along.get(across)! + half));
+      along.set(across, along.get(across)! + 2 * half + PLOT_GAP);
+      list.push({ id: p.id, x, z: round(street.z + across * (STREET_HALF + 2 * half)), face: across > 0 ? Math.PI : 0, half, door: { x, z: round(street.z + across * STREET_HALF) }, street });
+    });
+    street.end = Math.max(...along.values()) - PLOT_GAP;
+  });
+  const far = Math.max(tz + PLAZA_HALF_Z + 2, ...list.map((b) => b.z + b.half + 1));
+  return {
+    list,
+    streets,
+    avenue: { plazaStart: tz - PLAZA_HALF_Z, plazaEnd: tz + PLAZA_HALF_Z, end: round(far), ring: { z0: tz - RING - 0.5, z1: tz + RING + 0.5, x: RING, row } },
+  };
+}
+
+/** The plaza's spots (pure): round the tower on the avenue's plaza, or in the four corners of a district town's square, clear of its ring and streets. */
+export function plazaSpots(tower: { x: number; z: number }, ring: boolean): PlazaSpots {
+  const t = tower;
+  if (!ring)
+    return {
+      well: { x: 4, z: t.z },
+      benches: [
+        { x: 4, z: t.z - 3, rot: Math.PI / 2 },
+        { x: 4, z: t.z + 3, rot: Math.PI / 2 },
+      ],
+      monuments: [-4, 0, 4].map((dz) => ({ x: t.x + 7.5, z: t.z + dz, rot: -Math.PI / 2 })),
+      board: { x: t.x + 7.5, z: t.z - 5.8, rot: Math.PI / 2 },
+    };
+  return {
+    well: { x: t.x + 6, z: t.z + 4.5 },
+    benches: [
+      { x: t.x + 5.2, z: t.z - 5.5, rot: 0 },
+      { x: t.x - 5.2, z: t.z - 5.5, rot: 0 },
+    ],
+    monuments: [2.8, 4.6, 6.4].map((dz) => ({ x: t.x - 7.2, z: t.z + dz, rot: Math.PI / 2 })),
+    board: { x: t.x + 7.5, z: t.z - 3.6, rot: Math.PI / 2 },
+  };
+}
+
 /** The courier's start: inside the gate. */
 export const GATE_AT = { x: 0, z: ISLAND.z1 - 1 } as const;
 
@@ -671,6 +891,25 @@ export function pathShape(o: Openings): { shape: 'straight' | 'bend' | 'tee' | '
  */
 export function routeTo(avenue: Avenue, building: BuildingPlacement | null): Waypoint[] {
   const start: Waypoint[] = [{ ...GATE_AT }, { ...TOLL_STOP, stop: 'toll' }];
+  const ring = avenue.ring;
+  if (ring) {
+    // a town of districts: up to the ring round the tower; round it on the left to go on past the plaza
+    const round: Waypoint[] = [
+      { x: 0, z: ring.z0 },
+      { x: -ring.x, z: ring.z0 },
+      { x: -ring.x, z: ring.z1 },
+      { x: 0, z: ring.z1 },
+    ];
+    if (!building) return [...start, ...round, { x: 0, z: avenue.out ?? avenue.end, stop: 'hand-over' }];
+    const door: Waypoint = { x: building.door.x, z: building.door.z, stop: 'hand-over' };
+    const z = building.street?.z ?? building.door.z;
+    if (z === ring.row) {
+      // a plaza street: round the ring to its side, and out along it
+      const side = Math.sign(building.door.x) * ring.x;
+      return [...start, { x: 0, z: ring.z0 }, { x: side, z: ring.z0 }, { x: side, z }, { x: building.door.x, z }, door];
+    }
+    return [...start, ...(z > ring.z1 ? round : []), { x: 0, z }, { x: building.door.x, z }, door];
+  }
   // someone outside the town (a protocol without a building, another person): up the avenue and out at its far end
   const [turnIn, turnOut] = plazaRows(avenue);
   const roundTower: Waypoint[] = [
@@ -680,8 +919,10 @@ export function routeTo(avenue: Avenue, building: BuildingPlacement | null): Way
     { x: 0, z: turnOut },
   ];
   if (!building) return [...start, ...roundTower, { x: 0, z: avenue.out ?? avenue.end, stop: 'hand-over' }];
-  const z = building.door.z;
-  return [...start, ...(z > avenue.plazaEnd ? roundTower : []), { x: 0, z }, { x: building.door.x, z, stop: 'hand-over' }];
+  // up the avenue to its street (or its door's row), along the street, and over to the door
+  const z = building.street?.z ?? building.door.z;
+  const along: Waypoint[] = building.street ? [{ x: 0, z }, { x: building.door.x, z }, { x: building.door.x, z: building.door.z, stop: 'hand-over' }] : [{ x: 0, z }, { x: building.door.x, z, stop: 'hand-over' }];
+  return [...start, ...(z > avenue.plazaEnd ? roundTower : []), ...along];
 }
 
 /**
@@ -692,7 +933,7 @@ export function routeTo(avenue: Avenue, building: BuildingPlacement | null): Way
  * chickens, a cat and a dog about town, a horse by the gate. Kept clear of the
  * paths and the buildings' plots (plan tests check).
  */
-function planDecor(towers: readonly Placement[], tower: Placement, avenue: Avenue, town: { x0: number; x1: number }, doors: readonly number[], moat: Rect): Placement[] {
+function planDecor(towers: readonly Placement[], tower: Placement, avenue: Avenue, town: { x0: number; x1: number }, doors: readonly number[], moat: Rect, spots: PlazaSpots): Placement[] {
   const d = (name: string, x: number, z: number, rot = 0): Placement => ({ name, x, z, rot, optional: true, key: 'decor' });
   const out: Placement[] = [];
   // lanterns either side of the avenue, every 6 m, never on a door's step or in the plaza
@@ -702,7 +943,7 @@ function planDecor(towers: readonly Placement[], tower: Placement, avenue: Avenu
     for (const x of [-0.95, 0.95]) out.push(d('prop.lamp', x, z));
   }
   // the plaza: the well and benches on the side the avenue does not take
-  out.push(d('prop.well', 4, tower.z), d('prop.bench', 4, tower.z - 3, Math.PI / 2), d('prop.bench', 4, tower.z + 3, Math.PI / 2));
+  out.push(d('prop.well', spots.well.x, spots.well.z), ...spots.benches.map((b) => d('prop.bench', b.x, b.z, b.rot)));
   // the town's front, either side of the avenue
   out.push(d('prop.market.stall', -6.5, 3, Math.PI / 2), d('prop.market.stall', 6, 3, -Math.PI / 2), d('prop.cart', 3.5, 4.2, 0.4));
   out.push(d('prop.crate', -8.2, 2.2), d('prop.barrel', -8.3, 3.4), d('prop.crate', 8, 2), d('prop.barrel', 8.4, 3.1), d('prop.barrel', 7.7, 4.2));
@@ -717,7 +958,7 @@ function planDecor(towers: readonly Placement[], tower: Placement, avenue: Avenu
   out.push(d('animal.duck', moat.x0 + 1, -9, 1.2), d('animal.duck', 6.5, -1, -0.5), d('animal.duck', 0, moat.z0 + 1, 2.5));
   // about town
   out.push(d('animal.chicken', 5.2, 5, 0.8), d('animal.chicken', 6.6, 5.4, 2.4), d('animal.chicken', -5.4, 5.2, 4));
-  out.push(d('animal.cat', 5.5, tower.z + 1, 1.1), d('animal.dog', 2.8, 2.2, -1.2), d('animal.horse', -5, 0.9, Math.PI / 2));
+  out.push((avenue.ring ? d('animal.cat', spots.well.x + 1.6, spots.well.z - 0.4, 1.1) : d('animal.cat', 5.5, tower.z + 1, 1.1)), d('animal.dog', 2.8, 2.2, -1.2), d('animal.horse', -5, 0.9, Math.PI / 2));
   return out;
 }
 

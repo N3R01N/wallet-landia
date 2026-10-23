@@ -18,7 +18,7 @@ import { NO_OCCASIONS, dropLine, type Occasions } from '../world/events.js';
 import type { Errand } from '../world/world.js';
 
 /** What the dressing reads from the town's plan. */
-export type FestivePlan = Pick<CastlePlan, 'buildings' | 'avenue' | 'freeSlots' | 'town' | 'gate'>;
+export type FestivePlan = Pick<CastlePlan, 'buildings' | 'avenue' | 'freeSlots' | 'town' | 'gate'> & Partial<Pick<CastlePlan, 'streets'>>;
 
 /** One piece of dressing. `y` is its height off the ground (a roof's: from the roof's top). */
 export interface Dressing {
@@ -66,12 +66,14 @@ export function buntingHeight(x: number): number {
  * each pole clear of the buildings' plots and door steps on its side, none in
  * the plaza (the avenue turns round the tower there).
  */
-export function buntingRows(plan: Pick<CastlePlan, 'buildings' | 'avenue'>): number[] {
+export function buntingRows(plan: Pick<CastlePlan, 'buildings' | 'avenue'> & Partial<Pick<CastlePlan, 'streets'>>): number[] {
   const { avenue } = plan;
   const end = avenue.out ?? avenue.end;
   const clear = (z: number) =>
     !(z > avenue.plazaStart - 2 && z < avenue.plazaEnd + 2) &&
-    plan.buildings.every((b) => Math.abs(b.z - z) > b.half + 0.5 && Math.abs(b.door.z - z) > 1);
+    // (and never across a street's mouth)
+    (plan.streets ?? []).every((t) => Math.abs(t.z - z) > 2.5) &&
+    plan.buildings.every((b) => (b.street ? Math.abs(b.x) - b.half > BUNTING_HALF + 0.5 || Math.abs(b.z - z) > b.half + 0.5 : Math.abs(b.z - z) > b.half + 0.5 && Math.abs(b.door.z - z) > 1));
   const rows: number[] = [];
   for (let z = 4.5; z < end - 1; z += 0.5) if (clear(z) && (!rows.length || z - rows[rows.length - 1]! >= BUNTING_EVERY)) rows.push(z);
   return rows;
@@ -93,6 +95,12 @@ export function planFestive(plan: FestivePlan, o: Occasions, drop: boolean): Dre
   if (o.pumpkins) {
     // one by each door, beside its step on the avenue's edge, facing the avenue
     plan.buildings.forEach((b, i) => {
+      if (b.street) {
+        // beside its step on its street's edge, facing the street
+        const across = Math.sign(b.door.z - b.street.z) || 1;
+        out.push(piece('pumpkins', 'prop.pumpkin', b.door.x + (i % 2 ? 0.75 : -0.75), b.street.z + across * (AVENUE_HALF + 0.35), { rot: across > 0 ? Math.PI : 0 }));
+        return;
+      }
       const side = Math.sign(b.door.x) || 1;
       out.push(piece('pumpkins', 'prop.pumpkin', side * (AVENUE_HALF + 0.35), b.door.z + (i % 2 ? 0.75 : -0.75), { rot: -side * (Math.PI / 2) }));
     });

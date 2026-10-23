@@ -156,17 +156,23 @@ test('build mode: a building moves from its sheet; the places it can go are mark
   await page.goto('/');
   await showTown(page);
   await expect(page.locator('.castle-view[data-ready="true"]')).toBeVisible({ timeout: 60_000 });
-  const [a, b] = await page.evaluate(() => (window as unknown as Hook).castleView.buildingIds().slice(0, 2));
+  // two buildings on the same street (in a town of districts a building moves only within its street)
+  const [ia, ib] = await page.evaluate(() => {
+    const bs = (window as unknown as { castleView: { plan: { buildings: { street: { district: string } | null }[] } } }).castleView.plan.buildings;
+    for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) if (bs[i]!.street?.district === bs[j]!.street?.district) return [i, j];
+    return [0, 1];
+  });
+  const [a, b] = await page.evaluate(([i, j]) => { const ids = (window as unknown as Hook).castleView.buildingIds(); return [ids[i!], ids[j!]]; }, [ia, ib]);
   const before = await page.evaluate(() => (window as unknown as Hook).castleView.slots());
 
   // no Arrange button in the scene: it starts from the building's sheet
   await expect(page.locator('.arrange-open')).toHaveCount(0);
-  await tapBuilding(page, 0);
+  await tapBuilding(page, ia!);
   await page.locator('.sheet .move-building').click();
   await expect(page.locator('.castle-view')).toHaveAttribute('data-arranging', 'true');
   await expect(page.locator('.arrange-hint')).toContainText('Moving');
   await expect(page.locator('.arrange-label.swap').first()).toBeAttached();
-  await tapBuilding(page, 1);
+  await tapBuilding(page, ib!);
   const after = await page.evaluate(() => (window as unknown as Hook).castleView.slots());
   expect(after[a!]).toBe(before[b!]);
   expect(after[b!]).toBe(before[a!]);
