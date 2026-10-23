@@ -19,4 +19,12 @@ describe('picture addresses from the API', () => {
     expect(imageUrl(undefined)).toBeUndefined();
     expect(imageUrl(42)).toBeUndefined();
   });
+  it('stays quick on a long run of quote marks or spaces (the old trim was quadratic), and refuses very long addresses', () => {
+    const start = performance.now();
+    expect(imageUrl(`https://a.b/${'"'.repeat(2000)}x`)).toBeDefined();
+    expect(imageUrl(`x${' '.repeat(2030)}x`)).toBeUndefined();
+    expect(imageUrl(`x${'"'.repeat(100_000)}x`)).toBeUndefined();
+    expect(performance.now() - start).toBeLessThan(50);
+    expect(imageUrl(`  "https://a.b/c.png"  `)).toBe('https://a.b/c.png');
+  });
 });

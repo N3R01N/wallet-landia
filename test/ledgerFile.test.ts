@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { decodeLedgerFile, encodeLedgerFile, LEDGER_FILE_FORMAT, type LedgerFile } from '../src/data/ledgerFile.js';
 
-const tx = (i: number): unknown => ({ type: 'transactions', id: `id-${i}`, attributes: { hash: `0x${i}`, mined_at: new Date(1_500_000_000_000 + i * 1000).toISOString(), operation_type: 'send', status: 'confirmed', transfers: [] } });
 const A = `0x${'ab'.repeat(20)}`;
+const tx = (i: number): unknown => ({ type: 'transactions', id: `id-${i}`, attributes: { hash: `0x${i}`, mined_at: new Date(1_500_000_000_000 + i * 1000).toISOString(), operation_type: 'send', status: 'confirmed', sent_from: A, sent_to: A, transfers: [] } });
 
 describe('history files', () => {
   it('round trip, gzipped and small', async () => {
@@ -41,5 +41,13 @@ describe('history files', () => {
     await expect(decodeLedgerFile(enc({ format: LEDGER_FILE_FORMAT, scope: '<script>', wallets: [] }))).rejects.toThrow('names no realm');
     await expect(decodeLedgerFile(enc({ format: LEDGER_FILE_FORMAT, scope: 'ethereum', wallets: [{ address: 'nope', transactions: [] }] }))).rejects.toThrow('valid address');
     await expect(decodeLedgerFile(new Uint8Array([0x1f, 0x8b, 1, 2, 3]).buffer)).rejects.toThrow('could not be read');
+  });
+  it('drops what the mapper cannot read, and times from before Ethereum or the future (a file someone else made)', async () => {
+    const bare = { id: 'bare', attributes: { hash: '0x1', mined_at: '2020-01-01T00:00:00Z', operation_type: 'trade', status: 'confirmed' } };
+    const future = { ...(tx(3) as { attributes: object }), id: 'future', attributes: { ...(tx(3) as { attributes: object }).attributes, mined_at: '2099-01-01T00:00:00Z' } };
+    const oddTransfer = { ...(tx(4) as { attributes: object }), id: 'odd', attributes: { ...(tx(4) as { attributes: object }).attributes, transfers: [{ direction: 'in' }] } };
+    const f = { format: LEDGER_FILE_FORMAT, scope: 'ethereum', wallets: [{ address: A, transactions: [tx(1), bare, future, oddTransfer] }] };
+    const back = await decodeLedgerFile(new TextEncoder().encode(JSON.stringify(f)).buffer as ArrayBuffer);
+    expect(back.wallets[0]!.transactions.map((t) => t.id)).toEqual(['id-1']);
   });
 });

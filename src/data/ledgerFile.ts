@@ -89,6 +89,9 @@ function validate(raw: unknown): LedgerFile {
   return { format: LEDGER_FILE_FORMAT, scope: raw.scope, exportedAt: typeof raw.exportedAt === 'number' ? raw.exportedAt : 0, wallets, ...(Object.keys(towns).length > 0 ? { towns } : {}) };
 }
 
+/** Ethereum's first block: nothing was mined before it. */
+const FIRST_BLOCK_AT = Date.parse('2015-07-30T00:00:00Z');
+
 /** The fields the ledger and the mapper rely on, of the right types. */
 function looksLikeTx(t: unknown): t is TransactionResource {
   if (!isObj(t) || typeof t.id !== 'string' || !isObj(t.attributes)) return false;
@@ -97,5 +100,10 @@ function looksLikeTx(t: unknown): t is TransactionResource {
   const chain = isObj(t.relationships) ? t.relationships.chain : undefined;
   if (chain !== undefined && !(isObj(chain) && isObj(chain.data) && typeof chain.data.id === 'string')) return false;
   if (t.relationships !== undefined && !isObj(t.relationships)) return false;
-  return typeof a.hash === 'string' && typeof a.mined_at === 'string' && !Number.isNaN(Date.parse(a.mined_at)) && typeof a.operation_type === 'string' && typeof a.status === 'string' && (a.transfers === undefined || Array.isArray(a.transfers));
+  // a time from the future would become the ledger's newest, and new activity would never be asked for
+  const at = typeof a.mined_at === 'string' ? Date.parse(a.mined_at) : NaN;
+  if (!(at >= FIRST_BLOCK_AT && at <= Date.now() + 86_400_000)) return false;
+  // the mapper reads every transfer's direction, sender and recipient
+  const transfersOk = Array.isArray(a.transfers) && a.transfers.every((x) => isObj(x) && typeof x.direction === 'string' && typeof x.sender === 'string' && typeof x.recipient === 'string');
+  return transfersOk && typeof a.hash === 'string' && typeof a.sent_from === 'string' && typeof a.sent_to === 'string' && typeof a.operation_type === 'string' && typeof a.status === 'string';
 }

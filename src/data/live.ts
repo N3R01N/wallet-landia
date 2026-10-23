@@ -177,12 +177,12 @@ export class LiveLoader {
   }
 
   /** One request: anything new since the last transaction we know of? */
-  refreshHistory(address: string, print?: string): Promise<{ raw: RawWallet; added: number; fresh: TransactionResource[] } | null> {
+  refreshHistory(address: string, print?: string, maxPages?: number): Promise<{ raw: RawWallet; added: number; fresh: TransactionResource[] } | null> {
     const k = key(address);
     return this.#serial(k, async () => {
       const cached = await this.#cache.get<Entry>(k);
       if (cached === undefined) return null;
-      const { raw, added, fresh } = await this.#refreshTail(cached.raw);
+      const { raw, added, fresh } = await this.#refreshTail(cached.raw, maxPages);
       const now = this.#now();
       raw.capturedAt = now;
       await this.#cache.put(k, { ...cached, raw, historyAt: now, ...(print !== undefined ? { print } : {}) } satisfies Entry);
@@ -190,9 +190,9 @@ export class LiveLoader {
     });
   }
 
-  async #refreshTail(raw: RawWallet): Promise<{ raw: RawWallet; added: number; fresh: TransactionResource[] }> {
+  async #refreshTail(raw: RawWallet, maxPages?: number): Promise<{ raw: RawWallet; added: number; fresh: TransactionResource[] }> {
     // through the ledger: one request for what is new, kept for good (it asks from its own newest, so nothing is missed)
-    const fetched = (await this.ledger.head(raw.address)).filter((t) => !isSpam(t));
+    const fetched = (await this.ledger.head(raw.address, maxPages)).filter((t) => !isSpam(t));
     const known = new Set(raw.transactions.map(txKey));
     const fresh = fetched.filter((t) => !known.has(txKey(t)));
     return { raw: { ...raw, transactions: mergeHistory(raw.transactions, fetched) }, added: fresh.length, fresh };

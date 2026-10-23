@@ -515,5 +515,26 @@ export function encodeReplay(r: Replay): string {
 export function decodeReplay(text: string): Replay {
   const r = JSON.parse(text, (_k, v: unknown) => (typeof v === 'string' && /^-?\d+n$/.test(v) ? BigInt(v.slice(0, -1)) : v)) as Replay;
   if (!r || typeof r !== 'object' || !r.setup || !Array.isArray(r.log)) throw new Error('not a replay file');
+  const { portfolios, customAssets } = r.setup;
+  if (!Array.isArray(portfolios) || portfolios.length !== 2 || !portfolios.every(wellFormedPortfolio)) throw new Error('not a replay file');
+  if (customAssets !== undefined && (!Array.isArray(customAssets) || customAssets.length > MAX_IMPORTED)) throw new Error('not a replay file');
   return r;
+}
+
+/** More positions or assets than any real wallet brings: an imported file with more is refused. */
+export const MAX_IMPORTED = 1000;
+
+/**
+ * A portfolio from a file or code someone else made: every amount a positive
+ * bigint. A negative amount would net against the rest, slipping past the
+ * match cap (and once sent the army builder into an endless loop).
+ */
+export function wellFormedPortfolio(p: unknown): p is Portfolio {
+  if (typeof p !== 'object' || p === null) return false;
+  const { positions } = p as Partial<Portfolio>;
+  if (!Array.isArray(positions) || positions.length > MAX_IMPORTED) return false;
+  return positions.every(
+    (x) =>
+      typeof x === 'object' && x !== null && typeof x.asset === 'string' && typeof x.qty === 'bigint' && x.qty > 0n && (x.pairQty === undefined || (typeof x.pairQty === 'bigint' && x.pairQty > 0n)),
+  );
 }

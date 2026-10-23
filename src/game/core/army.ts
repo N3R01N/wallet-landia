@@ -79,7 +79,8 @@ export function stackSquads(squads: Squad[]): void {
   const total = squads.reduce((s, q) => s + q.count, 0);
   const entities = (k: number) => squads.reduce((n, q) => n + Math.ceil(q.count / k), 0);
   let k = Math.max(1, Math.ceil(total / B.renderCap));
-  while (entities(k) > B.renderCap) k++;
+  // every squad is at least one entity, so with more squads than the cap no k fits: stop at one stack per squad
+  while (k < total && entities(k) > B.renderCap) k++;
   for (const s of squads) {
     const full = Math.floor(s.count / k);
     const rest = s.count - full * k;

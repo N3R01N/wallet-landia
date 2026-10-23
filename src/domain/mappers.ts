@@ -38,14 +38,27 @@ import { heroName } from '../util/rng.js';
  * marks, which made a relative (and so 404ing) image URL; only https survives.
  */
 export function imageUrl(raw: unknown): string | undefined {
-  if (typeof raw !== 'string') return undefined;
-  const s = raw.trim().replace(/^["'\s]+|["'\s]+$/g, '');
+  // longer than the image proxy takes anyway; and the trim below stays linear (a trailing-anchored regex was quadratic)
+  if (typeof raw !== 'string' || raw.length > 2048) return undefined;
+  const wrap = (c: string | undefined) => c === '"' || c === "'" || (c !== undefined && /\s/.test(c));
+  let from = 0;
+  let to = raw.length;
+  while (from < to && wrap(raw[from])) from++;
+  while (to > from && wrap(raw[to - 1])) to--;
+  const s = raw.slice(from, to);
   try {
     const u = new URL(s);
     return u.protocol === 'https:' ? u.href : undefined;
   } catch {
     return undefined;
   }
+}
+
+/** "Cool Cats #123" -> "Cool Cats": the collection from an NFT's name (no regex: names are on-chain, any length). */
+function collectionOf(name: string | undefined): string | undefined {
+  if (name === undefined) return undefined;
+  const hash = name.indexOf('#');
+  return (hash < 0 ? name : name.slice(0, hash)).slice(0, 200).trimEnd();
 }
 
 export type HistoryWindow = { kind: 'days'; days: number } | { kind: 'count'; count: number };
@@ -527,7 +540,7 @@ function contractPlace(address: string, raw: TransactionResource, ctx: BuildCtx)
   const chainId = raw.relationships?.chain?.data.id;
   for (const t of raw.attributes.transfers) {
     if (t.nft_info?.contract_address?.toLowerCase() === addr) {
-      const collection = t.nft_info.collection_info?.name ?? t.nft_info.name?.replace(/\s*#.*$/, '') ?? 'NFT';
+      const collection = t.nft_info.collection_info?.name ?? collectionOf(t.nft_info.name) ?? 'NFT';
       return ctx.book.fixed(`contract:${addr}`, `${collection} (NFT contract)`, 'mint');
     }
     const impl = t.fungible_info?.implementations?.find((i) => i.chain_id === chainId);

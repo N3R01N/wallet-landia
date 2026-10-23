@@ -193,7 +193,7 @@ export class Ledger {
    * What is new since the newest kept, kept and returned (pending ones too,
    * for the town, though they are not kept). On a first visit: the newest page.
    */
-  head(address: string): Promise<TransactionResource[]> {
+  head(address: string, maxPages = HEAD_MAX_PAGES): Promise<TransactionResource[]> {
     return this.#serial(address, async () => {
       const scope = this.#scope();
       const s = await this.#state(address, scope);
@@ -206,7 +206,7 @@ export class Ledger {
         return page;
       }
       const since = s.newest - HEAD_OVERLAP_MS;
-      const { txs: fetched, more } = await this.#fetch(address, { since, pages: HEAD_MAX_PAGES });
+      const { txs: fetched, more } = await this.#fetch(address, { since, pages: maxPages });
       const known = await this.#knownSince(s, since);
       const kept = fetched.filter((t) => !isPending(t) && !known.has(txKey(t)));
       if (more && kept.length > 0) {

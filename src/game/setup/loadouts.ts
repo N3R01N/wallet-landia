@@ -4,6 +4,7 @@
  * read and write is guarded, and the game works without it.
  */
 
+import { MAX_IMPORTED, wellFormedPortfolio } from '../core/match.js';
 import type { Draft } from './editor.js';
 
 const KEY = 'wallet-landia-v4/siege/loadouts';
@@ -23,12 +24,21 @@ export function decodeDraft(json: string): Draft {
   return JSON.parse(json, (_k, v: unknown) => (typeof v === 'string' && /^-?\d+n$/.test(v) ? BigInt(v.slice(0, -1)) : v)) as Draft;
 }
 
+function wellFormedDraft(d: Draft | null | undefined): d is Draft {
+  if (!d || !wellFormedPortfolio(d.portfolio)) return false;
+  return d.customAssets === undefined || (Array.isArray(d.customAssets) && d.customAssets.length <= MAX_IMPORTED);
+}
+
 function readAll(storage: Storage | null): Loadout[] {
   try {
     const raw = storage?.getItem(KEY);
     if (!raw) return [];
     const rows = JSON.parse(raw) as { name: string; savedAt: number; draft: string }[];
-    return rows.filter((r) => typeof r.name === 'string' && typeof r.draft === 'string').map((r) => ({ name: r.name, savedAt: r.savedAt, draft: decodeDraft(r.draft) }));
+    // a row saved before imports were checked is dropped here, not loaded
+    return rows
+      .filter((r) => typeof r.name === 'string' && typeof r.draft === 'string')
+      .map((r) => ({ name: r.name, savedAt: r.savedAt, draft: decodeDraft(r.draft) }))
+      .filter((r) => wellFormedDraft(r.draft));
   } catch {
     return [];
   }
@@ -93,6 +103,6 @@ export function readLoadoutCode(text: string): { name: string; draft: Draft } {
   const parsed = JSON.parse(json) as { name?: unknown; draft?: unknown };
   if (typeof parsed.name !== 'string' || typeof parsed.draft !== 'string') throw new Error('not a loadout code');
   const draft = decodeDraft(parsed.draft);
-  if (!draft?.portfolio || !Array.isArray(draft.portfolio.positions)) throw new Error('not a loadout code');
+  if (!wellFormedDraft(draft)) throw new Error('not a loadout code');
   return { name: parsed.name.slice(0, 40), draft };
 }

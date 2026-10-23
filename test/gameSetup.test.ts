@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { Hero, Item, Protocol } from '../src/domain/model.js';
 import { BALANCE } from '../src/game/config/balance.js';
 import { qn } from '../src/game/core/fixed.js';
-import { Match } from '../src/game/core/match.js';
+import { decodeReplay, encodeReplay, Match, type Replay } from '../src/game/core/match.js';
+import { stackSquads } from '../src/game/core/army.js';
+import type { Squad } from '../src/game/core/types.js';
 import { importWallet, nftCollectionKey } from '../src/game/data/walletImporter.js';
 import { addDollars, addNft, blankDraft, draftValue, importDraft, opponentPortfolio, preview, room, setDollars, templateDraft } from '../src/game/setup/editor.js';
-import { decodeDraft, deleteLoadout, encodeDraft, listLoadouts, saveLoadout } from '../src/game/setup/loadouts.js';
+import { decodeDraft, deleteLoadout, encodeDraft, listLoadouts, loadoutCode, readLoadoutCode, saveLoadout } from '../src/game/setup/loadouts.js';
 import { templatePortfolio } from '../src/game/data/templates.js';
 import { Catalog } from '../src/game/core/catalog.js';
 
@@ -198,6 +200,24 @@ describe('loadouts', () => {
     expect(listLoadouts(s).map((l) => l.name)).toEqual(['Turtle']);
     expect(listLoadouts(null)).toEqual([]);
     expect(saveLoadout('x', templateDraft('degen'), 1, null)).toBe(false);
+  });
+
+  it("a shared code or replay with a negative amount is refused, and a stored one is dropped (it slipped past the match cap and looped the preview)", () => {
+    const bad = templateDraft('whale');
+    bad.portfolio.positions[0] = { ...bad.portfolio.positions[0]!, qty: -1n };
+    expect(() => readLoadoutCode(loadoutCode('Pro build', bad))).toThrow('not a loadout code');
+    expect(readLoadoutCode(loadoutCode('Fine', templateDraft('whale'))).name).toBe('Fine');
+    const s = new MemoryStorage() as unknown as Storage;
+    s.setItem('wallet-landia-v4/siege/loadouts', JSON.stringify([{ name: 'Old import', savedAt: 1, draft: encodeDraft(bad) }]));
+    expect(listLoadouts(s)).toEqual([]);
+    const replay = encodeReplay({ setup: { seed: 's', portfolios: [bad.portfolio, templateDraft('degen').portfolio] }, configVersion: 'x', log: [] } as Replay);
+    expect(() => decodeReplay(replay)).toThrow('not a replay file');
+  });
+
+  it('stacking always ends, even with more squads than the render cap', () => {
+    const squads = Array.from({ length: BALANCE.match.renderCap + 1 }, (_, i) => ({ asset: `c${i}`, unit: 'pikeman', count: 120 }) as unknown as Squad);
+    stackSquads(squads);
+    expect(squads.every((q) => q.stacks?.length === 1)).toBe(true);
   });
 });
 

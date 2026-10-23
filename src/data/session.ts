@@ -52,6 +52,13 @@ const CATCH_UP_MS = 15 * 60_000;
 const DRIFT_MS = 60 * 60_000;
 /** …but only while more than this much of the day's budget is left. */
 const DRIFT_MIN_BUDGET = 150;
+/**
+ * A visited town (a link, someone else's wallet) is not yours to spend on
+ * freely: a busy one changes every block. Each of its wallets is refreshed at
+ * most this often, one page at a time, and only while this much budget is left.
+ */
+const VISIT_REFRESH_MS = 2 * 60_000;
+const VISIT_MIN_BUDGET = 300;
 
 function storage(): Storage | null {
   try {
@@ -90,6 +97,7 @@ export class Session {
   #fingerprints = new Map<string, string>();
   #lastCatchUp = Date.now();
   #lastDrift = Date.now();
+  #lastVisitRefresh = new Map<string, number>();
   #checking = false;
   #generation = 0;
   /** Bumped by each refresh the player asks for: a block check that started before one drops what it read. */
@@ -392,7 +400,10 @@ export class Session {
         // The first fingerprint is a baseline, not a change.
         return before !== undefined && now !== undefined && now !== before;
       });
-      const toRefresh = due ? addrs : changed;
+      const visiting = shown.visiting !== null;
+      const toRefresh = (due ? addrs : changed).filter(
+        (a) => !visiting || (this.budget.remaining > VISIT_MIN_BUDGET && Date.now() - (this.#lastVisitRefresh.get(a) ?? 0) > VISIT_REFRESH_MS),
+      );
       if (due) this.#lastCatchUp = Date.now();
       const drift =
         Date.now() - this.#lastDrift > DRIFT_MS && this.budget.remaining > DRIFT_MIN_BUDGET && document.visibilityState === 'visible';
@@ -407,7 +418,8 @@ export class Session {
         if (i >= 0) raws[i] = { ...raw, label: raws[i]?.label ?? raw.label };
       };
       for (const a of toRefresh) {
-        const r = await loader.refreshHistory(a, prints.get(a));
+        if (visiting) this.#lastVisitRefresh.set(a, Date.now());
+        const r = await loader.refreshHistory(a, prints.get(a), visiting ? 1 : undefined);
         if (r === null) continue;
         added += r.added;
         put(r.raw);
