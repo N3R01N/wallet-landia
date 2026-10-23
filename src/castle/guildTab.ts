@@ -154,7 +154,7 @@ function aboutSection(): HTMLElement {
 
 function keySection(ctx: GuildTabContext): HTMLElement {
   const hasKey = loadApiKey() !== null;
-  const input = el('input', { type: 'password', placeholder: hasKey ? '•••••••• (saved)' : 'zk_…', autocomplete: 'off', 'aria-label': 'Zerion API key' });
+  const input = el('input', { type: 'password', placeholder: hasKey ? '•••••••• (saved)' : 'Paste your Zerion API key here', autocomplete: 'off', 'aria-label': 'Zerion API key' });
   const save = el('button', { class: 'btn', type: 'button' }, 'Save');
   const msg = el('div', { class: 'form-msg', role: 'status' });
   const doSave = () => {
