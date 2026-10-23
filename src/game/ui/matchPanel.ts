@@ -220,7 +220,8 @@ export class MatchPanel {
         this.#paused = !this.#paused;
         this.render();
       });
-      button('⚔ To battle', 'siege-go', () => void this.#toBattle());
+      // off while the enemy trades: a click then would be dropped (render() runs again when it is done)
+      button('⚔ To battle', 'siege-go', () => void this.#toBattle(), this.#npcPending);
     }
     if (s.phase === 'battle') {
       // the camera: free, or following a lane's fighting
