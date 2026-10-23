@@ -16,5 +16,11 @@
     "who": "xcopy.eth",
     "name": "Xcopy",
     "about": "The famous NFT artist XCOPY"
+  },
+  {
+    "slug": "poly-exploiter",
+    "who": "0xC8a65Fadf0e0dDAf421F28FEAb69Bf6E2E589963",
+    "name": "Poly Network exploiter",
+    "about": "The address behind the 2021 Poly Network hack, about $610M taken and later returned"
   }
 ]

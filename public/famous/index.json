@@ -19,5 +19,12 @@
     "name": "Xcopy",
     "about": "The famous NFT artist XCOPY",
     "capturedAt": 1792605932896
+  },
+  {
+    "slug": "poly-exploiter",
+    "address": "0xc8a65fadf0e0ddaf421f28feab69bf6e2e589963",
+    "name": "Poly Network exploiter",
+    "about": "The address behind the 2021 Poly Network hack, about $610M taken and later returned",
+    "capturedAt": 1792756211859
   }
 ]
