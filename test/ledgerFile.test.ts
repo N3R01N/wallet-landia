@@ -37,7 +37,7 @@ describe('history files', () => {
   it('refuses what is not a history file, in plain words', async () => {
     const enc = (v: unknown): ArrayBuffer => new TextEncoder().encode(typeof v === 'string' ? v : JSON.stringify(v)).buffer as ArrayBuffer;
     await expect(decodeLedgerFile(enc('not json'))).rejects.toThrow('not a history file');
-    await expect(decodeLedgerFile(enc({ format: 'other' }))).rejects.toThrow('not a Wallet-landia history file');
+    await expect(decodeLedgerFile(enc({ format: 'other' }))).rejects.toThrow('not a Zenigard history file');
     await expect(decodeLedgerFile(enc({ format: LEDGER_FILE_FORMAT, scope: '<script>', wallets: [] }))).rejects.toThrow('names no realm');
     await expect(decodeLedgerFile(enc({ format: LEDGER_FILE_FORMAT, scope: 'ethereum', wallets: [{ address: 'nope', transactions: [] }] }))).rejects.toThrow('valid address');
     await expect(decodeLedgerFile(new Uint8Array([0x1f, 0x8b, 1, 2, 3]).buffer)).rejects.toThrow('could not be read');

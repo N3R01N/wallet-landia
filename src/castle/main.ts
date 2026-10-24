@@ -8,6 +8,7 @@
  * placeholders for now.
  */
 
+import '../renamed.js';
 import { inject } from '@vercel/analytics';
 import { el, shortAddr } from '../util/dom.js';
 import { Shell } from './shell.js';
@@ -133,17 +134,17 @@ function occasionsNow(w: CastleWorld): { occasions: ReturnType<typeof occasionsF
 }
 /** `?quality=low|high`; on the dev server also a stored pick (the browser tests render low: software WebGL is slow). */
 const qualityParam = ((q) => (q === 'low' || q === 'high' ? q : 'auto'))(
-  new URLSearchParams(location.search).get('quality') ?? (import.meta.env.DEV ? devStored('wallet-landia-v4/dev/quality') : null),
+  new URLSearchParams(location.search).get('quality') ?? (import.meta.env.DEV ? devStored('zenigard/dev/quality') : null),
 );
 
 /** On the dev server, a stored pixel ratio for low quality (the browser tests draw at half: software WebGL is slow). */
-const lowPixelRatio = ((r) => (Number.isFinite(r) && r >= 0.25 && r <= 1 ? r : null))(Number(import.meta.env.DEV ? devStored('wallet-landia-v4/dev/pixel-ratio') : NaN));
+const lowPixelRatio = ((r) => (Number.isFinite(r) && r >= 0.25 && r <= 1 ? r : null))(Number(import.meta.env.DEV ? devStored('zenigard/dev/pixel-ratio') : NaN));
 
 /** On the dev server, a stored clock for the scene: `<scale>` (the browser tests run it fast, in steps that keep up on a slow machine). */
-const devClock = ((s) => (Number.isFinite(s) && s >= 1 && s <= 8 ? { scale: s, maxStep: 0.4 } : null))(Number(import.meta.env.DEV ? (devStored('wallet-landia-v4/dev/clock') ?? NaN) : NaN));
+const devClock = ((s) => (Number.isFinite(s) && s >= 1 && s <= 8 ? { scale: s, maxStep: 0.4 } : null))(Number(import.meta.env.DEV ? (devStored('zenigard/dev/clock') ?? NaN) : NaN));
 
 /** On the dev server, a stored frame cap (the browser tests draw few frames, so several browsers share the CPU). */
-const devMaxFps = ((n) => (Number.isFinite(n) && n >= 2 && n <= 60 ? n : null))(Number(import.meta.env.DEV ? (devStored('wallet-landia-v4/dev/max-fps') ?? NaN) : NaN));
+const devMaxFps = ((n) => (Number.isFinite(n) && n >= 2 && n <= 60 ? n : null))(Number(import.meta.env.DEV ? (devStored('zenigard/dev/max-fps') ?? NaN) : NaN));
 
 function devStored(key: string): string | null {
   try {
@@ -294,7 +295,7 @@ function renderTab(tab: TabId, open: (sheet: SheetState) => void): HTMLElement {
       onExportHistory: async () => {
         const blob = await session.exportHistory();
         if (blob === null) return false;
-        const a = el('a', { href: URL.createObjectURL(blob), download: `wallet-landia-history-${new Date().toISOString().slice(0, 10)}.json.gz` });
+        const a = el('a', { href: URL.createObjectURL(blob), download: `zenigard-history-${new Date().toISOString().slice(0, 10)}.json.gz` });
         a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
         return true;
@@ -503,7 +504,7 @@ soundBtn.addEventListener('click', () => {
 if (prefs.sound) sound.setOn(true);
 showSound();
 // the tour: once on a first visit, and again from the ? button
-const TOUR_SEEN = 'wallet-landia-v4/castle/tour-seen';
+const TOUR_SEEN = 'zenigard/castle/tour-seen';
 const tourBtn = el('button', { class: 'btn topbar-icon tour-btn', type: 'button', 'aria-label': 'Show the tour', title: 'Show the tour' }, '?');
 function startTour(): void {
   new Tour(

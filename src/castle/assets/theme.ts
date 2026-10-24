@@ -12,7 +12,7 @@
 
 import { THEME_DIR } from './manifest.js';
 
-export const THEME_FORMAT = 'wallet-landia-theme/1';
+export const THEME_FORMAT = 'zenigard-theme/1';
 
 export interface CastleTheme {
   id: string;

@@ -272,7 +272,7 @@ public/themes/medieval/
   "id": "medieval",
   "name": "Medieval",
   "version": "1.0.0",
-  "format": "wallet-landia-theme/1",
+  "format": "zenigard-theme/1",
   "assets": {
     "castle.keep.t0": "assets/castle/keep-t0.glb",
     "moat.water": "assets/moat/water.webp",

@@ -8,7 +8,7 @@ import { sceneUp } from './castleHelpers.js';
  * moment; a fresh visit shows neither.
  */
 
-const VISITS = 'wallet-landia-v4/castle/visits';
+const VISITS = 'zenigard/castle/visits';
 const TIER_NAMES = ['Dust', 'Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'];
 
 type Visit = { at: number; latest: { time: number; key: string } | null; tiers: { keep: number; wallets: Record<string, number> } };

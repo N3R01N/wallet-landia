@@ -19,11 +19,13 @@ import { courierNote, type Note } from './notify.js';
 import { walletFingerprints } from '../data/rpc.js';
 
 /** The store the service worker reads: keep in step with public/sw.js. */
-const WATCH_DB = 'wallet-landia-v4-watch';
+const WATCH_DB = 'zenigard-watch';
 const WATCH_STORE = 'watch';
 const WATCH_KEY = 'wallets';
 /** The periodic sync's name: keep in step with public/sw.js. */
-const WATCH_TAG = 'wl-watch';
+const WATCH_TAG = 'zg-watch';
+/** Its name before the rename to Zenigard: dropped where it is still registered. */
+const OLD_WATCH_TAG = 'wl-watch';
 /** About twice a day (the browser decides when, and may wait longer). */
 const WATCH_EVERY_MS = 12 * 3_600_000;
 /** Couriers this close together are one notification. */
@@ -155,6 +157,7 @@ export async function setBackgroundCheck(on: boolean): Promise<void> {
   const ps = periodicSync(await registration());
   if (!ps) return;
   try {
+    await ps.unregister(OLD_WATCH_TAG);
     if (on && (await backgroundCheck()) === 'ok') await ps.register(WATCH_TAG, { minInterval: WATCH_EVERY_MS });
     else if (!on) await ps.unregister(WATCH_TAG);
   } catch {

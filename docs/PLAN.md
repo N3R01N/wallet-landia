@@ -1,4 +1,4 @@
-# Wallet-landia: Project Plan
+# Zenigard: Project Plan
 
 > **Historical.** Written for the town app (heroes, 2D and 3D town views) that was replaced by the castle on 2026-10-14 (the last state with it: commit `bc06046`). The data and domain parts still hold; for the castle see [`REDESIGN.md`](REDESIGN.md) and [`ASSET_SPEC.md`](ASSET_SPEC.md).
 
@@ -203,7 +203,7 @@ Goal: everything the player's wallets ever did, fetched once and kept in the bro
   - **Player sheet**: level and rank, XP bar, stats (journeys signed and received, first journey, realms, buildings, kinds, months active), where the XP comes from, the badge case with tier rings and provenance (a click opens the quest that earned it when the town still has it). Hero sheets show the badges that wallet earned first and link to the player; any of your badges unlocks its title for every hero. The replay announces "You earned …" and new tiers when their journey plays; the toast opens the player sheet.
   - Tests: `test/player.test.ts` (tiers and provenance across wallets, milestones, breadth over repetition, wealth earns nothing, internal sends once, the level curve, announcements); `e2e/feats.spec.ts`; `e2e/history.spec.ts` (a 10-year history shows on the player sheet).
 - [x] **H4 · Robustness**.
-  - **Save / load** (Guild panel → Lifetime history, `data/ledgerFile.ts`): your wallets' gathered history as one gzipped file (`wallet-landia-history-YYYY-MM-DD.json.gz`, ~0.3 KB a transaction), loaded into another browser without asking Zerion. A file is untrusted: format, realm, addresses and each transaction's shape are checked, odd entries dropped, only your own wallets loaded, and only for the same realms. After loading, the walk carries on from it.
+  - **Save / load** (Guild panel → Lifetime history, `data/ledgerFile.ts`): your wallets' gathered history as one gzipped file (`zenigard-history-YYYY-MM-DD.json.gz`, ~0.3 KB a transaction), loaded into another browser without asking Zerion. A file is untrusted: format, realm, addresses and each transaction's shape are checked, odd entries dropped, only your own wallets loaded, and only for the same realms. After loading, the walk carries on from it.
   - **A cap for very busy wallets**: walking back stops at 50,000 transactions (`LEDGER_CAP`, ~500 requests); the wallet shows "partial" instead of eating days of quota.
   - **Remapping** needs no requests: the ledger keeps Zerion's answers as they came and the player is worked out from them each time, so a better mapper applies to the whole history at once.
   - Tests: cap, replace and file round trip / refusals (`test/ledger.test.ts`, `test/ledgerFile.test.ts`); `e2e/history.spec.ts` saves a 10-year history and loads it into a second browser whose Zerion refuses to walk back.

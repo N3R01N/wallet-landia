@@ -30,8 +30,10 @@ export class MemoryKV implements KV {
   }
 }
 
-const DB = 'wallet-landia-v4';
+const DB = 'zenigard';
 const STORE = 'kv';
+/** The cache's name before the rename to Zenigard: what it holds moves over once. */
+const OLD_DB = 'wallet-landia-v4';
 
 class IndexedKV implements KV {
   readonly #db: IDBDatabase;
@@ -62,6 +64,10 @@ class IndexedKV implements KV {
   put(key: string, value: unknown): Promise<void> {
     return this.#write((s) => s.put(value, key));
   }
+  /** Several at once, in one transaction. */
+  putAll(keys: readonly IDBValidKey[], values: readonly unknown[]): Promise<void> {
+    return this.#write((s) => keys.forEach((k, i) => s.put(values[i], k)));
+  }
   delete(key: string): Promise<void> {
     return this.#write((s) => s.delete(key));
   }
@@ -82,14 +88,45 @@ class IndexedKV implements KV {
 export async function openCache(): Promise<KV> {
   try {
     if (typeof indexedDB === 'undefined') return new MemoryKV();
+    let created = false;
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const r = indexedDB.open(DB, 1);
-      r.onupgradeneeded = () => r.result.createObjectStore(STORE);
+      r.onupgradeneeded = () => {
+        created = true;
+        r.result.createObjectStore(STORE);
+      };
       r.onsuccess = () => resolve(r.result);
       r.onerror = () => reject(r.error);
     });
+    if (created) await moveOldCache(db).catch(() => {});
     return new IndexedKV(db);
   } catch {
     return new MemoryKV();
   }
+}
+
+/** Copies the old cache into the new one, then deletes it. No old cache: nothing happens (and none is made). */
+async function moveOldCache(to: IDBDatabase): Promise<void> {
+  const old = await new Promise<IDBDatabase | null>((resolve) => {
+    const r = indexedDB.open(OLD_DB);
+    // it did not exist: aborting the upgrade leaves no empty database behind
+    r.onupgradeneeded = () => r.transaction?.abort();
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => resolve(null);
+  });
+  if (!old) return;
+  try {
+    if (!old.objectStoreNames.contains(STORE)) return;
+    const [keys, values] = await new Promise<[IDBValidKey[], unknown[]]>((resolve, reject) => {
+      const s = old.transaction(STORE, 'readonly').objectStore(STORE);
+      const k = s.getAllKeys();
+      const v = s.getAll();
+      v.onsuccess = () => resolve([k.result, v.result]);
+      v.onerror = k.onerror = () => reject(v.error ?? k.error);
+    });
+    await new IndexedKV(to).putAll(keys, values);
+  } finally {
+    old.close();
+  }
+  indexedDB.deleteDatabase(OLD_DB);
 }

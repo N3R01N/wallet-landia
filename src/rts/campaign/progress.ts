@@ -4,7 +4,7 @@
  * window): then every mission starts locked but the first, and nothing breaks.
  */
 
-const KEY = 'wallet-landia.rts.campaign';
+const KEY = 'zenigard.rts.campaign';
 
 export function wonMissions(): Set<number> {
   try {

@@ -45,7 +45,7 @@ test('the player wears a title their badges unlock, and the pick is kept', async
   const current = await select.inputValue();
   const other = options.find((o) => o !== current) ?? options[0]!;
   await select.selectOption(other);
-  expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('wallet-landia-v4/prefs/v1') ?? '{}') as { title?: string }).title)).toBe(other);
+  expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('zenigard/prefs/v1') ?? '{}') as { title?: string }).title)).toBe(other);
   await page.reload();
   await page.locator('.tab', { hasText: 'Badges' }).click();
   await expect(page.locator('.badges-tab').getByLabel('Your title')).toHaveValue(other, { timeout: 30_000 });

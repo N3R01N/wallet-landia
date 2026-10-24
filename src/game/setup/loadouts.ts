@@ -7,7 +7,7 @@
 import { MAX_IMPORTED, wellFormedPortfolio } from '../core/match.js';
 import type { Draft } from './editor.js';
 
-const KEY = 'wallet-landia-v4/siege/loadouts';
+const KEY = 'zenigard/siege/loadouts';
 
 export interface Loadout {
   name: string;

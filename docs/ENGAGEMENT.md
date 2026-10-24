@@ -49,7 +49,7 @@ review in the game, merge, `npm run check`.
 
 ## Track D (with A when it is merged): notifications
 
-Wallet-landia is a static site: real Web Push needs a push server that keeps
+Zenigard is a static site: real Web Push needs a push server that keeps
 the players' subscriptions, which we don't have (and would hold data we chose
 not to keep). What works without one:
 - D1 **In the background tab:** while the page is open but hidden, a new courier for your own wallets shows a notification ("A courier brought you 0.5 ETH"). Opt-in in the Guild tab (the browser asks permission only after that click).
@@ -94,5 +94,5 @@ Dev switches for looking at them: `?market=boom|crash`, `?date=YYYY-MM-DD`, `?ho
 ### Open
 
 - **December:** done with batch 29 (a snow file on every building). Steep roofs (domes, sails) stay bare; the grass keeps its summer green.
-- **Background check (installed app):** try it on a production build installed in Chrome (DevTools → Application → Periodic Background Sync → `wl-watch`).
+- **Background check (installed app):** try it on a production build installed in Chrome (DevTools → Application → Periodic Background Sync → `zg-watch`).
 - **Followed wallets** are only watched while you visit them, so the shooting star shows only then.

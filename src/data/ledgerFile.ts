@@ -10,7 +10,9 @@
 
 import type { TransactionResource } from './zerion/types.js';
 
-export const LEDGER_FILE_FORMAT = 'wallet-landia-ledger/1';
+export const LEDGER_FILE_FORMAT = 'zenigard-ledger/1';
+/** Files saved before the rename to Zenigard still load. */
+const OLD_LEDGER_FILE_FORMAT = 'wallet-landia-ledger/1';
 /** Far beyond any real history (and a wallet stops walking back at 50,000). */
 const MAX_PER_WALLET = 200_000;
 const MAX_WALLETS = 50;
@@ -76,7 +78,7 @@ async function gunzipCapped(bytes: Uint8Array, max: number): Promise<string> {
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 function validate(raw: unknown): LedgerFile {
-  if (!isObj(raw) || raw.format !== LEDGER_FILE_FORMAT) throw new Error('That file is not a Wallet-landia history file.');
+  if (!isObj(raw) || (raw.format !== LEDGER_FILE_FORMAT && raw.format !== OLD_LEDGER_FILE_FORMAT)) throw new Error('That file is not a Zenigard history file.');
   if (typeof raw.scope !== 'string' || !/^[a-z0-9+-]{1,200}$/.test(raw.scope)) throw new Error('The history file names no realm.');
   if (!Array.isArray(raw.wallets) || raw.wallets.length > MAX_WALLETS) throw new Error('The history file holds no wallets.');
   const wallets = raw.wallets.map((w) => {

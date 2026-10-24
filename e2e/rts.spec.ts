@@ -258,7 +258,7 @@ test('the campaign: the mission list, a briefing, and mission 1’s first object
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/rts.html');
-  await page.evaluate(() => localStorage.removeItem('wallet-landia.rts.campaign'));
+  await page.evaluate(() => localStorage.removeItem('zenigard.rts.campaign'));
   await page.reload();
   // the first mission is open, the second not yet
   await expect(page.locator('.rts-mission[data-mission="1"]')).toBeEnabled();
@@ -308,7 +308,7 @@ test('the campaign: the mission list, a briefing, and mission 1’s first object
 test('sound and banter: on by default, heard as units fight, the winners talk, switched off from the corner', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('/rts.html?seed=e2e&ai=0');
-  await page.evaluate(() => localStorage.removeItem('wallet-landia.rts.sound'));
+  await page.evaluate(() => localStorage.removeItem('zenigard.rts.sound'));
   await page.reload();
   await page.locator('.rts-kit[data-kit="usdc"]').click();
   await expect(page.locator('.rts[data-ready="true"]')).toBeVisible({ timeout: 90_000 });
@@ -328,5 +328,5 @@ test('sound and banter: on by default, heard as units fight, the winners talk, s
   await expect(page.locator('.rts-bark').first()).toBeVisible({ timeout: 30_000 });
   await btn.click();
   await expect(btn).toHaveAttribute('aria-pressed', 'false');
-  expect(await page.evaluate(() => localStorage.getItem('wallet-landia.rts.sound'))).toBe('off');
+  expect(await page.evaluate(() => localStorage.getItem('zenigard.rts.sound'))).toBe('off');
 });

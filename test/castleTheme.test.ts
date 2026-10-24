@@ -12,16 +12,16 @@ describe('castle theme manifest', () => {
   });
 
   it('refuses a wrong format, a bad id or a version that is not x.y.z', () => {
-    const ok = { format: 'wallet-landia-theme/1', id: 'x-1', version: '1.0.0' };
+    const ok = { format: 'zenigard-theme/1', id: 'x-1', version: '1.0.0' };
     expect('theme' in parseTheme(ok, ROOT)).toBe(true);
-    expect(parseTheme({ ...ok, format: 'wallet-landia-pack/2' }, ROOT)).toEqual({ error: expect.stringContaining('format') });
+    expect(parseTheme({ ...ok, format: 'zenigard-pack/2' }, ROOT)).toEqual({ error: expect.stringContaining('format') });
     expect(parseTheme({ ...ok, id: 'Bad Id' }, ROOT)).toEqual({ error: expect.stringContaining('id') });
     expect(parseTheme({ ...ok, version: 'latest' }, ROOT)).toEqual({ error: expect.stringContaining('version') });
     expect(parseTheme(null, ROOT)).toEqual({ error: 'not an object' });
   });
 
   it('every file URL carries the theme version, so a new version means new URLs', () => {
-    const parsed = parseTheme({ format: 'wallet-landia-theme/1', id: 'xy', version: '0.2.0', name: 'X' }, ROOT);
+    const parsed = parseTheme({ format: 'zenigard-theme/1', id: 'xy', version: '0.2.0', name: 'X' }, ROOT);
     if (!('theme' in parsed)) throw new Error(parsed.error);
     expect(themeFileUrl(parsed.theme, 'models/castle/keep.t0.glb')).toBe('/themes/medieval-castle/models/castle/keep.t0.glb?v=0.2.0');
   });
@@ -33,12 +33,12 @@ describe('themes that extend others (a style pilot)', () => {
     const parsed = parseTheme(raw, '/themes/medieval-castle-v2/') as { theme: CastleTheme; extends?: string };
     expect(parsed.extends).toBe('medieval-castle');
     expect(parsed.theme.art).toBe(true);
-    expect((parseTheme({ format: 'wallet-landia-theme/1', id: 'ab', version: '1.0.0', art: false }, ROOT) as { theme: CastleTheme }).theme.art).toBe(false);
+    expect((parseTheme({ format: 'zenigard-theme/1', id: 'ab', version: '1.0.0', art: false }, ROOT) as { theme: CastleTheme }).theme.art).toBe(false);
     // its models are made for the v2 castle (halls in the walls); a theme that does not say gets its parent's
     expect(parsed.theme.castleLayout).toBe(2);
-    const plain = parseTheme({ format: 'wallet-landia-theme/1', id: 'ab', version: '1.0.0', castleLayout: 7 }, ROOT) as { theme: CastleTheme };
+    const plain = parseTheme({ format: 'zenigard-theme/1', id: 'ab', version: '1.0.0', castleLayout: 7 }, ROOT) as { theme: CastleTheme };
     expect(plain.theme.castleLayout).toBeUndefined();
-    expect(parseTheme({ format: 'wallet-landia-theme/1', id: 'ab', version: '1.0.0', extends: 'ab' }, ROOT)).toEqual({ error: expect.stringContaining('extends') });
+    expect(parseTheme({ format: 'zenigard-theme/1', id: 'ab', version: '1.0.0', extends: 'ab' }, ROOT)).toEqual({ error: expect.stringContaining('extends') });
   });
 
   it('models come from the nearest theme that has them; art from the nearest that has art', () => {

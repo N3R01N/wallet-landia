@@ -78,7 +78,7 @@ test('sound is off until switched on, the choice is kept, and coins ring at the 
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-  expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('wallet-landia-v4/prefs/v1') ?? '{}') as { sound?: boolean }).sound)).toBe(true);
+  expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('zenigard/prefs/v1') ?? '{}') as { sound?: boolean }).sound)).toBe(true);
   await expect
     .poll(() => page.evaluate(() => (window as unknown as { castleSound: { played: Record<string, number> } }).castleSound.played.coins ?? 0), { timeout: 30_000 })
     .toBeGreaterThan(0);

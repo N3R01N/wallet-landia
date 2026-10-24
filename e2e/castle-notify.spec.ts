@@ -8,7 +8,7 @@ import { sceneUp } from './castleHelpers.js';
  * told in one notification (none while it is in view).
  */
 
-const PREFS = 'wallet-landia-v4/prefs/v1';
+const PREFS = 'zenigard/prefs/v1';
 
 type Stub = { asked: number; shown: { title: string; body: string }[] };
 

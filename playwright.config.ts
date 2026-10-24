@@ -20,16 +20,16 @@ const SLOW = /\.slow\.spec\.ts$/;
  * CPU without starving each other.
  */
 export const TEST_RENDERING = [
-  { name: 'wallet-landia-v4/dev/quality', value: 'low' },
-  { name: 'wallet-landia-v4/dev/pixel-ratio', value: '0.5' },
-  { name: 'wallet-landia-v4/dev/clock', value: '2' },
-  { name: 'wallet-landia-v4/dev/max-fps', value: '8' },
+  { name: 'zenigard/dev/quality', value: 'low' },
+  { name: 'zenigard/dev/pixel-ratio', value: '0.5' },
+  { name: 'zenigard/dev/clock', value: '2' },
+  { name: 'zenigard/dev/max-fps', value: '8' },
 ];
 
 /** …and the tour already seen (it would cover the page). */
 const SEEN_TOUR = {
   cookies: [],
-  origins: [{ origin: BASE_URL, localStorage: [{ name: 'wallet-landia-v4/castle/tour-seen', value: '1' }, ...TEST_RENDERING] }],
+  origins: [{ origin: BASE_URL, localStorage: [{ name: 'zenigard/castle/tour-seen', value: '1' }, ...TEST_RENDERING] }],
 };
 
 export default defineConfig({

@@ -8,7 +8,7 @@
 
 import type { CastleWorld, Errand } from './world/world.js';
 
-const VISITS_KEY = 'wallet-landia-v4/castle/visits';
+const VISITS_KEY = 'zenigard/castle/visits';
 /** At most this many castles remembered (the oldest visit goes). */
 const MAX_VISITS = 12;
 const HOUR = 3_600_000;

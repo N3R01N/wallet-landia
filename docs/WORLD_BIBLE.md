@@ -1,4 +1,4 @@
-# Wallet-landia: World Bible
+# Zenigard: World Bible
 
 > **Historical.** Written for the town app (heroes, 2D and 3D town views) that was replaced by the castle on 2026-10-14 (the last state with it: commit `bc06046`). The data and domain parts still hold; for the castle see [`REDESIGN.md`](REDESIGN.md) and [`ASSET_SPEC.md`](ASSET_SPEC.md).
 

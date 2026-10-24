@@ -1,9 +1,9 @@
 ---
 name: three-best-practices
-description: Three.js rules for wallet-landia's WebGL code (the castle view, src/castle/scene/** and src/castle/assets/**): freeing GPU memory, the render loop, pixel ratio, draw calls, instancing, shadows, animation mixers, textures and loading. Use when writing, reviewing or changing any WebGL view or three.js object.
+description: Three.js rules for Zenigard's WebGL code (the castle view, src/castle/scene/** and src/castle/assets/**): freeing GPU memory, the render loop, pixel ratio, draw calls, instancing, shadows, animation mixers, textures and loading. Use when writing, reviewing or changing any WebGL view or three.js object.
 ---
 
-# Three.js best practices (wallet-landia)
+# Three.js best practices (Zenigard)
 
 Target: plain WebGL with `WebGLRenderer` and `three/addons`, on the current three.js release. We do not use WebGPU or TSL. Our own helpers come first: `ModelLibrary` (one load per asset name, instances via `SkeletonUtils.clone`, standin fallback) and `disposeTree` in `src/castle/assets/models.ts`; the `Figure` class (one mixer per animated model, cross-faded clips) and `paint` (per-colour copies of the `Tint`/`Trim` materials) in `src/castle/scene/castleView.ts`.
 

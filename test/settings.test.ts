@@ -18,7 +18,7 @@ describe('preferences', () => {
   });
 
   it('keep saved fields of the right kind and drop the rest', () => {
-    fakeStorage({ 'wallet-landia-v4/prefs/v1': JSON.stringify({ speed: 2, window: null, chains: 'base', owned: ['0xabc', 3], fog: true, volume: 'loud', stray: 1 }) });
+    fakeStorage({ 'zenigard/prefs/v1': JSON.stringify({ speed: 2, window: null, chains: 'base', owned: ['0xabc', 3], fog: true, volume: 'loud', stray: 1 }) });
     const p = loadPrefs();
     expect(p.speed).toBe(2);
     expect(p.fog).toBe(true);
@@ -30,9 +30,9 @@ describe('preferences', () => {
   });
 
   it('survive saved junk', () => {
-    fakeStorage({ 'wallet-landia-v4/prefs/v1': '[1,2]' });
+    fakeStorage({ 'zenigard/prefs/v1': '[1,2]' });
     expect(loadPrefs().view).toBe('3d');
-    fakeStorage({ 'wallet-landia-v4/prefs/v1': '{oops' });
+    fakeStorage({ 'zenigard/prefs/v1': '{oops' });
     expect(loadPrefs().view).toBe('3d');
   });
 });

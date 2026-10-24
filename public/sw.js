@@ -1,5 +1,5 @@
 /*
- * Wallet-landia's service worker: keeps the town's files on the device.
+ * Zenigard's service worker: keeps the town's files on the device.
  *
  * - App code (/assets/, names carry a content hash) and versioned files
  *   (?v=: the theme's models and art) never change
@@ -19,7 +19,7 @@
  * Bump VERSION to drop everything stored by an older worker.
  */
 
-const VERSION = 'wl-4';
+const VERSION = 'zg-5';
 const KEEP = `${VERSION}-keep`;
 const PAGES = `${VERSION}-pages`;
 
@@ -83,10 +83,10 @@ async function fromNetwork(req) {
 // --- notifications -------------------------------------------------------------
 
 /** Keep in step with src/castle/notifications.ts (the store) and src/data/rpc.ts (the node). */
-const WATCH_DB = 'wallet-landia-v4-watch';
+const WATCH_DB = 'zenigard-watch';
 const WATCH_STORE = 'watch';
 const WATCH_KEY = 'wallets';
-const WATCH_TAG = 'wl-watch';
+const WATCH_TAG = 'zg-watch';
 const NODE = 'https://ethereum-rpc.publicnode.com';
 
 /** A tap on a notification: the castle's tab forward, else the castle opened. */
@@ -161,6 +161,6 @@ async function lookAtWallets() {
     await self.registration.showNotification(`Something moved in ${w.name}`, {
       body: 'Open the castle to see its couriers.',
       icon: `${self.registration.scope}apple-touch-icon.png`,
-      tag: `wl-moved-${w.address}`,
+      tag: `zg-moved-${w.address}`,
     });
 }

@@ -38,7 +38,7 @@
 /** Requests a day on Zerion's free (Developer) plan, as of 2026-10 (zerion.io/api): the guess until Zerion says. */
 export const FREE_DAILY_REQUESTS = 2000;
 
-const STORAGE_KEY = 'wallet-landia/budget/v1';
+const STORAGE_KEY = 'zenigard/budget/v1';
 const DAY_MS = 86_400_000;
 
 /** The slice of the Storage API used here, so tests can pass a plain object. */

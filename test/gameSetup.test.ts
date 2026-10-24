@@ -208,7 +208,7 @@ describe('loadouts', () => {
     expect(() => readLoadoutCode(loadoutCode('Pro build', bad))).toThrow('not a loadout code');
     expect(readLoadoutCode(loadoutCode('Fine', templateDraft('whale'))).name).toBe('Fine');
     const s = new MemoryStorage() as unknown as Storage;
-    s.setItem('wallet-landia-v4/siege/loadouts', JSON.stringify([{ name: 'Old import', savedAt: 1, draft: encodeDraft(bad) }]));
+    s.setItem('zenigard/siege/loadouts', JSON.stringify([{ name: 'Old import', savedAt: 1, draft: encodeDraft(bad) }]));
     expect(listLoadouts(s)).toEqual([]);
     const replay = encodeReplay({ setup: { seed: 's', portfolios: [bad.portfolio, templateDraft('degen').portfolio] }, configVersion: 'x', log: [] } as Replay);
     expect(() => decodeReplay(replay)).toThrow('not a replay file');

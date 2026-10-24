@@ -1,11 +1,11 @@
 {
   "themes/medieval-castle": {
-    "version": "0.8.2",
+    "version": "0.8.3",
     "hash": "485c9c0dc66554df",
     "where": "public/themes/medieval-castle/theme.json → \"version\""
   },
   "themes/medieval-castle-v2": {
-    "version": "0.19.0",
+    "version": "0.19.1",
     "hash": "528ea79ec4498232",
     "where": "public/themes/medieval-castle-v2/theme.json → \"version\""
   }

@@ -147,7 +147,7 @@ function aboutSection(): HTMLElement {
     'div',
     { class: 'guild-section', 'data-section': 'about' },
     el('h2', {}, 'About'),
-    el('p', { class: 'muted' }, 'Not financial advice. The values come from Zerion and the chain and can be wrong or late. Wallet-landia is a free hobby project, not affiliated with Zerion or any protocol it shows.'),
+    el('p', { class: 'muted' }, 'Not financial advice. The values come from Zerion and the chain and can be wrong or late. Zenigard is a free hobby project, not affiliated with Zerion or any protocol it shows.'),
     el('p', {}, el('a', { href: '/legal.html' }, 'Legal notice, privacy and terms')),
   );
 }

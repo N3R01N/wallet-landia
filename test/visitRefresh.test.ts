@@ -7,7 +7,7 @@ const g = globalThis as unknown as Record<string, unknown>;
 g.window = { localStorage: ls, addEventListener: () => {} };
 g.localStorage = ls;
 g.document = { visibilityState: 'visible', hidden: false };
-store.set('wallet-landia-v4/zerion-key', 'zk_dummy_not_a_real_key');
+store.set('zenigard/zerion-key', 'zk_dummy_not_a_real_key');
 
 const BUSY = `0x${'1'.repeat(40)}`;
 let nonce = 1;

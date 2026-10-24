@@ -45,7 +45,7 @@ test('three quick taps on the well drop a coin in for a wish, and find a secret'
     await page.waitForTimeout(250);
   }
   await expect(page.locator('.speech-bubble').filter({ hasText: /wish/ })).toBeVisible();
-  const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('wallet-landia-v4/secrets/v1') ?? '{}') as Record<string, number>);
+  const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('zenigard/secrets/v1') ?? '{}') as Record<string, number>);
   expect(Object.keys(kept)).toContain('wishing-well');
   await expect(page.locator('.topbar .status')).toContainText('Secret found: The wishing well');
   // the Badges tab lists it

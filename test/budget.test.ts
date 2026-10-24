@@ -112,13 +112,13 @@ describe('DailyBudget', () => {
 
   it('ignores a count written on a different day', () => {
     const storage = memoryStorage({
-      'wallet-landia/budget/v1': JSON.stringify({ day: '2026-08-08', used: 300 }),
+      'zenigard/budget/v1': JSON.stringify({ day: '2026-08-08', used: 300 }),
     });
     expect(at(NOON, storage).used).toBe(0);
   });
 
   it('starts at zero rather than throwing on unreadable storage', () => {
-    const storage = memoryStorage({ 'wallet-landia/budget/v1': 'not json{' });
+    const storage = memoryStorage({ 'zenigard/budget/v1': 'not json{' });
     expect(at(NOON, storage).used).toBe(0);
   });
 

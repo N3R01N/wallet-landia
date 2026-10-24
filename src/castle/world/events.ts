@@ -97,7 +97,7 @@ export function dropLine(errand: Pick<Errand, 'verb' | 'steps'>): string {
 }
 
 /** The crates opened (errand keys), kept on this device so an opened one stays opened. */
-const OPENED_KEY = 'wallet-landia-v4/castle/crates-opened';
+const OPENED_KEY = 'zenigard/castle/crates-opened';
 const OPENED_KEPT = 50;
 
 export function openedCrates(): Set<string> {

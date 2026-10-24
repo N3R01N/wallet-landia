@@ -24,7 +24,7 @@ test('wallets are added and removed, nonsense is refused with a reason, and a ba
   await input.fill(address);
   await tab.locator('[data-section="wallets"] .btn', { hasText: 'Add' }).click();
   await expect(page.locator('.guild-tab [data-section="wallets"] .wallet-row')).toContainText('0x1234…5678');
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('wallet-landia-v4/prefs/v1') ?? '{}') as { owned?: string[] });
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('zenigard/prefs/v1') ?? '{}') as { owned?: string[] });
   expect(saved.owned).toContain(address);
   await page.locator('.guild-tab [data-section="wallets"]').getByRole('button', { name: /^Remove / }).click();
   await expect(page.locator('.guild-tab [data-section="wallets"] .wallet-row')).toHaveCount(0);
@@ -116,7 +116,7 @@ test('a wallet’s crest: pick a tincture (kept, shared with the town), or go ba
   await yours.locator('.btn', { hasText: 'Add' }).click();
   await yours.getByLabel('Crest colour', { exact: true }).click();
   await yours.getByLabel('Azure', { exact: true }).click();
-  const crests = () => page.evaluate(() => (JSON.parse(localStorage.getItem('wallet-landia-v4/prefs/v1') ?? '{}') as { crests?: Record<string, string[]> }).crests ?? {});
+  const crests = () => page.evaluate(() => (JSON.parse(localStorage.getItem('zenigard/prefs/v1') ?? '{}') as { crests?: Record<string, string[]> }).crests ?? {});
   expect((await crests())[address]?.[0]).toBe('#2a58b0');
   await expect(yours.getByLabel('Crest colour', { exact: true })).toHaveAttribute('style', /#2a58b0|42, 88, 176/);
   await yours.getByLabel('Crest colour', { exact: true }).click();

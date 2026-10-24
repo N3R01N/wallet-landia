@@ -72,7 +72,7 @@ export interface Prefs {
   notify: boolean;
 }
 
-const KEY = 'wallet-landia-v4/prefs/v1';
+const KEY = 'zenigard/prefs/v1';
 
 const DEFAULTS: Prefs = {
   view: '3d',
@@ -139,7 +139,7 @@ export function savePrefs(prefs: Prefs): void {
   }
 }
 
-const KEY_KEY = 'wallet-landia-v4/zerion-key';
+const KEY_KEY = 'zenigard/zerion-key';
 
 /**
  * The player's own Zerion key. It lives in this browser only and is sent

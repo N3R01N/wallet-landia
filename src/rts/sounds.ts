@@ -19,7 +19,7 @@ import { loadPrefs } from '../settings.js';
 import { UNIT_TYPES } from '../game/core/catalog.js';
 import type { UnitTypeId } from '../game/core/types.js';
 
-const KEY = 'wallet-landia.rts.sound';
+const KEY = 'zenigard.rts.sound';
 
 export type RtsSound =
   // blows

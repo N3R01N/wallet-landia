@@ -1,6 +1,6 @@
 # Going public: plan, decisions and status
 
-Turning wallet-landia into a public site: 100 daily players within a month of
+Turning Zenigard (zenigard.cc) into a public site: 100 daily players within a month of
 launch, more later. Research and interview on 2026-10-21.
 
 ## Decisions (2026-10-21)

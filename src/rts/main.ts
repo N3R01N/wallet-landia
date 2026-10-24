@@ -17,6 +17,7 @@
  * ?mission=N opens a campaign mission's briefing (&go=1: straight in).
  */
 
+import '../renamed.js';
 import { ModelLibrary } from '../castle/assets/models.js';
 import { loadCastleTheme, themeFromUrl } from '../castle/assets/theme.js';
 import { el } from '../util/dom.js';

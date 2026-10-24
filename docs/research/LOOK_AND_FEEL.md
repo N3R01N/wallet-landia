@@ -1,6 +1,6 @@
 # Look and feel: how modern mobile city builders look, and why
 
-Research brief for the Wallet-landia castle-and-town redesign. Written to be turned into a styleguide for a 3D artist (Blender → glTF → three.js on phones). October 2026.
+Research brief for the Zenigard castle-and-town redesign. Written to be turned into a styleguide for a 3D artist (Blender → glTF → three.js on phones). October 2026.
 
 ## How to read this
 
@@ -273,7 +273,7 @@ Triangles are cheap on modern phones; **draw calls and fill rate are the limit**
 
 ---
 
-## 10. Recommendations for Wallet-landia
+## 10. Recommendations for Zenigard
 
 ### 10.1 Where the owner's wishes clash with the genre or our setup
 

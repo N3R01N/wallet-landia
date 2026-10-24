@@ -76,7 +76,7 @@ export class TapCounter {
   }
 }
 
-const KEY = 'wallet-landia-v4/secrets/v1';
+const KEY = 'zenigard/secrets/v1';
 
 /** Where the found secrets are kept (localStorage, or a stand-in in tests). */
 export type SecretStore = Pick<Storage, 'getItem' | 'setItem'>;

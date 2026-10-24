@@ -1,6 +1,6 @@
-# Wallet-landia
+# Zenigard
 
-Your Ethereum wallets as a castle, and the chain as the town in front of it.
+Your Ethereum wallets as a castle, and the chain as the town in front of it. Live at [zenigard.cc](https://zenigard.cc).
 
 - **The castle** grows with your guild: one **tower** per wallet (at that wallet's value tier), the **keep** at what all your wallets are worth together, a **wing** for each kind of protocol you use.
 - **The town** is the chain: a **building** per protocol you hold value in or use (32 protocols have their own building; the rest get one for their kind), the **bell tower** in the middle rings on every real mainnet block, and the paths light up.

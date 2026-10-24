@@ -1,4 +1,4 @@
-# Wallet-landia v4: working instructions
+# Zenigard: working instructions
 
 A static, browser-only view of Ethereum wallets as a castle (the wallets) and
 a town (the chain). See `docs/REDESIGN.md` for the plan, status and decisions,
