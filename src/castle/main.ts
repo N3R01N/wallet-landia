@@ -508,7 +508,7 @@ const TOUR_SEEN = 'zenigard/castle/tour-seen';
 const tourBtn = el('button', { class: 'btn topbar-icon tour-btn', type: 'button', 'aria-label': 'Show the tour', title: 'Show the tour' }, '?');
 function startTour(): void {
   new Tour(
-    tourSteps({ go: (t) => shell.go(t), look: (w) => view?.lookAt(w), find: (sel) => shell.element.querySelector<HTMLElement>(sel), demo: mode === 'demo' || mode === 'captured' }),
+    tourSteps({ go: (t) => shell.state.tab !== t && shell.go(t), look: (w) => view?.lookAt(w), find: (sel) => shell.element.querySelector<HTMLElement>(sel), demo: mode === 'demo' || mode === 'captured' }),
     () => {
       try {
         localStorage.setItem(TOUR_SEEN, '1');

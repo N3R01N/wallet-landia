@@ -7,7 +7,7 @@ import type { TourStep } from './tour.js';
 import type { TabId } from './shellState.js';
 
 export interface TourContext {
-  /** Show a tab. */
+  /** Show a tab; one already showing stays as it is (shown again, the castle's scene is built anew: a green flash). */
   go(tab: TabId): void;
   /** Turn the scene's camera to the castle or the town. */
   look(where: 'castle' | 'town'): void;

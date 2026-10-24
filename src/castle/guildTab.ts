@@ -8,7 +8,7 @@
 import { el, shortAddr } from '../util/dom.js';
 import type { LedgerStatus } from '../data/ledger.js';
 import { TAP_SOUNDS } from '../audio/soundscape.js';
-import { toAddress } from '../data/ens.js';
+import { isEnsName, reverseName, toAddress } from '../data/ens.js';
 import { loadApiKey, saveApiKey, savePrefs, type Prefs } from '../settings.js';
 import type { Mode } from '../data/session.js';
 import { loadFamousIndex, type FamousCastle } from '../data/famous.js';
@@ -305,12 +305,32 @@ function walletsSection(ctx: GuildTabContext, p: Prefs): HTMLElement {
     );
   });
 
-  const add = (address: string) => {
+  /**
+   * A wallet is yours, under its ENS name at once: the name typed, else its
+   * primary name looked up now (the town's own lookup redraws only the town,
+   * so the list would say "Wallet 1" until the next change).
+   */
+  const add = (address: string, typedName: string | null) => {
     if (!p.owned.includes(address)) p.owned.push(address);
     p.followed = p.followed.filter((x) => x !== address);
+    if (typedName !== null && p.ens[address] === undefined) p.ens[address] = typedName;
     savePrefs(p);
     ctx.onWalletsChanged();
     ctx.refresh();
+    if (p.ens[address] !== undefined) return;
+    reverseName(address).then(
+      (name) => {
+        // the town's lookup may have answered first: either way the list shows it now
+        if (p.ens[address] === undefined) {
+          p.ens[address] = name ?? '';
+          savePrefs(p);
+        }
+        if (p.ens[address] !== '') ctx.refresh();
+      },
+      () => {
+        // node unavailable: the town's lookup tries again
+      },
+    );
   };
 
   const input = el('input', { type: 'text', placeholder: '0x… or name.eth', spellcheck: 'false', autocomplete: 'off', 'aria-label': 'Wallet address or ENS name' });
@@ -320,7 +340,8 @@ function walletsSection(ctx: GuildTabContext, p: Prefs): HTMLElement {
     msg.textContent = '';
     addBtn.disabled = true;
     try {
-      add(await toAddress(input.value));
+      const typed = input.value.trim();
+      add(await toAddress(typed), isEnsName(typed) ? typed.toLowerCase() : null);
       input.value = '';
     } catch (error) {
       msg.textContent = error instanceof Error ? error.message : String(error);

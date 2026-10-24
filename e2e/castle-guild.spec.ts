@@ -188,3 +188,26 @@ test('with no famous castles to show, the section stays hidden', async ({ page }
   await expect(page.locator('.guild-tab .source')).not.toHaveText('Loading…');
   await expect(page.locator('.guild-tab [data-section="famous"]')).toBeHidden();
 });
+
+test('a wallet added by address shows its ENS name at once, not "Wallet 1" until the next change', async ({ page }) => {
+  const address = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+  const word = (hex: string) => hex.replace(/^0x/, '').padStart(64, '0');
+  const abiString = (s: string) => {
+    const bytes = Buffer.from(s, 'utf8').toString('hex');
+    return `0x${word('20')}${word(bytes.length / 2 === 0 ? '0' : (bytes.length / 2).toString(16))}${bytes.padEnd(Math.ceil(bytes.length / 64) * 64, '0')}`;
+  };
+  // the node: a resolver for every name, the address for addr(), "alice.eth" for name()
+  await page.route('https://ethereum-rpc.publicnode.com/**', async (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}') as { id?: number; method?: string; params?: [{ data?: string }] };
+    if (Array.isArray(body) || body.method !== 'eth_call') return route.fallback();
+    const selector = body.params?.[0]?.data?.slice(2, 10);
+    const result = selector === '0178b8bf' ? `0x${word('1111111111111111111111111111111111111111')}` : selector === '3b3b57de' ? `0x${word(address.slice(2))}` : selector === '691f3431' ? abiString('alice.eth') : '0x';
+    await route.fulfill({ json: { jsonrpc: '2.0', id: body.id ?? 1, result } });
+  });
+  await page.goto('/');
+  await page.locator('.tab', { hasText: 'Guild' }).click();
+  const tab = page.locator('.guild-tab');
+  await tab.getByLabel('Wallet address or ENS name').fill(address);
+  await tab.locator('[data-section="wallets"] .btn', { hasText: 'Add' }).click();
+  await expect(page.locator('.guild-tab [data-section="wallets"] .wallet-row .wallet-name')).toHaveText('alice.eth');
+});

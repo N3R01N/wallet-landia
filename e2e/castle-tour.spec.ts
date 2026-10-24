@@ -27,3 +27,18 @@ test('a first visit gets the tour; it ends in the Guild tab; it does not come ba
   await card.locator('.tour-skip').click();
   await expect(card).toBeHidden();
 });
+
+test('the tour turns to the town without building the castle scene again (no green flash)', async ({ page }) => {
+  test.setTimeout(150_000);
+  await page.goto('/');
+  const card = page.locator('.tour-card');
+  await expect(card.locator('h3')).toHaveText('Welcome to your castle', { timeout: 20_000 });
+  await expect(page.locator('.castle-view canvas')).toHaveCount(1, { timeout: 60_000 });
+  await page.locator('.castle-view canvas').evaluate((c) => c.setAttribute('data-first', '1'));
+  for (const title of ['The castle grows with you', 'The town is the chain', 'Couriers are your transactions']) {
+    await card.locator('.btn', { hasText: 'Next' }).click();
+    await expect(card.locator('h3')).toHaveText(title);
+  }
+  // the same canvas all along: a tab shown again would have built a new scene
+  await expect(page.locator('.castle-view canvas[data-first="1"]')).toHaveCount(1);
+});
