@@ -13,6 +13,7 @@
     "capture": "vite-node scripts/capture-fixtures.ts",
     "famous": "vite-node scripts/capture-famous.ts",
     "brand": "vite-node scripts/brand-icons.ts",
+    "landing:pictures": "vite-node scripts/capture-landing.ts",
     "inspect": "vite-node scripts/inspect.ts",
     "e2e": "playwright test",
     "e2e:fast": "playwright test --project=fast --workers=4",

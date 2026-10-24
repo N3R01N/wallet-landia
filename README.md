@@ -6,6 +6,8 @@ Your Ethereum wallets as a castle, and the chain as the town in front of it. Liv
 - **The town** is the chain: a **building** per protocol you hold value in or use (32 protocols have their own building; the rest get one for their kind), the **bell tower** in the middle rings on every real mainnet block, and the paths light up.
 - **Every transaction is a courier**: the drawbridge lowers, the courier crosses the moat, pays the toll (the gas fee) at the border post, walks to the protocol's door, and the person inside comes out to take the goods. What arrives comes the other way; a failed transaction is turned back at the barrier; goods between your own wallets go along the castle walls.
 
+The front page (zenigard.cc) is the landing page, [`docs/LANDING.md`](docs/LANDING.md); the game is at app.zenigard.cc.
+
 Plan and decisions: [`docs/REDESIGN.md`](docs/REDESIGN.md). The assets (names, sizes, style) every theme provides: [`docs/ASSET_SPEC.md`](docs/ASSET_SPEC.md).
 
 ## Run it

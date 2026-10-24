@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- The landing page (zenigard.cc; the app is app.zenigard.cc). Scripts and
+         network only to this origin (the analytics). It asks for nothing: the
+         key and wallets are typed in the app. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Zenigard: your Ethereum wallet as a castle</title>
+    <meta name="description" content="Zenigard turns your Ethereum wallet into a living medieval town: a tower for every wallet, a building for every protocol, a courier for every transaction. Free, read-only, in your browser." />
+    <meta property="og:title" content="Zenigard: your Ethereum wallet as a castle" />
+    <meta property="og:description" content="A tower for every wallet, a building for every protocol, a courier for every transaction. Free and read-only." />
+    <meta property="og:image" content="https://zenigard.cc/landing/og.jpg" />
+    <meta property="og:url" content="https://zenigard.cc/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" />
+    <meta name="theme-color" content="#141b2e" />
+    <link rel="preload" href="/brand/fonts/marcellus-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/src/landing/landing.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <a class="brand" href="/" aria-label="Zenigard home"><img src="/brand/mark.svg" alt="" width="34" height="34" /><span>Zenigard</span></a>
+      <nav aria-label="Sections">
+        <a href="#famous">Famous castles</a>
+        <a href="#how">How it works</a>
+        <a href="#faq">Questions</a>
+      </nav>
+      <a class="btn btn-ghost nav-app" data-app-link="" href="https://app.zenigard.cc/">Open the app</a>
+    </header>
+
+    <main>
+      <section class="hero">
+        <picture class="hero-art" aria-hidden="true"><img src="/landing/hero-town.webp" alt="" /></picture>
+        <div class="hero-inner">
+          <div class="hero-copy">
+            <p class="eyebrow">A cozy world built from your wallet</p>
+            <h1>Your Ethereum wallet,<br />as a living castle.</h1>
+            <p class="lead">Every wallet becomes a tower, every protocol a building in town, and every transaction a courier walking the road. The bell rings with each new block.</p>
+            <ul class="trust">
+              <li>Free</li>
+              <li>Read-only: nothing to sign</li>
+              <li>Your key stays in your browser</li>
+            </ul>
+          </div>
+
+          <div class="start-card" id="start">
+            <h2>Build your castle</h2>
+            <p class="card-sub">Bring your wallet and a free Zerion key. The app shows you where they go, and the key never leaves your browser.</p>
+            <a class="btn btn-primary" data-app-link="#start" href="https://app.zenigard.cc/#start">Build my castle</a>
+            <p class="key-note">No key yet? <a href="https://dashboard.zerion.io/" target="_blank" rel="noopener noreferrer">Get one free at dashboard.zerion.io</a>. It takes about a minute.</p>
+            <p class="demo-line">Just curious? <a data-app-link="" href="https://app.zenigard.cc/">Walk around the demo castle →</a></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="famous" id="famous" aria-labelledby="famous-title">
+        <div class="section-head">
+          <h2 id="famous-title">Or visit a famous castle</h2>
+          <p>No key needed. Snapshots of well-known wallets, ready to explore.</p>
+        </div>
+        <ul class="famous-grid">
+          <li>
+            <a class="famous-card" data-app-link="#famous=vitalik" href="https://app.zenigard.cc/#famous=vitalik">
+              <img src="/landing/famous-vitalik.webp" alt="" loading="lazy" width="720" height="450" />
+              <span class="famous-name">vitalik.eth</span>
+              <span class="famous-about">Vitalik Buterin, co-founder of Ethereum</span>
+            </a>
+          </li>
+          <li>
+            <a class="famous-card" data-app-link="#famous=ens-dao" href="https://app.zenigard.cc/#famous=ens-dao">
+              <img src="/landing/famous-ens-dao.webp" alt="" loading="lazy" width="720" height="450" />
+              <span class="famous-name">ENS DAO</span>
+              <span class="famous-about">The treasury of the DAO that runs ENS names</span>
+            </a>
+          </li>
+          <li>
+            <a class="famous-card" data-app-link="#famous=xcopy" href="https://app.zenigard.cc/#famous=xcopy">
+              <img src="/landing/famous-xcopy.webp" alt="" loading="lazy" width="720" height="450" />
+              <span class="famous-name">XCOPY</span>
+              <span class="famous-about">The famous NFT artist</span>
+            </a>
+          </li>
+          <li>
+            <a class="famous-card" data-app-link="#famous=poly-exploiter" href="https://app.zenigard.cc/#famous=poly-exploiter">
+              <img src="/landing/famous-poly-exploiter.webp" alt="" loading="lazy" width="720" height="450" />
+              <span class="famous-tag">Story</span>
+              <span class="famous-name">The Poly Network hack</span>
+              <span class="famous-about">Replay the 2021 heist, $610M taken and given back, beat by beat</span>
+            </a>
+          </li>
+        </ul>
+      </section>
+
+      <section class="how" id="how" aria-labelledby="how-title">
+        <div class="section-head">
+          <h2 id="how-title">How it works</h2>
+        </div>
+        <ol class="steps">
+          <li>
+            <span class="step-n" aria-hidden="true">1</span>
+            <h3>Get a free key</h3>
+            <p>Zenigard reads wallets through Zerion. Your own free key keeps what you look at between you and Zerion.</p>
+          </li>
+          <li>
+            <span class="step-n" aria-hidden="true">2</span>
+            <h3>Enter your wallet</h3>
+            <p>An address or an ENS name. Add more wallets later: each one raises a tower of your castle.</p>
+          </li>
+          <li>
+            <span class="step-n" aria-hidden="true">3</span>
+            <h3>Watch your town live</h3>
+            <p>Couriers carry your transactions to the protocols you use. Earn badges, level up, visit friends.</p>
+          </li>
+        </ol>
+        <div class="showcase">
+          <img src="/landing/hero-castle.webp" alt="A castle with towers and a keep, the town's road in front of it" loading="lazy" width="1600" height="1000" />
+          <ul class="showcase-list">
+            <li><strong>A tower for every wallet</strong>, sized by what it holds.</li>
+            <li><strong>A building for every protocol</strong>: the DEXs on Market Street, lending on Bankers' Row.</li>
+            <li><strong>A courier for every transaction</strong>, paying the toll (the gas) on the way.</li>
+            <li><strong>The bell rings every block</strong>, so the town lives with the chain.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="faq" id="faq" aria-labelledby="faq-title">
+        <div class="section-head">
+          <h2 id="faq-title">Questions</h2>
+        </div>
+        <details>
+          <summary>Can Zenigard touch my funds?</summary>
+          <p>No. It only reads public data. It never asks you to connect a wallet or sign anything, and it cannot move anything.</p>
+        </details>
+        <details>
+          <summary>What is a Zerion key, and is it safe to give it to Zenigard?</summary>
+          <p>A free key from Zerion that lets your browser read wallet data. It is saved only in your browser and goes only to Zerion (through this site's server, which passes it on and never stores it). It can read, never spend.</p>
+        </details>
+        <details>
+          <summary>Does it cost anything?</summary>
+          <p>No. Zenigard is free, and Zerion's free plan covers a castle's daily needs.</p>
+        </details>
+        <details>
+          <summary>Which chains does it show?</summary>
+          <p>Ethereum mainnet, with your positions on the main networks Zerion tracks.</p>
+        </details>
+        <details>
+          <summary>Does it work on my phone?</summary>
+          <p>Yes. It runs in the browser on phones, tablets and computers, and you can add it to your home screen like an app.</p>
+        </details>
+      </section>
+
+      <section class="final-cta">
+        <h2>Your castle is waiting.</h2>
+        <a class="btn btn-primary" data-app-link="#start" href="https://app.zenigard.cc/#start">Build my castle</a>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <a class="brand" href="/"><img src="/brand/mark.svg" alt="" width="26" height="26" /><span>Zenigard</span></a>
+      <p>A free hobby project. Not financial advice. Not affiliated with Zerion or any protocol shown.</p>
+      <a href="/legal.html">Legal and privacy</a>
+    </footer>
+
+    <script type="module" src="/src/landing/main.ts"></script>
+  </body>
+</html>

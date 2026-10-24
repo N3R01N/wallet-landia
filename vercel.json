@@ -69,7 +69,7 @@
       ]
     },
     {
-      "source": "/(|index.html|assets.html|legal.html|app.webmanifest)",
+      "source": "/(|index.html|landing.html|assets.html|legal.html|app.webmanifest)",
       "headers": [
         {
           "key": "Cache-Control",
@@ -78,10 +78,23 @@
       ]
     }
   ],
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "www.zenigard.cc" }],
+      "destination": "https://zenigard.cc/$1",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/zerion/(.*)",
       "destination": "/api/zerion?path=$1"
+    },
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "zenigard.cc" }],
+      "destination": "/landing.html"
     }
   ]
 }

@@ -37,6 +37,8 @@
   Cache-Control: no-cache
 /index.html
   Cache-Control: no-cache
+/landing.html
+  Cache-Control: no-cache
 /assets.html
   Cache-Control: no-cache
 /legal.html

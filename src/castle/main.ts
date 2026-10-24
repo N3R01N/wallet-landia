@@ -54,7 +54,7 @@ import { foundSecrets } from './world/secrets.js';
 import { PlayerController } from './player.js';
 import type { CastleTheme } from './assets/theme.js';
 import { currentRpcUrl, setRpcUrl, startHeartbeat, validRpcUrl } from '../data/rpc.js';
-import { loadPrefs, savePrefs } from '../settings.js';
+import { loadApiKey, loadPrefs, savePrefs } from '../settings.js';
 import { Soundscape } from '../audio/soundscape.js';
 import { crestColors, setCrests } from '../util/rng.js';
 import { SIEGE_PARAM, SiegeMode } from '../game/ui/siegeMode.js';
@@ -521,8 +521,28 @@ function startTour(): void {
 tourBtn.addEventListener('click', startTour);
 let tourOffered = false;
 /** On the first visit, once the castle is up: the tour. */
+/**
+ * `#start`, from the landing page's "Build my castle": a player who has no
+ * key or no wallet yet lands in the Guild tab, the cursor in the field to
+ * fill next (the key, then a wallet). With both, it is just home. The link
+ * carries nothing else: the key is only ever typed here.
+ */
+const startAsked = location.hash === '#start';
+if (startAsked) history.replaceState(null, '', location.pathname + location.search);
+const startNudged = startAsked && (loadApiKey() === null || prefs.owned.length === 0);
+let startShown = false;
+/** Once the first town is in: the Guild tab, the cursor in the key field (or, with a key, the wallet field). */
+function showStart(): void {
+  if (!startNudged || startShown) return;
+  startShown = true;
+  shell.go('guild');
+  const field = loadApiKey() === null ? '[data-section="key"] input' : '[data-section="wallets"] input';
+  requestAnimationFrame(() => document.querySelector<HTMLInputElement>(`.guild-tab ${field}`)?.focus());
+}
+
 function offerTour(): void {
-  if (tourOffered) return;
+  // a player who came to set up their castle is not shown round the demo first
+  if (tourOffered || startNudged) return;
   tourOffered = true;
   let seen = false;
   try {
@@ -785,6 +805,7 @@ const session = new Session(prefs, {
     redrawForData();
     void player.refresh();
     if (!town.visiting) offerTour();
+    if (!town.visiting) showStart();
     if (!town.visiting && prefs.notify) void watchWallets(ownWatched());
   },
   onUpdate: (town) => {
@@ -874,12 +895,12 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Vercel Web Analytics: cookie-less page views, on the deployed site only (the
 // script and its reports are same-origin there, /_vercel/insights/, so the
-// page's security policy needs no change). Query strings are dropped: only the
-// page path is counted.
+// page's security policy needs no change). Query strings and hashes (a shared
+// castle's wallets) are dropped: only the page path is counted.
 if (import.meta.env.PROD) {
   inject({
     mode: 'production',
-    beforeSend: (event) => ({ ...event, url: event.url.split('?')[0] ?? event.url }),
+    beforeSend: (event) => ({ ...event, url: event.url.split(/[?#]/)[0] ?? event.url }),
   });
 }
 
