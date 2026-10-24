@@ -1,6 +1,6 @@
 # The landing page (zenigard.cc)
 
-The front door: `zenigard.cc` shows the landing page, `app.zenigard.cc` the game. One Vercel project serves both (`vercel.json`: on the host `zenigard.cc`, `/` is rewritten to `/landing.html`; `www.zenigard.cc` redirects to it). Anywhere else (the dev server, `zenigard.vercel.app`) the app is at `/` and the landing page at `/landing.html`.
+The front door: `zenigard.cc` shows the landing page, `app.zenigard.cc` the game. One Vercel project serves both: `middleware.ts` sends `/` on the host `zenigard.cc` to `/landing.html` (a vercel.json rewrite cannot: the existing index.html wins), and `www.zenigard.cc` redirects to `zenigard.cc` (vercel.json). Anywhere else (the dev server, `zenigard.vercel.app`) the app is at `/` and the landing page at `/landing.html`.
 
 ## What it offers, in this order
 

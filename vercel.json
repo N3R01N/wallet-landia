@@ -90,11 +90,6 @@
     {
       "source": "/api/zerion/(.*)",
       "destination": "/api/zerion?path=$1"
-    },
-    {
-      "source": "/",
-      "has": [{ "type": "host", "value": "zenigard.cc" }],
-      "destination": "/landing.html"
     }
   ]
 }
