@@ -112,9 +112,17 @@ h1 {
 }
 
 .topbar .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 700;
   letter-spacing: 0.02em;
   white-space: nowrap;
+}
+
+.topbar .brand-mark {
+  width: 24px;
+  height: 24px;
 }
 
 .topbar .guild-name {
@@ -1349,6 +1357,13 @@ h1 {
   color: var(--ink);
   text-align: center;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.load-mark {
+  display: block;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 8px;
 }
 
 .load-title {

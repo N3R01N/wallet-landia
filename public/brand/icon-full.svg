@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Zenigard for maskable and Apple icons: navy to the edges (the system rounds it), the Z inside the safe zone -->
+  <rect width="200" height="200" fill="#1F2A44"/>
+  <path transform="translate(100 100) scale(0.72) translate(-100 -95)" fill="#E2B04A" d="M52 84V50H56V54H62V50H66V62L75 52L84 62V36H90V41H97V36H103V41H110V36H116V62L125 52L134 62V50H138V54H144V50H148V84L80 132H148V154H52V132L120 84Z"/>
+</svg>

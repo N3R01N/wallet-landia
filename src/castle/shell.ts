@@ -60,7 +60,7 @@ export class Shell {
       nav.append(btn);
     }
 
-    const topbar = el('header', { class: 'topbar' }, el('span', { class: 'brand' }, 'Zenigard'), this.#guildEl, this.#statusEl, this.#rankEl);
+    const topbar = el('header', { class: 'topbar' }, el('span', { class: 'brand' }, el('img', { class: 'brand-mark', src: '/brand/mark.svg', alt: '' }), 'Zenigard'), this.#guildEl, this.#statusEl, this.#rankEl);
     this.setTopbar(opts.topbar ?? { guild: 'Your guild', rank: 'Wanderer', level: 'Lv 1' });
 
     this.#sheet.setAttribute('aria-labelledby', 'sheet-title');

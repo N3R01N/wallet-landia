@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 180 180">
+  <!-- Zenigard: a navy seal holding a gold Z whose top bar is a town skyline (logo option 6c) -->
+  <rect x="10" y="10" width="180" height="180" rx="28" fill="#1F2A44"/>
+  <rect x="22" y="22" width="156" height="156" rx="18" fill="none" stroke="#E2B04A" stroke-width="4"/>
+  <path transform="translate(0 5)" fill="#E2B04A" d="M52 84V50H56V54H62V50H66V62L75 52L84 62V36H90V41H97V36H103V41H110V36H116V62L125 52L134 62V50H138V54H144V50H148V84L80 132H148V154H52V132L120 84Z"/>
+</svg>

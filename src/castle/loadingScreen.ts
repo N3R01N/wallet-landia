@@ -90,7 +90,7 @@ export class LoadingScreen {
     this.element = el(
       'div',
       { class: 'loading-screen', role: 'status', 'aria-live': 'polite', 'aria-busy': 'true' },
-      el('div', { class: 'load-card' }, el('div', { class: 'load-title' }, 'Zenigard'), stage, this.#text, this.#status, this.#dots),
+      el('div', { class: 'load-card' }, el('img', { class: 'load-mark', src: '/brand/mark.svg', alt: '' }), el('div', { class: 'load-title' }, 'Zenigard'), stage, this.#text, this.#status, this.#dots),
     );
   }
 

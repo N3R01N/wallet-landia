@@ -366,7 +366,7 @@ Small things that make the town lived in. Pivot at the base centre. ≤ 600 tria
 | `fx.refused` | 256×256 | A red wax seal with a cross: a transaction that failed, shown over the barrier as the courier turns back |
 | `fx.sparkle` | 128×128 | Gold sparkles, for a badge just earned |
 
-**App icons → `art/app/` (PNG).** The castle on a plain background, readable at small sizes.
+**App icons → `art/app/` (PNG).** No longer used: the installed app, the tab and the top bar show the Zenigard logo from `public/brand/` (`npm run brand` draws its PNGs), the same for every theme. Kept for reference: the castle on a plain background, readable at small sizes.
 
 | Name | Size | Notes |
 |---|---|---|
