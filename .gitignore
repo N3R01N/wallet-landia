@@ -18,3 +18,5 @@ dist/
 
 # test output kept by hand (npm run check > .check.log)
 /.check.log
+.vercel
+.env*
